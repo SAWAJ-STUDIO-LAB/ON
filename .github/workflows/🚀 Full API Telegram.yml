@@ -1,0 +1,345 @@
+name: Full Secrets Diagnosis to Telegram
+​on:
+workflow_dispatch:
+​jobs:
+diagnose-and-report:
+runs-on: ubuntu-latest
+steps:
+- name: Run Diagnosis Script
+env:
+CEREBRAS_API_KEY_A1: ${{ secrets.CEREBRAS_API_KEY_A1 }}
+COHERE_API_KEY_A1: ${{ secrets.COHERE_API_KEY_A1 }}
+COVER_API_KEY: ${{ secrets.COVER_API_KEY }}
+DAILY_HADITH_YT_PLAYLIST_ID: ${{ secrets.DAILY_HADITH_YT_PLAYLIST_ID }}
+DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+DEEPLL_API_KEY: ${{ secrets.DEEPLL_API_KEY }}
+ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+FACEBOOK_INSTAGRAM_META_TOKEN: ${{ secrets.FACEBOOK_INSTAGRAM_META_TOKEN }}
+FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+GDRIVE_LONG_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_LONG_VIDEO_FOLDER_ID }}
+GDRIVE_SHORT_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_SHORT_VIDEO_FOLDER_ID }}
+GDRIVE_STORY_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_STORY_VIDEO_FOLDER_ID }}
+GEMINI_API_KEY_A1: ${{ secrets.GEMINI_API_KEY_A1 }}
+GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+GROQ_API_KEY_A1: ${{ secrets.GROQ_API_KEY_A1 }}
+HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
+HUGGINGFACE_API_KEY_A1: ${{ secrets.HUGGINGFACE_API_KEY_A1 }}
+INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
+JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+MISTRAL_API_KEY_A1: ${{ secrets.MISTRAL_API_KEY_A1 }}
+OPENROUTER_API_KEY_A1: ${{ secrets.OPENROUTER_API_KEY_A1 }}
+OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+PRAYER_TIMES_API_URL: ${{ secrets.PRAYER_TIMES_API_URL }}
+QURAN_API_URL: ${{ secrets.QURAN_API_URL }}
+TAVILY_API_KEY_A1: ${{ secrets.TAVILY_API_KEY_A1 }}
+TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+TOKEN_GITHUB: ${{ secrets.TOKEN_GITHUB }}
+YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+run: |
+cat << 'EOF' > test_secrets.py
+import os
+import json
+import urllib.request
+import urllib.parse
+import time
+​bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+​report_chunks = []
+current_text = "📊 FULL REPOSITORY SECRETS DIAGNOSIS REPORT\n\n"
+​def append_line(line):
+global current_text, report_chunks
+if len(current_text) + len(line) > 3500:
+report_chunks.append(current_text)
+current_text = "📊 DIAGNOSIS REPORT (Continued)\n\n"
+current_text += line + "\n"
+​def test_http(url, headers=None, data=None, method="GET"):
+if headers is None:
+headers = {}
+if "User-Agent" not in headers:
+headers["User-Agent"] = "Mozilla/5.0 DiagnosisBot/1.0"
+req = urllib.request.Request(url, headers=headers, data=data, method=method)
+try:
+with urllib.request.urlopen(req, timeout=12) as response:
+body = response.read().decode('utf-8', errors='ignore')
+return response.status, body
+except urllib.error.HTTPError as e:
+body = e.read().decode('utf-8', errors='ignore')
+return e.code, body
+except Exception as e:
+return 0, str(e)
+​def mask_val(v):
+if not v:
+return "MISSING"
+if len(v) <= 8:
+return "SET"
+return f"{v[:4]}...{v[-4:]}"
+​# --- 1. AI & LLM APIs ---
+append_line("🤖 1. AI & LLM APIs Diagnosis")
+​# Gemini
+k = os.environ.get("GEMINI_API_KEY_A1", "").strip()
+if k:
+code, res = test_http(f"https://generativelanguage.googleapis.com/v1beta/models?key={k}")
+if code == 200:
+append_line("✅ GEMINI_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ GEMINI_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ GEMINI_API_KEY_A1: Missing")
+​# Groq
+k = os.environ.get("GROQ_API_KEY_A1", "").strip()
+if k:
+code, res = test_http("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {k}"})
+if code == 200:
+append_line("✅ GROQ_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ GROQ_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ GROQ_API_KEY_A1: Missing")
+​# Mistral
+k = os.environ.get("MISTRAL_API_KEY_A1", "").strip()
+if k:
+code, res = test_http("https://api.mistral.ai/v1/models", headers={"Authorization": f"Bearer {k}"})
+if code == 200:
+append_line("✅ MISTRAL_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ MISTRAL_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ MISTRAL_API_KEY_A1: Missing")
+​# OpenRouter
+k = os.environ.get("OPENROUTER_API_KEY_A1", "").strip()
+if k:
+code, res = test_http("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {k}"})
+if code == 200:
+append_line("✅ OPENROUTER_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ OPENROUTER_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ OPENROUTER_API_KEY_A1: Missing")
+​# Cerebras
+k = os.environ.get("CEREBRAS_API_KEY_A1", "").strip()
+if k:
+code, res = test_http("https://api.cerebras.ai/v1/models", headers={"Authorization": f"Bearer {k}"})
+if code == 200:
+append_line("✅ CEREBRAS_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ CEREBRAS_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ CEREBRAS_API_KEY_A1: Missing")
+​# Cohere
+k = os.environ.get("COHERE_API_KEY_A1", "").strip()
+if k:
+code, res = test_http("https://api.cohere.com/v1/models", headers={"Authorization": f"Bearer {k}"})
+if code == 200:
+append_line("✅ COHERE_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ COHERE_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ COHERE_API_KEY_A1: Missing")
+​# HuggingFace
+k = os.environ.get("HUGGINGFACE_API_KEY_A1", "").strip()
+if k:
+code, res = test_http("https://huggingface.co/api/whoami-v2", headers={"Authorization": f"Bearer {k}"})
+if code == 200:
+append_line("✅ HUGGINGFACE_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ HUGGINGFACE_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ HUGGINGFACE_API_KEY_A1: Missing")
+​# Tavily
+k = os.environ.get("TAVILY_API_KEY_A1", "").strip()
+if k:
+post_data = json.dumps({"api_key": k, "query": "test"}).encode('utf-8')
+code, res = test_http("https://api.tavily.com/search", headers={"Content-Type": "application/json"}, data=post_data, method="POST")
+if code == 200:
+append_line("✅ TAVILY_API_KEY_A1: Active & Valid")
+else:
+append_line(f"❌ TAVILY_API_KEY_A1: Error HTTP {code}")
+else:
+append_line("❌ TAVILY_API_KEY_A1: Missing")
+​# --- 2. GOOGLE DRIVE & YOUTUBE OAUTH ---
+append_line("\n☁️ 2. Google Drive & YouTube OAuth Diagnosis")
+​# Google Drive OAuth
+gd_cid = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "").strip()
+gd_sec = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "").strip()
+gd_ref = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN", "").strip()
+if gd_cid and gd_sec and gd_ref:
+post_data = urllib.parse.urlencode({
+"client_id": gd_cid,
+"client_secret": gd_sec,
+"refresh_token": gd_ref,
+"grant_type": "refresh_token"
+}).encode('utf-8')
+code, res = test_http("https://oauth2.googleapis.com/token", headers={"Content-Type": "application/x-www-form-urlencoded"}, data=post_data, method="POST")
+if code == 200:
+append_line("✅ GOOGLE_DRIVE_OAUTH: Refresh Token Valid & Active")
+else:
+append_line(f"❌ GOOGLE_DRIVE_OAUTH: Failed (HTTP {code})")
+else:
+append_line("⚠️ GOOGLE_DRIVE_OAUTH: Client ID, Secret, or Refresh Token Missing")
+​# YouTube OAuth
+yt_cid = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
+yt_sec = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+yt_ref = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+if yt_cid and yt_sec and yt_ref:
+post_data = urllib.parse.urlencode({
+"client_id": yt_cid,
+"client_secret": yt_sec,
+"refresh_token": yt_ref,
+"grant_type": "refresh_token"
+}).encode('utf-8')
+code, res = test_http("https://oauth2.googleapis.com/token", headers={"Content-Type": "application/x-www-form-urlencoded"}, data=post_data, method="POST")
+if code == 200:
+append_line("✅ YOUTUBE_OAUTH: Refresh Token Valid & Active")
+else:
+append_line(f"❌ YOUTUBE_OAUTH: Failed (HTTP {code})")
+else:
+append_line("⚠️ YOUTUBE_OAUTH: Client ID, Secret, or Refresh Token Missing")
+​# --- 3. MEDIA & SERVICE APIS ---
+append_line("\n🎨 3. Media & Service APIs Diagnosis")
+​# Deepgram
+k = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+if k:
+code, res = test_http("https://api.deepgram.com/v1/projects", headers={"Authorization": f"Token {k}"})
+if code == 200:
+append_line("✅ DEEPGRAM_API_KEY: Active & Valid")
+else:
+append_line(f"❌ DEEPGRAM_API_KEY: Error HTTP {code}")
+else:
+append_line("❌ DEEPGRAM_API_KEY: Missing")
+​# ElevenLabs
+k = os.environ.get("ELEVENLABS_API_KEY", "").strip()
+if k:
+code, res = test_http("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": k})
+if code == 200:
+append_line("✅ ELEVENLABS_API_KEY: Active & Valid")
+else:
+append_line(f"❌ ELEVENLABS_API_KEY: Error HTTP {code}")
+else:
+append_line("❌ ELEVENLABS_API_KEY: Missing")
+​# Freesound
+k = os.environ.get("FREESOUND_API_KEY", "").strip()
+if k:
+code, res = test_http(f"https://freesound.org/apiv2/search/text/?query=sound&token={k}")
+if code == 200:
+append_line("✅ FREESOUND_API_KEY: Active & Valid")
+else:
+append_line(f"❌ FREESOUND_API_KEY: Error HTTP {code}")
+else:
+append_line("❌ FREESOUND_API_KEY: Missing")
+​# Pexels
+k = os.environ.get("PEXELS_API_KEY", "").strip()
+if k:
+code, res = test_http("https://api.pexels.com/v1/search?query=test&per_page=1", headers={"Authorization": k})
+if code == 200:
+append_line("✅ PEXELS_API_KEY: Active & Valid")
+else:
+append_line(f"❌ PEXELS_API_KEY: Error HTTP {code}")
+else:
+append_line("❌ PEXELS_API_KEY: Missing")
+​# Pixabay
+k = os.environ.get("PIXABAY_API_KEY", "").strip()
+if k:
+code, res = test_http(f"https://pixabay.com/api/?key={k}&q=test")
+if code == 200:
+append_line("✅ PIXABAY_API_KEY: Active & Valid")
+else:
+append_line(f"❌ PIXABAY_API_KEY: Error HTTP {code}")
+else:
+append_line("❌ PIXABAY_API_KEY: Missing")
+​# OpenWeather
+k = os.environ.get("OPENWEATHER_API_KEY", "").strip()
+if k:
+code, res = test_http(f"https://api.openweathermap.org/data/2.5/weather?q=London&appid={k}")
+if code == 200:
+append_line("✅ OPENWEATHER_API_KEY: Active & Valid")
+else:
+append_line(f"❌ OPENWEATHER_API_KEY: Error HTTP {code}")
+else:
+append_line("❌ OPENWEATHER_API_KEY: Missing")
+​# Facebook / Instagram Meta Token
+k = os.environ.get("FACEBOOK_INSTAGRAM_META_TOKEN", "").strip()
+if k:
+code, res = test_http(f"https://graph.facebook.com/v18.0/me?access_token={k}")
+if code == 200:
+append_line("✅ FACEBOOK_INSTAGRAM_META_TOKEN: Active & Valid")
+else:
+append_line(f"❌ FACEBOOK_INSTAGRAM_META_TOKEN: Error HTTP {code}")
+else:
+append_line("❌ FACEBOOK_INSTAGRAM_META_TOKEN: Missing")
+​# --- 4. API ENDPOINTS ---
+append_line("\n🌐 4. API Endpoints Connectivity")
+​for url_var in ["HADITH_API_URL", "PRAYER_TIMES_API_URL", "QURAN_API_URL"]:
+u = os.environ.get(url_var, "").strip()
+if u:
+code, res = test_http(u)
+if code in [200, 201]:
+append_line(f"✅ {url_var}: Reachable (HTTP {code})")
+else:
+append_line(f"⚠️ {url_var}: Reachable with HTTP {code}")
+else:
+append_line(f"❌ {url_var}: Missing")
+​# --- 5. IDS & TOKENS PRESENCE CHECK ---
+append_line("\n🔐 5. Folder IDs & Secondary Secrets Presence")
+​presence_list = [
+"COVER_API_KEY", "DEEPLL_API_KEY", "JINA_API_KEY", "TOKEN_GITHUB",
+"FACEBOOK_PAGE_ID", "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+"DAILY_HADITH_YT_PLAYLIST_ID", "GDRIVE_LONG_VIDEO_FOLDER_ID",
+"GDRIVE_SHORT_VIDEO_FOLDER_ID", "GDRIVE_STORY_VIDEO_FOLDER_ID"
+]
+​for p in presence_list:
+v = os.environ.get(p, "").strip()
+if v:
+append_line(f"✅ {p}: Set ({mask_val(v)})")
+else:
+append_line(f"❌ {p}: Missing or Empty")
+​# --- 6. TELEGRAM BOT VERIFICATION ---
+append_line("\n📱 6. Telegram Bot Status")
+​if bot_token:
+code, res = test_http(f"https://api.telegram.org/bot{bot_token}/getMe")
+if code == 200:
+try:
+bot_info = json.loads(res).get("result", {})
+bname = bot_info.get("first_name", "Bot")
+append_line(f"✅ TELEGRAM_BOT_TOKEN: Valid Bot ({bname})")
+except:
+append_line("✅ TELEGRAM_BOT_TOKEN: Valid Bot Token")
+else:
+append_line(f"❌ TELEGRAM_BOT_TOKEN: Invalid Token (HTTP {code})")
+else:
+append_line("❌ TELEGRAM_BOT_TOKEN: Missing")
+​if current_text:
+report_chunks.append(current_text)
+​# Send to Telegram
+if bot_token and chat_id:
+print(f"Sending {len(report_chunks)} chunk(s) to Telegram Chat {chat_id}...")
+for i, chunk in enumerate(report_chunks, start=1):
+payload = json.dumps({
+"chat_id": chat_id,
+"text": chunk,
+"parse_mode": "Markdown"
+}).encode('utf-8')
+c_code, c_res = test_http(
+f"https://api.telegram.org/bot{bot_token}/sendMessage",
+headers={"Content-Type": "application/json"},
+data=payload,
+method="POST"
+)
+if c_code == 200:
+print(f"Part {i} sent successfully!")
+else:
+print(f"Failed to send Part {i}: HTTP {c_code} -> {c_res}")
+time.sleep(1)
+else:
+print("Telegram Credentials Missing! Printing Report to Console:")
+for chunk in report_chunks:
+print(chunk)
+EOF
+​python test_secrets.py
