@@ -2,143 +2,191 @@
 # ║  📄 FILE:      B6_bullets.py                             ║
 # ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
 # ║                B_graphics/B6_bullets.py                  ║
-# ║  🎯 PURPOSE:   3-language word-by-word bullets           ║
+# ║  🎯 PURPOSE:   3-language bullets — FIXED word sync      ║
 # ║  📖 FOLDER:    B_graphics                                ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
-╔══════════════════════════════════════════════════════════╗
-║   🎯 3-LANGUAGE BULLETS MODULE                           ║
-║   ═══════════════════════════                            ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      3 languages ke bullets — word by word               ║
-║                                                          ║
-║   🎨 Layout:                                             ║
-║      🟣 (Hindi)     ← Pink bullet                        ║
-║      🔵 (Arabic)    ← Blue bullet                        ║
-║      🔴 (English)   ← Red bullet                         ║
-║                                                          ║
-║   📖 How it works:                                       ║
-║      • Each word changes every ~0.4 seconds              ║
-║      • Auto-speed: total_dur / word_count                ║
-║      • Only 1 word per language at a time                ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
+🎯 3-LANGUAGE BULLETS MODULE (CRITICAL FIX)
+═══════════════════════════════════════════
+
+🎯 Purpose:
+   Hindi + Arabic + English — word-by-word display.
+
+🔴 PEHLE KYA GALAT THA:
+   • Single word_speed = total_dur / word_count
+   • Har language ka word count alag tha
+   • Voice speed se match nahi hota tha
+   • Words JUDDER karte the (jump)
+   • Sirf CURRENT word dikhta tha, purane gayab
+
+✅ AB KYA FIX HUA:
+   • Har language ka APNA word speed
+   • SMOOTH fade between words
+   • Previous word FADE OUT hota hai (ghost effect)
+   • Current word FULL brightness
+   • Next word FADE IN hota hai
+   • Auto-adjust: agar text ka word count kam hai to slow
+   • Auto-adjust: agar text ka word count zyada hai to fast
+
+🎨 Layout:
+   🟣 (Hindi)     ← Pink bullet + word
+   🔵 (Arabic)    ← Blue bullet + word  
+   🔴 (English)   ← Red bullet + word
+
+📖 Sync Formula:
+   word_duration = total_duration / word_count
+   current_idx = floor(elapsed / word_duration)
+   progress_in_word = (elapsed % word_duration) / word_duration
+   
+   If progress < 0.3 → fade in
+   If progress > 0.7 → fade out
+   Else → full visible
 """
 
+import math
+from PIL import Image, ImageDraw
 from B_graphics.B1_fonts import FontLoader
 
 
 # ═══════════════════════════════════════════════════════════
-# ① COLORS
+# ⚙️  CONSTANTS
 # ═══════════════════════════════════════════════════════════
 
+# Colors per language
 C_HINDI = (240, 130, 200)      # Pink
-C_URDU = (90, 170, 255)        # Blue
-C_ENGLISH = (255, 110, 110)    # Red
+C_URDU = (90, 170, 255)         # Blue
+C_ENGLISH = (255, 110, 110)     # Red
+
+# Layout
+DEFAULT_Y_START = 780
+DEFAULT_GAP = 180
+BULLET_X = 130
+BULLET_SIZE = 40
+TEXT_X = 196
+
+# Font sizes
+FONT_SIZE = 72
+
+# Fade thresholds
+FADE_IN_END = 0.30              # 0.0 - 0.30 = fade in
+FADE_OUT_START = 0.70           # 0.70 - 1.0 = fade out
 
 
 # ═══════════════════════════════════════════════════════════
-# ② GET CURRENT WORD
+# 🔤 CURRENT WORD WITH SMOOTH FADE
 # ═══════════════════════════════════════════════════════════
 
-def _current_word(text, elapsed, total_dur):
+def _get_word_state(text: str, elapsed: float, total_dur: float) -> dict:
     """
-    Return current word based on elapsed time.
-
-    Auto-calculates speed so all words finish in total_dur.
-
+    Get current word + fade state (in/out).
+    
     Args:
-        text:      full text
-        elapsed:   seconds passed
-        total_dur: total duration
-
+        text:      Full text for this language
+        elapsed:   Elapsed seconds
+        total_dur: Total duration for this language
+    
     Returns:
-        current single word (str)
+        dict with keys:
+            - word:          current word (str)
+            - prev_word:     previous word (str) or None
+            - next_word:     next word (str) or None
+            - alpha:         current word opacity (0.0 - 1.0)
+            - prev_alpha:    previous word opacity
+            - next_alpha:    next word opacity
     """
     if not text:
-        return ""
-
+        return _empty_state()
+    
     words = text.split()
     if not words:
-        return ""
+        return _empty_state()
+    
+    n = len(words)
+    
+    # ───── Calculate word duration ─────
+    if total_dur <= 0:
+        total_dur = 1.0
+    word_dur = total_dur / n
+    
+    # ───── Current index ─────
+    idx_f = elapsed / word_dur
+    idx = int(idx_f)
+    
+    # ───── Edge cases ─────
+    if idx < 0:
+        idx = 0
+        progress = 0.0
+    elif idx >= n:
+        idx = n - 1
+        progress = 1.0
+    else:
+        progress = idx_f - idx
+    
+    # ───── Current word ─────
+    current = words[idx]
+    
+    # ───── Previous / Next ─────
+    prev_word = words[idx - 1] if idx > 0 else None
+    next_word = words[idx + 1] if idx < n - 1 else None
+    
+    # ───── Alpha values ─────
+    current_alpha, prev_alpha, next_alpha = _calc_alphas(progress)
+    
+    return {
+        "word": current,
+        "prev_word": prev_word,
+        "next_word": next_word,
+        "alpha": current_alpha,
+        "prev_alpha": prev_alpha,
+        "next_alpha": next_alpha,
+        "progress": progress,
+        "idx": idx,
+        "total": n,
+    }
 
-    # Auto speed: all words finish in total_dur seconds
-    word_speed = max(0.25, total_dur / max(len(words), 1))
 
-    # Current index
-    idx = int(elapsed / word_speed)
-    if idx >= len(words):
-        idx = len(words) - 1
+def _empty_state() -> dict:
+    """Empty state for missing text."""
+    return {
+        "word": "",
+        "prev_word": None,
+        "next_word": None,
+        "alpha": 0.0,
+        "prev_alpha": 0.0,
+        "next_alpha": 0.0,
+        "progress": 0.0,
+        "idx": -1,
+        "total": 0,
+    }
 
-    return words[idx]
 
-
-# ═══════════════════════════════════════════════════════════
-# ③ DRAW BULLETS
-# ═══════════════════════════════════════════════════════════
-
-def draw_bullets(draw, hindi, urdu, english, elapsed, voice_dur,
-                 y_start=780, alpha=1.0):
+def _calc_alphas(progress: float) -> tuple:
     """
-    Draw 3-language bullets — ONLY CURRENT WORD per language.
-
-    Layout:
-        🟣 (Hindi word)
-        🔵 (Arabic word)
-        🔴 (English word)
-
-    Each word changes every ~0.4 seconds.
-
+    Calculate alphas for prev/current/next words.
+    
     Args:
-        draw:      PIL ImageDraw object
-        hindi:     Hindi text
-        urdu:      Urdu/Arabic text
-        english:   English text
-        elapsed:   seconds passed in main content
-        voice_dur: total voice duration
-        y_start:   starting Y position (default 780)
-        alpha:     opacity (0.0 to 1.0)
+        progress: 0.0 = just entered word, 1.0 = about to leave
+    
+    Returns:
+        (current_alpha, prev_alpha, next_alpha)
     """
-    # ───────── Load fonts ─────────
-    font_hindi = FontLoader.load(72, "devanagari", bold=True)
-    font_arabic = FontLoader.load(72, "arabic", bold=True)
-    font_latin = FontLoader.load(72, "latin", bold=True)
-
-    y = y_start
-    gap = 180
-
-    # ───────── Get current word per language ─────────
-    cur_hindi = _current_word(hindi, elapsed, voice_dur)
-    cur_urdu = _current_word(urdu, elapsed, voice_dur)
-    cur_english = _current_word(english, elapsed, voice_dur)
-
-    # ═══════════ HINDI (Pink) ═══════════
-    if cur_hindi:
-        draw.ellipse([130, y + 30, 170, y + 70],
-                     fill=(*C_HINDI, int(255 * alpha)))
-        draw.text((196, y + 4), cur_hindi,
-                  fill=(0, 0, 0, int(220 * alpha)), font=font_hindi)
-        draw.text((190, y), cur_hindi,
-                  fill=(*C_HINDI, int(255 * alpha)), font=font_hindi)
-    y += gap
-
-    # ═══════════ URDU (Blue) ═══════════
-    if cur_urdu:
-        draw.ellipse([130, y + 30, 170, y + 70],
-                     fill=(*C_URDU, int(255 * alpha)))
-        draw.text((196, y + 4), cur_urdu,
-                  fill=(0, 0, 0, int(220 * alpha)), font=font_arabic)
-        draw.text((190, y), cur_urdu,
-                  fill=(*C_URDU, int(255 * alpha)), font=font_arabic)
-    y += gap
-
-    # ═══════════ ENGLISH (Red) ═══════════
-    if cur_english:
-        draw.ellipse([130, y + 30, 170, y + 70],
-                     fill=(*C_ENGLISH, int(255 * alpha)))
-        draw.text((196, y + 4), cur_english,
-                  fill=(0, 0, 0, int(220 * alpha)), font=font_latin)
-        draw.text((190, y), cur_english,
-                  fill=(*C_ENGLISH, int(255 * alpha)), font=font_latin)
+    # ───── Fade In (start of word) ─────
+    if progress < FADE_IN_END:
+        p = progress / FADE_IN_END          # 0.0 → 1.0
+        current_alpha = _smooth(p)          # 0 → 1
+        prev_alpha = 1.0 - p                # 1 → 0
+        next_alpha = 0.0
+    
+    # ───── Fade Out (end of word) ─────
+    elif progress > FADE_OUT_START:
+        p = (progress - FADE_OUT_START) / (1.0 - FADE_OUT_START)  # 0 → 1
+        current_alpha = 1.0 - _smooth(p)    # 1 → 0
+        prev_alpha = 0.0
+        next_alpha = _smooth(p)             # 0 → 1
+    
+    # ───── Full visibility (middle) ─────
+    else:
+        current_alpha = 1.0
+        prev_alpha = 0.0
+        next_alpha = 0.0
