@@ -2,35 +2,46 @@
 # ║  📄 FILE:      C2_ai_provider.py                         ║
 # ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
 # ║                C_content/C2_ai_provider.py               ║
-# ║  🎯 PURPOSE:   Multi-provider AI with fallback           ║
+# ║  🎯 PURPOSE:   Multi-provider AI (with _AI fallback)     ║
 # ║  📖 FOLDER:    C_content                                 ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
-╔══════════════════════════════════════════════════════════╗
-║   🤖 AI PROVIDER MODULE                                  ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      AI text generation — multi-fallback                 ║
-║                                                          ║
-║   📚 Providers (in order):                               ║
-║      1. OpenRouter (GPT-4o-mini)                         ║
-║      2. Groq (Llama 3.3 70B)                             ║
-║      3. Gemini (1.5 Flash)                               ║
-║      4. Mistral (Small)                                  ║
-║      5. Cerebras (Llama 3.1)                             ║
-║      6. Cohere (Command R+)                              ║
-║                                                          ║
-║   🎯 How it works:                                       ║
-║      • Tries provider 1 → fails → tries 2 → etc.         ║
-║      • First successful response returned                ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
+🤖 AI PROVIDER MODULE (Name-Matched)
+════════════════════════════════════
+
+🎯 Purpose:
+   Multiple AI providers try karta hai (fallback chain).
+   
+📖 Kya update hua:
+   ✅ Ab `_AI` suffix wale naamon ko bhi support karta hai
+   ✅ Example: OPENROUTER_API_KEY OR OPENROUTER_API_KEY_AI
+   ✅ Cerebras ke typo (CELEBRAS) bhi handle karta hai
+
+📚 Provider Order:
+   1. OpenRouter  → OPENROUTER_API_KEY or _AI
+   2. Groq        → GROQ_API_KEY or _AI
+   3. Gemini      → GEMINI_API_KEY or _AI
+   4. Mistral     → MISTRAL_API_KEY or _AI
+   5. Cerebras    → CEREBRAS_API_KEY, CEREBRAS_API_KEY_AI, CELEBRAS_API_KEY_AI
+   6. Cohere      → COHERE_API_KEY or _AI
 """
 
 import os
 from A_core.A2_logger import log_file_start, log_file_end, log_step, log_api
+
+
+# ═══════════════════════════════════════════════════════════
+# 🔧 HELPER — Get API key with fallback
+# ═══════════════════════════════════════════════════════════
+
+def _get_key(*names) -> str:
+    """Return first non-empty env value."""
+    for name in names:
+        val = os.environ.get(name, "").strip()
+        if val:
+            return val
+    return ""
 
 
 # ═══════════════════════════════════════════════════════════
@@ -39,127 +50,176 @@ from A_core.A2_logger import log_file_start, log_file_end, log_step, log_api
 
 class AIProvider:
     """Multi-provider AI with automatic fallback chain."""
-
-    # ─────────────────────────────────────────────────────
-    # ① INIT
-    # ─────────────────────────────────────────────────────
+    
     def __init__(self, base):
         log_file_start("C2_ai_provider.py", "AI text generation")
         self.base = base
         log_file_end("C2_ai_provider.py", "success", "Ready")
-
+    
     # ─────────────────────────────────────────────────────
-    # ② CALL — try providers in order
+    # CALL — try providers in order
     # ─────────────────────────────────────────────────────
-    def call(self, prompt, max_tokens=400, task="general"):
+    def call(self, prompt: str, max_tokens: int = 400, task: str = "general"):
         """
         Try providers in order until one works.
-
+        
         Args:
-            prompt:     text prompt
-            max_tokens: maximum tokens (default 400)
-            task:       task name for logging
-
+            prompt:     Text prompt
+            max_tokens: Maximum tokens
+            task:       Task name for logging
+        
         Returns:
-            str (AI response) or None
+            AI response text or None
         """
         log_step("C2_ai_provider.py", f"call(task={task})", "ok",
                  f"prompt {len(prompt)} chars")
-
+        
         session = self.base.session
         providers = []
-
+        
         # ═══════════ BUILD PROVIDER LIST ═══════════
-        if os.environ.get("OPENROUTER_API_KEY"):
-            providers.append(("OpenRouter",
+        # Each entry: (name, url, headers, model)
+        
+        # ───── OpenRouter ─────
+        key = _get_key("OPENROUTER_API_KEY", "OPENROUTER_API_KEY_AI")
+        if key:
+            providers.append((
+                "OpenRouter",
                 "https://openrouter.ai/api/v1/chat/completions",
-                {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"},
-                "openai/gpt-4o-mini"))
-
-        if os.environ.get("GROQ_API_KEY"):
-            providers.append(("Groq",
+                {"Authorization": f"Bearer {key}"},
+                "openai/gpt-4o-mini",
+            ))
+        
+        # ───── Groq ─────
+        key = _get_key("GROQ_API_KEY", "GROQ_API_KEY_AI")
+        if key:
+            providers.append((
+                "Groq",
                 "https://api.groq.com/openai/v1/chat/completions",
-                {"Authorization": f"Bearer {os.environ['GROQ_API_KEY']}"},
-                "llama-3.3-70b-versatile"))
-
-        if os.environ.get("GEMINI_API_KEY"):
-            providers.append(("Gemini", None, None, None))
-
-        if os.environ.get("MISTRAL_API_KEY"):
-            providers.append(("Mistral",
+                {"Authorization": f"Bearer {key}"},
+                "llama-3.3-70b-versatile",
+            ))
+        
+        # ───── Gemini ─────
+        key = _get_key("GEMINI_API_KEY", "GEMINI_API_KEY_AI")
+        if key:
+            providers.append(("Gemini", key, None, None))  # Special handling
+        
+        # ───── Mistral ─────
+        key = _get_key("MISTRAL_API_KEY", "MISTRAL_API_KEY_AI")
+        if key:
+            providers.append((
+                "Mistral",
                 "https://api.mistral.ai/v1/chat/completions",
-                {"Authorization": f"Bearer {os.environ['MISTRAL_API_KEY']}"},
-                "mistral-small-latest"))
-
-        if os.environ.get("CEREBRAS_API_KEY"):
-            providers.append(("Cerebras",
+                {"Authorization": f"Bearer {key}"},
+                "mistral-small-latest",
+            ))
+        
+        # ───── Cerebras (with typo fallback) ─────
+        key = _get_key(
+            "CEREBRAS_API_KEY",
+            "CEREBRAS_API_KEY_AI",
+            "CELEBRAS_API_KEY_AI",   # Aapka typo wala
+        )
+        if key:
+            providers.append((
+                "Cerebras",
                 "https://api.cerebras.ai/v1/chat/completions",
-                {"Authorization": f"Bearer {os.environ['CEREBRAS_API_KEY']}"},
-                "llama3.1-8b"))
-
-        if os.environ.get("COHERE_API_KEY"):
-            providers.append(("Cohere",
+                {"Authorization": f"Bearer {key}"},
+                "llama3.1-8b",
+            ))
+        
+        # ───── Cohere ─────
+        key = _get_key("COHERE_API_KEY", "COHERE_API_KEY_AI")
+        if key:
+            providers.append((
+                "Cohere",
                 "https://api.cohere.com/v1/chat",
-                {"Authorization": f"Bearer {os.environ['COHERE_API_KEY']}"},
-                "command-r-plus"))
-
+                {"Authorization": f"Bearer {key}"},
+                "command-r-plus",
+            ))
+        
         log_step("C2_ai_provider.py", f"{len(providers)} providers queued", "ok")
-
+        
         # ═══════════ TRY EACH PROVIDER ═══════════
-        for name, url, headers, model in providers:
+        for provider in providers:
+            name = provider[0]
             log_step("C2_ai_provider.py", f"Trying {name}", "info")
+            
             try:
-                # ───────── Gemini ─────────
+                # ───── Gemini special case ─────
                 if name == "Gemini":
+                    api_key = provider[1]
                     r = session.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={os.environ['GEMINI_API_KEY']}",
+                        f"https://generativelanguage.googleapis.com/"
+                        f"v1beta/models/gemini-1.5-flash:generateContent"
+                        f"?key={api_key}",
                         json={"contents": [{"parts": [{"text": prompt}]}]},
-                        timeout=40)
+                        timeout=40,
+                    )
                     if r.status_code == 200:
-                        text = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        text = (
+                            r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                            .strip()
+                        )
                         self.base.api_status["AI"][f"{name}({task})"] = "success"
                         log_api("C2_ai_provider.py", f"{name}({task})", "success",
                                 f"{len(text)} chars")
                         return text
-
-                # ───────── Cohere ─────────
-                elif name == "Cohere":
-                    r = session.post(url,
-                                     headers={**headers, "Content-Type": "application/json"},
-                                     json={"model": model, "message": prompt},
-                                     timeout=40)
+                    else:
+                        log_api("C2_ai_provider.py", f"{name}({task})", "failed",
+                                f"HTTP {r.status_code}")
+                    continue
+                
+                # ───── Cohere special case ─────
+                if name == "Cohere":
+                    _, url, headers, model = provider
+                    r = session.post(
+                        url,
+                        headers={**headers, "Content-Type": "application/json"},
+                        json={"model": model, "message": prompt},
+                        timeout=40,
+                    )
                     if r.status_code == 200:
                         text = r.json()["text"].strip()
                         self.base.api_status["AI"][f"{name}({task})"] = "success"
                         log_api("C2_ai_provider.py", f"{name}({task})", "success",
                                 f"{len(text)} chars")
                         return text
-
-                # ───────── OpenAI-style ─────────
+                    else:
+                        log_api("C2_ai_provider.py", f"{name}({task})", "failed",
+                                f"HTTP {r.status_code}")
+                    continue
+                
+                # ───── Standard OpenAI-style ─────
+                _, url, headers, model = provider
+                payload = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7,
+                    "max_tokens": max_tokens,
+                }
+                r = session.post(
+                    url,
+                    headers={**headers, "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=40,
+                )
+                if r.status_code == 200:
+                    text = r.json()["choices"][0]["message"]["content"].strip()
+                    self.base.api_status["AI"][f"{name}({task})"] = "success"
+                    log_api("C2_ai_provider.py", f"{name}({task})", "success",
+                            f"{len(text)} chars")
+                    return text
                 else:
-                    payload = {
-                        "model": model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0.7,
-                        "max_tokens": max_tokens,
-                    }
-                    r = session.post(url,
-                                     headers={**headers, "Content-Type": "application/json"},
-                                     json=payload, timeout=40)
-                    if r.status_code == 200:
-                        text = r.json()["choices"][0]["message"]["content"].strip()
-                        self.base.api_status["AI"][f"{name}({task})"] = "success"
-                        log_api("C2_ai_provider.py", f"{name}({task})", "success",
-                                f"{len(text)} chars")
-                        return text
-
-                self.base.api_status["AI"][f"{name}({task})"] = "failed"
-                log_api("C2_ai_provider.py", f"{name}({task})", "failed",
-                        f"HTTP {r.status_code}")
+                    self.base.api_status["AI"][f"{name}({task})"] = "failed"
+                    log_api("C2_ai_provider.py", f"{name}({task})", "failed",
+                            f"HTTP {r.status_code}")
+            
             except Exception as e:
-                self.base.api_status["AI"][f"{name}({task})"] = f"failed ({str(e)[:35]})"
+                self.base.api_status["AI"][f"{name}({task})"] = f"failed"
                 log_api("C2_ai_provider.py", f"{name}({task})", "failed",
                         str(e)[:80])
-
+        
         log_step("C2_ai_provider.py", "All AI providers failed", "fail")
         return None
