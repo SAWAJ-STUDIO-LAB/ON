@@ -1,0 +1,176 @@
+name: 🚀 Full API Diagnosis to Telegram
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose-and-report:
+    runs-on: ubuntu-latest
+    env:
+      CEREBRAS_API_KEY_A1: ${{ secrets.CEREBRAS_API_KEY_A1 }}
+      COHERE_API_KEY_A1: ${{ secrets.COHERE_API_KEY_A1 }}
+      COVER_API_KEY: ${{ secrets.COVER_API_KEY }}
+      DAILY_YOUTUBE_YT_PLAYLIST_ID: ${{ secrets.DAILY_YOUTUBE_YT_PLAYLIST_ID }}
+      DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+      DEEPLL_API_KEY: ${{ secrets.DEEPLL_API_KEY }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      FACEBOOK_INSTAGRAM_META_TOKEN: ${{ secrets.FACEBOOK_INSTAGRAM_META_TOKEN }}
+      FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+      FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+      GDRIVE_LONG_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_LONG_VIDEO_FOLDER_ID }}
+      GDRIVE_SHORT_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_SHORT_VIDEO_FOLDER_ID }}
+      GDRIVE_STORY_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_STORY_VIDEO_FOLDER_ID }}
+      GEMINI_API_KEY_A1: ${{ secrets.GEMINI_API_KEY_A1 }}
+      GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+      GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+      GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+      GROQ_API_KEY_A1: ${{ secrets.GROQ_API_KEY_A1 }}
+      HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
+      HUGGINGFACE_API_KEY_A1: ${{ secrets.HUGGINGFACE_API_KEY_A1 }}
+      INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
+      JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+      MISTRAL_API_KEY_A1: ${{ secrets.MISTRAL_API_KEY_A1 }}
+      OPENROUTER_API_KEY_A1: ${{ secrets.OPENROUTER_API_KEY_A1 }}
+      OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+      PRAYER_TIMES_API_URL: ${{ secrets.PRAYER_TIMES_API_URL }}
+      QURAN_API_URL: ${{ secrets.QURAN_API_URL }}
+      TAVILY_API_KEY_A1: ${{ secrets.TAVILY_API_KEY_A1 }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TOKEN_GITHUB: ${{ secrets.TOKEN_GITHUB }}
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Run Full Diagnosis & Send to Telegram
+        run: |
+          python -c '
+          import os, requests, time
+
+          TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+          TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+          
+          # Initialize variables for chunking message
+          report_chunks = []
+          current_chunk = "🚀 *FULL API & SECRETS DIAGNOSIS REPORT*\n\n"
+
+          def add_to_report(text):
+              global current_chunk, report_chunks
+              if len(current_chunk) + len(text) > 3800: # Telegram limit is 4096
+                  report_chunks.append(current_chunk)
+                  current_chunk = ""
+              current_chunk += text + "\n"
+
+          def check_key(name, value, obscure=True):
+              if not value: return f"❌ `{name}`: Missing or Empty"
+              display_val = f"{value[:4]}...{value[-4:]}" if obscure and len(value) > 8 else "Set"
+              return f"✅ `{name}`: Present ({display_val})"
+
+          # 1. TEST GEMINI API
+          gemini_key = os.getenv("GEMINI_API_KEY_A1")
+          add_to_report("🧠 *LLM APIs*")
+          if gemini_key:
+              try:
+                  res = requests.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}")
+                  if res.status_code == 200:
+                      add_to_report(f"✅ `GEMINI_API_KEY_A1`: Valid | {len(res.json().get(\"models\", []))} models accessible")
+                  else:
+                      add_to_report(f"❌ `GEMINI_API_KEY_A1`: Error {res.status_code} - {res.json().get(\"error\", {}).get(\"message\", \"Unknown\")}")
+              except Exception as e: add_to_report(f"❌ `GEMINI_API_KEY_A1`: Failed to connect")
+          else: add_to_report("❌ `GEMINI_API_KEY_A1`: Missing")
+
+          # 2. TEST TELEGRAM BOT ITSELF
+          add_to_report("\n📲 *Telegram Auth*")
+          if TELEGRAM_BOT_TOKEN:
+              res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe")
+              if res.status_code == 200:
+                  bot_data = res.json().get("result", {})
+                  add_to_report(f"✅ `TELEGRAM_BOT`: Valid | Bot Name: {bot_data.get(\"first_name\")}")
+              else:
+                  add_to_report(f"❌ `TELEGRAM_BOT`: Invalid Token - {res.text}")
+          else: add_to_report("❌ `TELEGRAM_BOT_TOKEN`: Missing")
+
+          # 3. TEST GOOGLE DRIVE OAUTH REFRESH
+          add_to_report("\n☁️ *Google Drive OAuth*")
+          gd_client = os.getenv("GOOGLE_DRIVE_CLIENT_ID")
+          gd_secret = os.getenv("GOOGLE_DRIVE_CLIENT_SECRET")
+          gd_refresh = os.getenv("GOOGLE_DRIVE_REFRESH_TOKEN")
+          if gd_client and gd_secret and gd_refresh:
+              res = requests.post("https://oauth2.googleapis.com/token", data={
+                  "client_id": gd_client, "client_secret": gd_secret, 
+                  "refresh_token": gd_refresh, "grant_type": "refresh_token"
+              })
+              if res.status_code == 200:
+                  add_to_report(f"✅ `G-DRIVE OAUTH`: Success | New Access Token Generated")
+              else:
+                  add_to_report(f"❌ `G-DRIVE OAUTH`: Error {res.status_code} - {res.json().get(\"error_description\", \"Revoked/Expired\")}")
+          else: add_to_report("⚠️ `G-DRIVE OAUTH`: Client/Secret/Refresh token(s) missing")
+
+          # 4. TEST YOUTUBE OAUTH REFRESH
+          add_to_report("\n📺 *YouTube OAuth*")
+          yt_client = os.getenv("YOUTUBE_CLIENT_ID")
+          yt_secret = os.getenv("YOUTUBE_CLIENT_SECRET")
+          yt_refresh = os.getenv("YOUTUBE_REFRESH_TOKEN")
+          if yt_client and yt_secret and yt_refresh:
+              res = requests.post("https://oauth2.googleapis.com/token", data={
+                  "client_id": yt_client, "client_secret": yt_secret, 
+                  "refresh_token": yt_refresh, "grant_type": "refresh_token"
+              })
+              if res.status_code == 200:
+                  add_to_report(f"✅ `YOUTUBE OAUTH`: Success | Token Refreshed")
+              else:
+                  add_to_report(f"❌ `YOUTUBE OAUTH`: Error {res.status_code} - {res.json().get(\"error_description\", \"Revoked\")}")
+          else: add_to_report("⚠️ `YOUTUBE OAUTH`: Tokens missing")
+
+          # 5. TEST WEATHER API
+          add_to_report("\n🌤 *Utilities*")
+          weather = os.getenv("OPENWEATHER_API_KEY")
+          if weather:
+              res = requests.get(f"https://api.openweathermap.org/data/2.5/weather?q=London&appid={weather}")
+              if res.status_code == 200: add_to_report("✅ `OPENWEATHER`: Active & Valid")
+              elif res.status_code == 401: add_to_report("❌ `OPENWEATHER`: Invalid Key (401)")
+              else: add_to_report(f"⚠️ `OPENWEATHER`: Code {res.status_code}")
+          
+          # 6. BASIC PRESENCE CHECK FOR ALL OTHER SECRETS
+          add_to_report("\n🔐 *Other Keys Presence Check*")
+          other_keys = [
+              "CEREBRAS_API_KEY_A1", "COHERE_API_KEY_A1", "COVER_API_KEY", "DAILY_YOUTUBE_YT_PLAYLIST_ID",
+              "DEEPGRAM_API_KEY", "DEEPLL_API_KEY", "ELEVENLABS_API_KEY", "FACEBOOK_INSTAGRAM_META_TOKEN",
+              "FACEBOOK_PAGE_ID", "FREESOUND_API_KEY", "GDRIVE_LONG_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID",
+              "GDRIVE_STORY_VIDEO_FOLDER_ID", "GROQ_API_KEY_A1", "HADITH_API_URL", "HUGGINGFACE_API_KEY_A1",
+              "INSTAGRAM_BUSINESS_ACCOUNT_ID", "JINA_API_KEY", "MISTRAL_API_KEY_A1", "OPENROUTER_API_KEY_A1",
+              "PEXELS_API_KEY", "PIXABAY_API_KEY", "PRAYER_TIMES_API_URL", "QURAN_API_URL", "TAVILY_API_KEY_A1", "TOKEN_GITHUB"
+          ]
+          for k in other_keys:
+              add_to_report(check_key(k, os.getenv(k, "")))
+
+          # Finalize chunks
+          if current_chunk: report_chunks.append(current_chunk)
+
+          # SEND TO TELEGRAM
+          if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+              print(f"Attempting to send {len(report_chunks)} message chunk(s) to Telegram...")
+              for i, chunk in enumerate(report_chunks):
+                  res = requests.post(
+                      f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                      json={"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "parse_mode": "Markdown"}
+                  )
+                  if res.status_code == 200:
+                      print(f"✅ Chunk {i+1} sent successfully!")
+                  else:
+                      print(f"❌ Failed to send Chunk {i+1}: {res.status_code} - {res.text}")
+                  time.sleep(1) # Prevent Telegram rate limits
+          else:
+              print("❌ Telegram credentials missing! Outputting to console only:\n")
+              for c in report_chunks: print(c)
+          '
