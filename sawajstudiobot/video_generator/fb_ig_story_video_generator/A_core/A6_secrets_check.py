@@ -2,33 +2,19 @@
 # ║  📄 FILE:      A6_secrets_check.py                       ║
 # ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
 # ║                A_core/A6_secrets_check.py                ║
-# ║  🎯 PURPOSE:   Secrets + API verification before run     ║
+# ║  🎯 PURPOSE:   Verify secrets (matching existing names)  ║
 # ║  📖 FOLDER:    A_core                                    ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
-🔐 SECRETS CHECK MODULE
-═══════════════════════
+🔐 SECRETS CHECK MODULE (Name-Matched)
+══════════════════════════════════════
 
 🎯 Purpose:
-   Har run se pehle check karta hai:
-   1. Kaun se secrets SET hain, kaun se MISSING
-   2. Kaun si API actually kaam kar rahi hai
-   3. Telegram par full report bhejta hai
-
-📊 Check Categories:
-   ✅ Telegram      → Bot token + Chat ID
-   ✅ Facebook      → Meta token + Page ID
-   ✅ Instagram     → IG token + Business ID
-   ✅ YouTube       → Client ID + Secret + Refresh (optional)
-   ✅ Google Drive  → Client ID + Secret + Refresh + Folder ID
-   ✅ AI Providers  → OpenRouter, Groq, Gemini, Mistral, etc.
-   ✅ Media APIs    → Pexels, Pixabay, Freesound
-   ✅ TTS/Translate → ElevenLabs, DeepL
-
-🌐 API Health Check:
-   Actual API call karke response check karta hai
-   (200 OK = working, 401 = bad token, etc.)
+   Aapke existing secret names ko check karta hai.
+   
+   Multiple names try karta hai (fallback chain):
+   Example: GROQ_API_KEY OR GROQ_API_KEY_AI
 """
 
 import os
@@ -38,7 +24,25 @@ from A_core.A2_logger import log_file_start, log_file_end, log_step
 
 
 # ═══════════════════════════════════════════════════════════
-# 📋 SECRETS REGISTRY — Ye saare secrets check honge
+# 🔧 HELPER — Check if any of the names is set
+# ═══════════════════════════════════════════════════════════
+
+def _check_env(*names) -> tuple:
+    """
+    Check multiple env var names, return first found.
+    
+    Returns:
+        (found: bool, actual_name: str, length: int)
+    """
+    for name in names:
+        val = os.environ.get(name, "").strip()
+        if val and val not in ("your_token_here", "undefined"):
+            return (True, name, len(val))
+    return (False, names[0] if names else "", 0)
+
+
+# ═══════════════════════════════════════════════════════════
+# 📋 SECRETS REGISTRY — Multiple names per secret
 # ═══════════════════════════════════════════════════════════
 
 SECRETS_REGISTRY = {
@@ -46,43 +50,82 @@ SECRETS_REGISTRY = {
         "label": "📱 Telegram",
         "required": True,
         "secrets": {
-            "TELEGRAM_BOT_TOKEN": "Telegram Bot Token",
-            "TELEGRAM_CHAT_ID": "Telegram Chat ID",
+            "TELEGRAM_BOT_TOKEN": {
+                "label": "Telegram Bot Token",
+                "names": ["TELEGRAM_BOT_TOKEN"],
+            },
+            "TELEGRAM_CHAT_ID": {
+                "label": "Telegram Chat ID",
+                "names": ["TELEGRAM_CHAT_ID"],
+            },
         },
     },
     "facebook": {
         "label": "📘 Facebook",
         "required": True,
         "secrets": {
-            "FACEBOOK_META_TOKEN": "Meta Graph API Token",
-            "FACEBOOK_PAGE_ID": "Facebook Page ID",
+            "FACEBOOK_META_TOKEN": {
+                "label": "Meta Graph Token",
+                "names": ["FACEBOOK_META_TOKEN", "FACEBOOK_INSTAGRAM_META_TOKEN"],
+            },
+            "FACEBOOK_PAGE_ID": {
+                "label": "Facebook Page ID",
+                "names": ["FACEBOOK_PAGE_ID"],
+            },
         },
     },
     "instagram": {
         "label": "📸 Instagram",
         "required": True,
         "secrets": {
-            "FACEBOOK_INSTAGRAM_META_TOKEN": "Instagram Graph Token",
-            "INSTAGRAM_BUSINESS_ACCOUNT_ID": "IG Business Account ID",
+            "FACEBOOK_INSTAGRAM_META_TOKEN": {
+                "label": "IG Graph Token",
+                "names": ["FACEBOOK_INSTAGRAM_META_TOKEN", "FACEBOOK_META_TOKEN"],
+            },
+            "INSTAGRAM_BUSINESS_ACCOUNT_ID": {
+                "label": "IG Business ID",
+                "names": ["INSTAGRAM_BUSINESS_ACCOUNT_ID"],
+            },
         },
     },
     "youtube": {
         "label": "📺 YouTube",
         "required": False,
         "secrets": {
-            "YOUTUBE_CLIENT_ID": "YouTube OAuth Client ID",
-            "YOUTUBE_CLIENT_SECRET": "YouTube OAuth Secret",
-            "YOUTUBE_REFRESH_TOKEN": "YouTube Refresh Token",
+            "YOUTUBE_CLIENT_ID": {
+                "label": "YT OAuth Client ID",
+                "names": ["YOUTUBE_CLIENT_ID"],
+            },
+            "YOUTUBE_CLIENT_SECRET": {
+                "label": "YT OAuth Secret",
+                "names": ["YOUTUBE_CLIENT_SECRET"],
+            },
+            "YOUTUBE_REFRESH_TOKEN": {
+                "label": "YT Refresh Token",
+                "names": ["YOUTUBE_REFRESH_TOKEN"],
+            },
         },
     },
     "drive": {
         "label": "☁️  Google Drive",
         "required": True,
         "secrets": {
-            "GOOGLE_DRIVE_CLIENT_ID": "Drive OAuth Client ID",
-            "GOOGLE_DRIVE_CLIENT_SECRET": "Drive OAuth Secret",
-            "GOOGLE_DRIVE_REFRESH_TOKEN": "Drive Refresh Token",
-            "GDRIVE_STORY_VIDEO_FOLDER_ID": "Story Folder ID",
+            "GOOGLE_DRIVE_CLIENT_ID": {
+                "label": "Drive Client ID",
+                "names": ["GOOGLE_DRIVE_CLIENT_ID"],
+            },
+            "GOOGLE_DRIVE_CLIENT_SECRET": {
+                "label": "Drive Client Secret",
+                "names": ["GOOGLE_DRIVE_CLIENT_SECRET"],
+            },
+            "GOOGLE_DRIVE_REFRESH_TOKEN": {
+                "label": "Drive Refresh Token",
+                "names": ["GOOGLE_DRIVE_REFRESH_TOKEN"],
+            },
+            "GDRIVE_STORY_VIDEO_FOLDER_ID": {
+                "label": "Story Folder ID",
+                "names": ["GDRIVE_STORY_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID"],
+            },
         },
     },
     "ai_providers": {
@@ -90,12 +133,34 @@ SECRETS_REGISTRY = {
         "required": False,
         "min_required": 1,
         "secrets": {
-            "OPENROUTER_API_KEY": "OpenRouter",
-            "GROQ_API_KEY": "Groq",
-            "GEMINI_API_KEY": "Gemini",
-            "MISTRAL_API_KEY": "Mistral",
-            "CEREBRAS_API_KEY": "Cerebras",
-            "COHERE_API_KEY": "Cohere",
+            "OPENROUTER_API_KEY": {
+                "label": "OpenRouter",
+                "names": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEY_AI"],
+            },
+            "GROQ_API_KEY": {
+                "label": "Groq",
+                "names": ["GROQ_API_KEY", "GROQ_API_KEY_AI"],
+            },
+            "GEMINI_API_KEY": {
+                "label": "Gemini",
+                "names": ["GEMINI_API_KEY", "GEMINI_API_KEY_AI"],
+            },
+            "MISTRAL_API_KEY": {
+                "label": "Mistral",
+                "names": ["MISTRAL_API_KEY", "MISTRAL_API_KEY_AI"],
+            },
+            "CEREBRAS_API_KEY": {
+                "label": "Cerebras",
+                "names": [
+                    "CEREBRAS_API_KEY",
+                    "CEREBRAS_API_KEY_AI",
+                    "CELEBRAS_API_KEY_AI",   # Aapka typo
+                ],
+            },
+            "COHERE_API_KEY": {
+                "label": "Cohere",
+                "names": ["COHERE_API_KEY", "COHERE_API_KEY_AI"],
+            },
         },
     },
     "media_apis": {
@@ -103,39 +168,44 @@ SECRETS_REGISTRY = {
         "required": False,
         "min_required": 1,
         "secrets": {
-            "PEXELS_API_KEY": "Pexels",
-            "PIXABAY_API_KEY": "Pixabay",
-            "FREESOUND_API_KEY": "Freesound",
+            "PEXELS_API_KEY": {
+                "label": "Pexels",
+                "names": ["PEXELS_API_KEY"],
+            },
+            "PIXABAY_API_KEY": {
+                "label": "Pixabay",
+                "names": ["PIXABAY_API_KEY"],
+            },
+            "FREESOUND_API_KEY": {
+                "label": "Freesound",
+                "names": ["FREESOUND_API_KEY"],
+            },
         },
     },
     "tts_translate": {
         "label": "🎙️  TTS / Translation",
         "required": False,
         "secrets": {
-            "ELEVENLABS_API_KEY": "ElevenLabs TTS",
-            "DEEPL_API_KEY": "DeepL Translate",
+            "ELEVENLABS_API_KEY": {
+                "label": "ElevenLabs",
+                "names": ["ELEVENLABS_API_KEY"],
+            },
+            "DEEPL_API_KEY": {
+                "label": "DeepL Translate",
+                "names": ["DEEPL_API_KEY"],
+            },
         },
     },
 }
 
 
 # ═══════════════════════════════════════════════════════════
-# 🔐 SECRETS CHECKER CLASS
+# 🔐 SECRETS CHECKER
 # ═══════════════════════════════════════════════════════════
 
 class SecretsChecker:
-    """
-    Verify all secrets + API health.
+    """Verify secrets + API health with fallback names."""
     
-    Usage:
-        checker = SecretsChecker(base)
-        report = checker.run()
-        checker.send_telegram_report(report)
-    """
-    
-    # ─────────────────────────────────────────────────────
-    # ① INIT
-    # ─────────────────────────────────────────────────────
     def __init__(self, base=None):
         log_file_start("A6_secrets_check.py", "Secrets + API verification")
         self.base = base
@@ -143,28 +213,14 @@ class SecretsChecker:
         log_file_end("A6_secrets_check.py", "success", "Ready")
     
     # ─────────────────────────────────────────────────────
-    # ② RUN — main verification
+    # ② RUN
     # ─────────────────────────────────────────────────────
     def run(self) -> dict:
-        """
-        Run full verification.
-        
-        Returns:
-            {
-                "secrets": {...},
-                "api_health": {...},
-                "summary": {...},
-            }
-        """
+        """Run full verification."""
         log_step("A6_secrets_check.py", "Starting verification", "ok")
         
-        # ═══════════ ① Check secrets ═══════════
         secrets_report = self._check_all_secrets()
-        
-        # ═══════════ ② API health check ═══════════
         api_report = self._check_api_health()
-        
-        # ═══════════ ③ Build summary ═══════════
         summary = self._build_summary(secrets_report, api_report)
         
         log_step(
@@ -200,22 +256,22 @@ class SecretsChecker:
                 "total": len(meta["secrets"]),
             }
             
-            for env_key, label in meta["secrets"].items():
-                value = os.environ.get(env_key, "").strip()
-                is_set = bool(value) and value not in ("", "your_token_here", "undefined")
+            for secret_key, secret_meta in meta["secrets"].items():
+                found, actual_name, length = _check_env(*secret_meta["names"])
                 
-                cat_report["secrets"][env_key] = {
-                    "label": label,
-                    "is_set": is_set,
-                    "length": len(value) if value else 0,
+                cat_report["secrets"][secret_key] = {
+                    "label": secret_meta["label"],
+                    "is_set": found,
+                    "actual_name": actual_name if found else "",
+                    "length": length,
                 }
                 
-                if is_set:
+                if found:
                     cat_report["set_count"] += 1
                 else:
                     cat_report["missing_count"] += 1
             
-            # ───── Category status ─────
+            # ───── Status ─────
             if cat_report["missing_count"] == 0:
                 cat_report["status"] = "complete"
             elif cat_report["set_count"] >= cat_report["min_required"]:
@@ -233,69 +289,44 @@ class SecretsChecker:
     # ④ API HEALTH CHECK
     # ─────────────────────────────────────────────────────
     def _check_api_health(self) -> dict:
-        """
-        Check actual API endpoints.
-        
-        Note: Sirf light-weight checks, video download nahi.
-        """
-        results = {}
-        
-        # ═══════════ Telegram ═══════════
-        results["telegram"] = self._ping_telegram()
-        
-        # ═══════════ Facebook Graph ═══════════
-        results["facebook"] = self._ping_facebook()
-        
-        # ═══════════ Instagram Graph ═══════════
-        results["instagram"] = self._ping_instagram()
-        
-        # ═══════════ Google Drive ═══════════
-        results["google_drive"] = self._ping_drive()
-        
-        # ═══════════ AI Providers ═══════════
-        results["openrouter"] = self._ping_openrouter()
-        results["groq"] = self._ping_groq()
-        
-        # ═══════════ Media ═══════════
-        results["pexels"] = self._ping_pexels()
-        
-        return results
+        """Check actual API endpoints."""
+        return {
+            "telegram": self._ping_telegram(),
+            "facebook": self._ping_facebook(),
+            "instagram": self._ping_instagram(),
+            "google_drive": self._ping_drive(),
+            "openrouter": self._ping_openrouter(),
+            "groq": self._ping_groq(),
+            "pexels": self._ping_pexels(),
+        }
     
     # ─────────────────────────────────────────────────────
-    # ⑤ TELEGRAM PING
+    # ⑤-⑪ API PINGS
     # ─────────────────────────────────────────────────────
+    
     def _ping_telegram(self) -> dict:
-        """Check Telegram bot token."""
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
         if not token:
             return {"status": "skipped", "reason": "no token"}
-        
         try:
             import requests
             r = requests.get(
                 f"https://api.telegram.org/bot{token}/getMe",
                 timeout=8,
             )
-            
             if r.status_code == 200 and r.json().get("ok"):
                 bot = r.json().get("result", {})
-                return {
-                    "status": "working",
-                    "bot_name": bot.get("username", "?"),
-                    "code": 200,
-                }
-            
+                return {"status": "working", "bot_name": bot.get("username", "?"), "code": 200}
             return {"status": "failed", "code": r.status_code}
-        
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
-    # ─────────────────────────────────────────────────────
-    # ⑥ FACEBOOK PING
-    # ─────────────────────────────────────────────────────
     def _ping_facebook(self) -> dict:
-        """Check Facebook page token."""
-        token = os.environ.get("FACEBOOK_META_TOKEN", "").strip()
+        # Try both names
+        token = (
+            os.environ.get("FACEBOOK_META_TOKEN", "").strip()
+            or os.environ.get("FACEBOOK_INSTAGRAM_META_TOKEN", "").strip()
+        )
         page_id = os.environ.get("FACEBOOK_PAGE_ID", "").strip()
         
         if not token or not page_id:
@@ -308,30 +339,16 @@ class SecretsChecker:
                 params={"access_token": token, "fields": "name"},
                 timeout=10,
             )
-            
             if r.status_code == 200:
                 data = r.json()
-                return {
-                    "status": "working",
-                    "page_name": data.get("name", "?"),
-                    "code": 200,
-                }
+                return {"status": "working", "page_name": data.get("name", "?"), "code": 200}
             
             err = r.json().get("error", {}).get("message", "")
-            return {
-                "status": "failed",
-                "code": r.status_code,
-                "error": err[:80],
-            }
-        
+            return {"status": "failed", "code": r.status_code, "error": err[:80]}
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
-    # ─────────────────────────────────────────────────────
-    # ⑦ INSTAGRAM PING
-    # ─────────────────────────────────────────────────────
     def _ping_instagram(self) -> dict:
-        """Check Instagram business account token."""
         token = os.environ.get("FACEBOOK_INSTAGRAM_META_TOKEN", "").strip()
         ig_id = os.environ.get("INSTAGRAM_BUSINESS_ACCOUNT_ID", "").strip()
         
@@ -345,30 +362,16 @@ class SecretsChecker:
                 params={"access_token": token, "fields": "username"},
                 timeout=10,
             )
-            
             if r.status_code == 200:
                 data = r.json()
-                return {
-                    "status": "working",
-                    "username": data.get("username", "?"),
-                    "code": 200,
-                }
+                return {"status": "working", "username": data.get("username", "?"), "code": 200}
             
             err = r.json().get("error", {}).get("message", "")
-            return {
-                "status": "failed",
-                "code": r.status_code,
-                "error": err[:80],
-            }
-        
+            return {"status": "failed", "code": r.status_code, "error": err[:80]}
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
-    # ─────────────────────────────────────────────────────
-    # ⑧ GOOGLE DRIVE PING
-    # ─────────────────────────────────────────────────────
     def _ping_drive(self) -> dict:
-        """Check Google Drive credentials."""
         client_id = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "").strip()
         client_secret = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "").strip()
         refresh_token = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN", "").strip()
@@ -388,29 +391,20 @@ class SecretsChecker:
                 },
                 timeout=10,
             )
-            
             if r.status_code == 200 and "access_token" in r.json():
                 return {"status": "working", "code": 200}
-            
             err = r.json().get("error", "")
-            return {
-                "status": "failed",
-                "code": r.status_code,
-                "error": err[:80],
-            }
-        
+            return {"status": "failed", "code": r.status_code, "error": err[:80]}
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
-    # ─────────────────────────────────────────────────────
-    # ⑨ OPENROUTER PING
-    # ─────────────────────────────────────────────────────
     def _ping_openrouter(self) -> dict:
-        """Check OpenRouter API key."""
-        key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+        key = (
+            os.environ.get("OPENROUTER_API_KEY", "").strip()
+            or os.environ.get("OPENROUTER_API_KEY_AI", "").strip()
+        )
         if not key:
             return {"status": "skipped", "reason": "no key"}
-        
         try:
             import requests
             r = requests.get(
@@ -418,24 +412,19 @@ class SecretsChecker:
                 headers={"Authorization": f"Bearer {key}"},
                 timeout=10,
             )
-            
             if r.status_code == 200:
                 return {"status": "working", "code": 200}
-            
             return {"status": "failed", "code": r.status_code}
-        
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
-    # ─────────────────────────────────────────────────────
-    # ⑩ GROQ PING
-    # ─────────────────────────────────────────────────────
     def _ping_groq(self) -> dict:
-        """Check Groq API key."""
-        key = os.environ.get("GROQ_API_KEY", "").strip()
+        key = (
+            os.environ.get("GROQ_API_KEY", "").strip()
+            or os.environ.get("GROQ_API_KEY_AI", "").strip()
+        )
         if not key:
             return {"status": "skipped", "reason": "no key"}
-        
         try:
             import requests
             r = requests.get(
@@ -443,24 +432,16 @@ class SecretsChecker:
                 headers={"Authorization": f"Bearer {key}"},
                 timeout=10,
             )
-            
             if r.status_code == 200:
                 return {"status": "working", "code": 200}
-            
             return {"status": "failed", "code": r.status_code}
-        
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
-    # ─────────────────────────────────────────────────────
-    # ⑪ PEXELS PING
-    # ─────────────────────────────────────────────────────
     def _ping_pexels(self) -> dict:
-        """Check Pexels API key."""
         key = os.environ.get("PEXELS_API_KEY", "").strip()
         if not key:
             return {"status": "skipped", "reason": "no key"}
-        
         try:
             import requests
             r = requests.get(
@@ -469,28 +450,22 @@ class SecretsChecker:
                 headers={"Authorization": key},
                 timeout=10,
             )
-            
             if r.status_code == 200:
                 return {"status": "working", "code": 200}
-            
             return {"status": "failed", "code": r.status_code}
-        
         except Exception as e:
             return {"status": "error", "reason": str(e)[:60]}
     
     # ─────────────────────────────────────────────────────
     # ⑫ BUILD SUMMARY
     # ─────────────────────────────────────────────────────
-    def _build_summary(self, secrets_report: dict, api_report: dict) -> dict:
-        """Build summary statistics."""
+    def _build_summary(self, secrets_report, api_report) -> dict:
         total_secrets = 0
         working_secrets = 0
-        
         for cat_data in secrets_report.values():
             total_secrets += cat_data["total"]
             working_secrets += cat_data["set_count"]
         
-        # ───── API stats ─────
         checked_apis = 0
         working_apis = 0
         failed_apis = 0
@@ -522,34 +497,27 @@ class SecretsChecker:
     # ⑬ SEND TELEGRAM REPORT
     # ─────────────────────────────────────────────────────
     def send_telegram_report(self, report: dict):
-        """Send formatted report to Telegram."""
         try:
             from A_core.A3_telegram import send_tg
         except ImportError:
             return
         
-        # ═══════════ Build message ═══════════
         msg = self._format_report(report)
-        
-        # ═══════════ Split if too long ═══════════
         chunks = self._split_message(msg, max_len=3800)
         for chunk in chunks:
             send_tg(chunk, silent=True)
     
     # ─────────────────────────────────────────────────────
-    # ⑭ FORMAT REPORT (HTML for Telegram)
+    # ⑭ FORMAT REPORT
     # ─────────────────────────────────────────────────────
     def _format_report(self, report: dict) -> str:
-        """Format report as HTML Telegram message."""
         lines = []
         s = report["summary"]
         
-        # ═══════════ Header ═══════════
         lines.append("<b>🔐 SECRETS &amp; API VERIFICATION</b>")
         lines.append(f"🕐 {report['timestamp']}")
         lines.append("━━━━━━━━━━━━━━━━━━━━━")
         
-        # ═══════════ Summary ═══════════
         lines.append("")
         lines.append("<b>📊 SUMMARY</b>")
         lines.append(f"🔑 Secrets: <b>{s['working_secrets']}/{s['total_secrets']}</b>")
@@ -558,7 +526,6 @@ class SecretsChecker:
         if s['failed_apis'] > 0:
             lines.append(f"❌ Failed: <b>{s['failed_apis']}</b>")
         
-        # ═══════════ Secrets by category ═══════════
         lines.append("")
         lines.append("<b>🔑 SECRETS STATUS</b>")
         
@@ -566,11 +533,13 @@ class SecretsChecker:
             icon = self._status_icon(cat["status"])
             lines.append(f"{icon} <b>{cat['label']}</b> ({cat['set_count']}/{cat['total']})")
             
-            for env_key, sec in cat["secrets"].items():
+            for secret_key, sec in cat["secrets"].items():
                 sec_icon = "✅" if sec["is_set"] else "❌"
-                lines.append(f"   {sec_icon} {sec['label']}")
+                name_hint = ""
+                if sec["is_set"] and sec["actual_name"] != secret_key:
+                    name_hint = f" <i>({sec['actual_name']})</i>"
+                lines.append(f"   {sec_icon} {sec['label']}{name_hint}")
         
-        # ═══════════ API Health ═══════════
         lines.append("")
         lines.append("<b>🌐 API HEALTH CHECK</b>")
         
@@ -593,7 +562,6 @@ class SecretsChecker:
             
             lines.append(f"{icon} {api_name}{detail}")
         
-        # ═══════════ Recommendations ═══════════
         lines.append("")
         lines.append("<b>🎯 RECOMMENDATIONS</b>")
         recommendations = self._build_recommendations(report)
@@ -606,11 +574,7 @@ class SecretsChecker:
         
         return "\n".join(lines)
     
-    # ─────────────────────────────────────────────────────
-    # ⑮ STATUS ICON HELPER
-    # ─────────────────────────────────────────────────────
     def _status_icon(self, status: str) -> str:
-        """Icon for secrets category status."""
         return {
             "complete": "✅",
             "partial": "🟡",
@@ -619,7 +583,6 @@ class SecretsChecker:
         }.get(status, "⚫")
     
     def _api_icon(self, status: str) -> str:
-        """Icon for API status."""
         return {
             "working": "🟢",
             "failed": "🔴",
@@ -627,19 +590,13 @@ class SecretsChecker:
             "skipped": "⚪",
         }.get(status, "⚫")
     
-    # ─────────────────────────────────────────────────────
-    # ⑯ BUILD RECOMMENDATIONS
-    # ─────────────────────────────────────────────────────
     def _build_recommendations(self, report: dict) -> list:
-        """Build actionable recommendations."""
         recs = []
         
-        # ───── Critical secrets missing ─────
         for cat_key, cat in report["secrets"].items():
             if cat["status"] == "critical":
                 recs.append(f"❌ <b>{cat['label']}</b> missing — pipeline fail hoga")
         
-        # ───── Failed APIs ─────
         for api_name, api_data in report["api_health"].items():
             if api_data.get("status") == "failed":
                 code = api_data.get("code", "?")
@@ -648,17 +605,13 @@ class SecretsChecker:
                 elif code == 403:
                     recs.append(f"🚫 <b>{api_name}</b> — Permission issue")
                 elif code == 429:
-                    recs.append(f"⏱️ <b>{api_name}</b> — Rate limit, thodi der baad try")
+                    recs.append(f"⏱️ <b>{api_name}</b> — Rate limit")
                 else:
                     recs.append(f"⚠️ <b>{api_name}</b> — HTTP {code}")
         
-        return recs[:5]  # Max 5 recommendations
+        return recs[:5]
     
-    # ─────────────────────────────────────────────────────
-    # ⑰ SPLIT MESSAGE
-    # ─────────────────────────────────────────────────────
     def _split_message(self, msg: str, max_len: int = 3800) -> list:
-        """Split long message into chunks."""
         if len(msg) <= max_len:
             return [msg]
         
@@ -679,17 +632,11 @@ class SecretsChecker:
 
 
 # ═══════════════════════════════════════════════════════════
-# 🚀 CONVENIENCE FUNCTION
+# 🚀 CONVENIENCE
 # ═══════════════════════════════════════════════════════════
 
 def verify_secrets(base=None) -> dict:
-    """
-    Quick function — run verification and send report.
-    
-    Usage:
-        from A_core.A6_secrets_check import verify_secrets
-        report = verify_secrets(self)   # Pass pipeline as base
-    """
+    """Quick function — run verification + send report."""
     checker = SecretsChecker(base)
     report = checker.run()
     checker.send_telegram_report(report)
@@ -710,7 +657,3 @@ if __name__ == "__main__":
     print(f"\n📊 Summary:")
     print(f"   Secrets: {report['summary']['working_secrets']}/{report['summary']['total_secrets']}")
     print(f"   APIs:    {report['summary']['working_apis']}/{report['summary']['checked_apis']}")
-    print(f"   Health:  {report['summary']['health_pct']}%")
-    
-    print("\n📄 Full Report Preview:")
-    print(checker._format_report(report)[:1500])
