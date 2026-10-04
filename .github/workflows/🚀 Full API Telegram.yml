@@ -1,4 +1,4 @@
-name: API Diagnosis
+name: API Diagnosis to Telegram
 on:
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Run Full Secrets Diagnosis
+      - name: Run Diagnosis and Send Telegram
         env:
           CEREBRAS_API_KEY_A1: ${{ secrets.CEREBRAS_API_KEY_A1 }}
           COHERE_API_KEY_A1: ${{ secrets.COHERE_API_KEY_A1 }}
@@ -54,61 +54,57 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: |
           python3 -c "
-          import os, json, time, urllib.request, urllib.parse
+          import os, time, urllib.request, urllib.parse, json
 
           bot_token = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
           chat_id = os.environ.get('TELEGRAM_CHAT_ID', '').strip()
 
           chunks = []
-          curr = '📊 *FULL REPOSITORY SECRETS DIAGNOSIS REPORT*\n\n'
+          curr = '📊 <b>FULL REPOSITORY SECRETS DIAGNOSIS REPORT</b>\n\n'
 
           def add(line):
               global curr, chunks
-              if len(curr) + len(line) > 3500:
+              if len(curr) + len(line) > 3200:
                   chunks.append(curr)
-                  curr = '📊 *DIAGNOSIS REPORT (Continued)*\n\n'
+                  curr = '📊 <b>DIAGNOSIS REPORT (Continued)</b>\n\n'
               curr += line + '\n'
 
           def mask(val):
               if not val:
                   return '❌ Missing'
               if len(val) <= 8:
-                  return '✅ Set'
-              return f'✅ Set ({val[:4]}...{val[-4:]})'
+                  return '✅ Present'
+              return f'✅ Present ({val[:4]}...{val[-4:]})'
 
-          def test_url(url, headers=None, data=None, method='GET'):
-              req = urllib.request.Request(url, headers=headers or {}, data=data, method=method)
+          def send_tg(text):
+              if not bot_token or not chat_id:
+                  print('❌ Telegram Token ya Chat ID missing hai!')
+                  return
+              url = f'https://api.telegram.org/bot{bot_token}/sendMessage'
+              data = urllib.parse.urlencode({'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}).encode('utf-8')
+              req = urllib.request.Request(url, data=data, method='POST')
               try:
-                  with urllib.request.urlopen(req, timeout=10) as resp:
-                      return resp.status, resp.read().decode('utf-8', errors='ignore')
+                  with urllib.request.urlopen(req) as resp:
+                      print('✅ Telegram Message Sent Successfully!')
               except Exception as e:
-                  return getattr(e, 'code', 0), str(e)
+                  print(f'❌ Telegram Send Error: {e}')
 
-          # 1. TELEGRAM BOT
-          add('*1. TELEGRAM BOT AUTH TEST*')
-          if bot_token:
-              st, body = test_url(f'https://api.telegram.org/bot{bot_token}/getMe')
-              if st == 200:
-                  add('✅ TELEGRAM_BOT: Valid Token')
-              else:
-                  add(f'❌ TELEGRAM_BOT: Status {st}')
-          else:
-              add('❌ TELEGRAM_BOT_TOKEN: Missing')
-
-          # 2. GEMINI AI
-          add('\n*2. AI APIs DIAGNOSIS*')
+          # 1. AI APIs DIAGNOSIS
+          add('🧠 <b>1. AI APIs DIAGNOSIS</b>')
           g_key = os.environ.get('GEMINI_API_KEY_A1', '').strip()
           if g_key:
-              st, body = test_url(f'https://generativelanguage.googleapis.com/v1beta/models?key={g_key}')
-              if st == 200:
-                  add('✅ GEMINI_API_KEY_A1: Active & Valid')
-              else:
-                  add(f'❌ GEMINI_API_KEY_A1: Status {st}')
+              try:
+                  url = f'https://generativelanguage.googleapis.com/v1beta/models?key={g_key}'
+                  req = urllib.request.Request(url)
+                  with urllib.request.urlopen(req) as resp:
+                      add('✅ <code>GEMINI_API_KEY_A1</code>: Active & Valid')
+              except Exception as e:
+                  add(f'❌ <code>GEMINI_API_KEY_A1</code>: Error ({e})')
           else:
-              add('❌ GEMINI_API_KEY_A1: Missing')
+              add('❌ <code>GEMINI_API_KEY_A1</code>: Missing')
 
-          # 3. GOOGLE DRIVE OAUTH
-          add('\n*3. OAUTH REFRESH TESTS*')
+          # 2. GOOGLE DRIVE OAUTH
+          add('\n☁️ <b>2. OAUTH REFRESH TESTS</b>')
           gd_c = os.environ.get('GOOGLE_DRIVE_CLIENT_ID', '').strip()
           gd_s = os.environ.get('GOOGLE_DRIVE_CLIENT_SECRET', '').strip()
           gd_r = os.environ.get('GOOGLE_DRIVE_REFRESH_TOKEN', '').strip()
@@ -117,15 +113,16 @@ jobs:
                   'client_id': gd_c, 'client_secret': gd_s,
                   'refresh_token': gd_r, 'grant_type': 'refresh_token'
               }).encode('utf-8')
-              st, body = test_url('https://oauth2.googleapis.com/token', headers={'Content-Type': 'application/x-www-form-urlencoded'}, data=payload, method='POST')
-              if st == 200:
-                  add('✅ GOOGLE DRIVE OAUTH: Refresh Token Valid')
-              else:
-                  add(f'❌ GOOGLE DRIVE OAUTH: Status {st}')
+              req = urllib.request.Request('https://oauth2.googleapis.com/token', data=payload, headers={'Content-Type': 'application/x-www-form-urlencoded'}, method='POST')
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      add('✅ <code>GOOGLE DRIVE OAUTH</code>: Refresh Token Active')
+              except Exception as e:
+                  add(f'❌ <code>GOOGLE DRIVE OAUTH</code>: Failed ({e})')
           else:
-              add('⚠️ GOOGLE DRIVE OAUTH: Credentials Incomplete')
+              add('⚠️ <code>GOOGLE DRIVE OAUTH</code>: Credentials Incomplete')
 
-          # 4. YOUTUBE OAUTH
+          # 3. YOUTUBE OAUTH
           yt_c = os.environ.get('YOUTUBE_CLIENT_ID', '').strip()
           yt_s = os.environ.get('YOUTUBE_CLIENT_SECRET', '').strip()
           yt_r = os.environ.get('YOUTUBE_REFRESH_TOKEN', '').strip()
@@ -134,16 +131,17 @@ jobs:
                   'client_id': yt_c, 'client_secret': yt_s,
                   'refresh_token': yt_r, 'grant_type': 'refresh_token'
               }).encode('utf-8')
-              st, body = test_url('https://oauth2.googleapis.com/token', headers={'Content-Type': 'application/x-www-form-urlencoded'}, data=payload, method='POST')
-              if st == 200:
-                  add('✅ YOUTUBE OAUTH: Refresh Token Valid')
-              else:
-                  add(f'❌ YOUTUBE OAUTH: Status {st}')
+              req = urllib.request.Request('https://oauth2.googleapis.com/token', data=payload, headers={'Content-Type': 'application/x-www-form-urlencoded'}, method='POST')
+              try:
+                  with urllib.request.urlopen(req) as resp:
+                      add('✅ <code>YOUTUBE OAUTH</code>: Refresh Token Active')
+              except Exception as e:
+                  add(f'❌ <code>YOUTUBE OAUTH</code>: Failed ({e})')
           else:
-              add('⚠️ YOUTUBE OAUTH: Credentials Incomplete')
+              add('⚠️ <code>YOUTUBE OAUTH</code>: Credentials Incomplete')
 
-          # 5. ALL SECRETS PRESENCE
-          add('\n*4. ALL SECRETS PRESENCE CHECK*')
+          # 4. ALL SECRETS PRESENCE
+          add('\n🔐 <b>3. ALL SECRETS PRESENCE CHECK</b>')
           all_keys = [
               'CEREBRAS_API_KEY_A1', 'COHERE_API_KEY_A1', 'COVER_API_KEY', 'DAILY_YOUTUBE_YT_PLAYLIST_ID',
               'DEEPGRAM_API_KEY', 'DEEPLL_API_KEY', 'ELEVENLABS_API_KEY', 'FACEBOOK_INSTAGRAM_META_TOKEN',
@@ -154,15 +152,13 @@ jobs:
               'QURAN_API_URL', 'TAVILY_API_KEY_A1', 'TOKEN_GITHUB'
           ]
           for k in all_keys:
-              add(f'{k}: {mask(os.environ.get(k, \"\"))}')
+              add(f'<code>{k}</code>: {mask(os.environ.get(k, \"\"))}')
 
           if curr:
               chunks.append(curr)
 
-          # SEND TO TELEGRAM
-          if bot_token and chat_id:
-              for chunk in chunks:
-                  p = urllib.parse.urlencode({'chat_id': chat_id, 'text': chunk, 'parse_mode': 'Markdown'}).encode('utf-8')
-                  test_url(f'https://api.telegram.org/bot{bot_token}/sendMessage', headers={'Content-Type': 'application/x-www-form-urlencoded'}, data=p, method='POST')
-                  time.sleep(1)
+          # SEND ALL CHUNKS TO TELEGRAM
+          for chunk in chunks:
+              send_tg(chunk)
+              time.sleep(1)
           "
