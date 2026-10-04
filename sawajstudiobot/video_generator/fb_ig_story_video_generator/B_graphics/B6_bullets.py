@@ -189,4 +189,257 @@ def _calc_alphas(progress: float) -> tuple:
     else:
         current_alpha = 1.0
         prev_alpha = 0.0
-        next_alpha = 0.0
+        next_alpha = 0.0    
+    # ───── Clamp ─────
+    current_alpha = max(0.0, min(1.0, current_alpha))
+    prev_alpha = max(0.0, min(1.0, prev_alpha))
+    next_alpha = max(0.0, min(1.0, next_alpha))
+    
+    return current_alpha, prev_alpha, next_alpha
+
+
+def _smooth(x: float) -> float:
+    """Smooth easing function (S-curve)."""
+    x = max(0.0, min(1.0, x))
+    return x * x * (3 - 2 * x)
+
+
+# ═══════════════════════════════════════════════════════════
+# 🎨 DRAW ONE LANGUAGE ROW
+# ═══════════════════════════════════════════════════════════
+
+def _draw_lang_row(
+    draw,
+    state: dict,
+    y: int,
+    font,
+    color: tuple,
+    global_alpha: float,
+):
+    """
+    Draw one language row (bullet + word) with fade state.
+    
+    Args:
+        draw:         PIL ImageDraw
+        state:        from _get_word_state()
+        y:            Y position
+        font:         PIL font for this script
+        color:        RGB base color (without alpha)
+        global_alpha: Overall alpha multiplier
+    """
+    word = state["word"]
+    if not word:
+        return
+    
+    # ───── Alphas after global multiplier ─────
+    current_alpha = state["alpha"] * global_alpha
+    prev_alpha = state["prev_alpha"] * global_alpha
+    next_alpha = state["next_alpha"] * global_alpha
+    
+    # ───── Draw previous word (ghost, faded left) ─────
+    if state["prev_word"] and prev_alpha > 0.05:
+        _draw_word(
+            draw, state["prev_word"], y, font, color,
+            alpha=prev_alpha * 0.4,
+            x_offset=-60,
+        )
+    
+    # ───── Draw next word (ghost, faded right) ─────
+    if state["next_word"] and next_alpha > 0.05:
+        _draw_word(
+            draw, state["next_word"], y, font, color,
+            alpha=next_alpha * 0.4,
+            x_offset=60,
+        )
+    
+    # ───── Draw current word (full) ─────
+    if current_alpha > 0.05:
+        _draw_word(
+            draw, word, y, font, color,
+            alpha=current_alpha,
+            x_offset=0,
+        )
+    
+    # ───── Bullet (always full, pulsing) ─────
+    _draw_bullet(draw, y, color, current_alpha)
+
+
+# ═══════════════════════════════════════════════════════════
+# 📝 DRAW WORD with shadow
+# ═══════════════════════════════════════════════════════════
+
+def _draw_word(
+    draw,
+    word: str,
+    y: int,
+    font,
+    color: tuple,
+    alpha: float,
+    x_offset: int = 0,
+):
+    """Draw a single word with shadow and alpha."""
+    if not word:
+        return
+    
+    a = int(255 * alpha)
+    if a <= 5:
+        return
+    
+    # ───── Position ─────
+    x = TEXT_X + x_offset
+    
+    # ───── Shadow (dark, offset) ─────
+    shadow_alpha = int(a * 0.85)
+    draw.text(
+        (x + 3, y + 4),
+        word,
+        font=font,
+        fill=(0, 0, 0, shadow_alpha),
+    )
+    
+    # ───── Main text ─────
+    draw.text(
+        (x, y),
+        word,
+        font=font,
+        fill=(*color, a),
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# 🟣 DRAW BULLET
+# ═══════════════════════════════════════════════════════════
+
+def _draw_bullet(draw, y: int, color: tuple, alpha: float):
+    """Draw bullet circle at left of text row."""
+    a = int(255 * max(alpha, 0.6))     # Bullet always at least 60% visible
+    
+    cy = y + BULLET_SIZE // 2 + 10
+    cx = BULLET_X + BULLET_SIZE // 2
+    
+    # ───── Outer glow ─────
+    glow_color = (*color, a // 3)
+    draw.ellipse(
+        [cx - BULLET_SIZE // 2 - 4, cy - BULLET_SIZE // 2 - 4,
+         cx + BULLET_SIZE // 2 + 4, cy + BULLET_SIZE // 2 + 4],
+        fill=glow_color,
+    )
+    
+    # ───── Main bullet ─────
+    draw.ellipse(
+        [cx - BULLET_SIZE // 2, cy - BULLET_SIZE // 2,
+         cx + BULLET_SIZE // 2, cy + BULLET_SIZE // 2],
+        fill=(*color, a),
+        outline=(255, 255, 255, a),
+        width=2,
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# 🎯 MAIN: DRAW BULLETS
+# ═══════════════════════════════════════════════════════════
+
+def draw_bullets(
+    draw,
+    hindi: str,
+    urdu: str,
+    english: str,
+    elapsed: float,
+    voice_dur: float,
+    y_start: int = DEFAULT_Y_START,
+    alpha: float = 1.0,
+):
+    """
+    Draw 3-language bullets with smooth word transitions.
+    
+    Args:
+        draw:      PIL ImageDraw
+        hindi:     Hindi text
+        urdu:      Urdu/Arabic text
+        english:   English text
+        elapsed:   Elapsed seconds in main content
+        voice_dur: Total voice duration
+        y_start:   Starting Y position
+        alpha:     Global opacity (0.0 to 1.0)
+    """
+    # ───── Load fonts once ─────
+    font_hindi = FontLoader.load(FONT_SIZE, "devanagari", bold=True)
+    font_arabic = FontLoader.load(FONT_SIZE, "arabic", bold=True)
+    font_latin = FontLoader.load(FONT_SIZE, "latin", bold=True)
+    
+    # ───── Get state for each language ─────
+    hi_state = _get_word_state(hindi, elapsed, voice_dur)
+    ur_state = _get_word_state(urdu, elapsed, voice_dur)
+    en_state = _get_word_state(english, elapsed, voice_dur)
+    
+    # ───── Draw each row ─────
+    y = y_start
+    
+    # 🟣 HINDI
+    _draw_lang_row(draw, hi_state, y, font_hindi, C_HINDI, alpha)
+    y += DEFAULT_GAP
+    
+    # 🔵 ARABIC
+    _draw_lang_row(draw, ur_state, y, font_arabic, C_URDU, alpha)
+    y += DEFAULT_GAP
+    
+    # 🔴 ENGLISH
+    _draw_lang_row(draw, en_state, y, font_latin, C_ENGLISH, alpha)
+
+
+# ═══════════════════════════════════════════════════════════
+# 📊 PROGRESS INFO — for debugging / sync check
+# ═══════════════════════════════════════════════════════════
+
+def get_sync_info(hindi: str, urdu: str, english: str,
+                  elapsed: float, voice_dur: float) -> dict:
+    """
+    Return sync info for all 3 languages.
+    Useful for debugging word timing.
+    """
+    return {
+        "elapsed": round(elapsed, 2),
+        "voice_dur": round(voice_dur, 2),
+        "progress_pct": round(100 * elapsed / max(voice_dur, 0.01), 1),
+        "hindi": {
+            "word_count": len(hindi.split()) if hindi else 0,
+            "current_idx": _get_word_state(hindi, elapsed, voice_dur)["idx"],
+        },
+        "urdu": {
+            "word_count": len(urdu.split()) if urdu else 0,
+            "current_idx": _get_word_state(urdu, elapsed, voice_dur)["idx"],
+        },
+        "english": {
+            "word_count": len(english.split()) if english else 0,
+            "current_idx": _get_word_state(english, elapsed, voice_dur)["idx"],
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════
+# 🧪 QUICK TEST
+# ═══════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    print("🎯 Bullets Self-Test")
+    print("=" * 50)
+    
+    # Test text
+    hindi = "अमल का दारोमदार नीयतों पर है और हर इंसान को वही मिलेगा जिसकी उसने नीयत की"
+    urdu = "إنما الأعمال بالنيات وإنما لكل امرئ ما نوى"
+    english = "Actions are judged by intentions and every person will get what they intended"
+    
+    voice_dur = 10.0   # 10 seconds test
+    
+    # Test at multiple points
+    for elapsed in [0.5, 2.0, 5.0, 8.0, 9.5]:
+        img = Image.new("RGBA", (1080, 1920), (20, 15, 8, 255))
+        draw = ImageDraw.Draw(img)
+        draw_bullets(draw, hindi, urdu, english, elapsed, voice_dur)
+        img.save(f"test_bullets_t{int(elapsed*10)}.png")
+        
+        info = get_sync_info(hindi, urdu, english, elapsed, voice_dur)
+        print(f"   t={elapsed}s → H:{info['hindi']['current_idx']} "
+              f"U:{info['urdu']['current_idx']} E:{info['english']['current_idx']}")
+    
+    print("\n✅ Bullets with smooth sync!")
