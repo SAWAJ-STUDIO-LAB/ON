@@ -2,43 +2,64 @@
 # ║  📄 FILE:      A1_config.py                              ║
 # ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
 # ║                A_core/A1_config.py                       ║
-# ║  🎯 PURPOSE:   Config with YouTube + upload modes        ║
+# ║  🎯 PURPOSE:   Config matching existing secret names     ║
 # ║  📖 FOLDER:    A_core                                    ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
-⚙️  CONFIG MODULE (UPGRADED)
-═══════════════════════════
+⚙️  CONFIG MODULE (Secret-Name Matched)
+═══════════════════════════════════════
 
 🎯 Purpose:
-   Environment variables load + upload modes decide karna.
+   Aapke GitHub Secrets ke existing naamon se match karta hai.
+   Kuchh bhi rename nahi karna padega.
 
-🔴 PEHLE KYA THA:
-   • Sirf 2 modes: offline / online
-   • YouTube support nahi
-   • Manual confirmation sirf bool
+📋 Secret Fallback Strategy:
+   Har env var ke liye MULTIPLE names try karta hai.
+   Jo pehle mile, wahi use hota hai.
 
-✅ AB KYA HAI:
-   • 4 Manual upload modes:
-       1. drive_only  → Sirf Google Drive
-       2. fb_ig       → Facebook Story + Instagram Story
-       3. youtube     → YouTube Shorts
-       4. all         → Sab kuch (Drive + FB + IG + YT)
-   
-   • Auto (schedule):
-       → Drive + FB Story + IG Story (YouTube skip by default)
+🔑 Examples:
+   Facebook Meta Token:
+     1. FACEBOOK_META_TOKEN         ← Preferred
+     2. FACEBOOK_INSTAGRAM_META_TOKEN ← Aapka current name
 
-📋 Environment Variables:
-   • GITHUB_EVENT_NAME  → "schedule" or "workflow_dispatch"
-   • UPLOAD_TARGET      → "drive_only" | "fb_ig" | "youtube" | "all"
-   • CONFIRM_UPLOAD     → "true" | "false" (tick mark)
+   OpenRouter:
+     1. OPENROUTER_API_KEY          ← Preferred
+     2. OPENROUTER_API_KEY_AI       ← Aapka current name
 
-🔐 Safety:
-   • Manual mode mein CONFIRM_UPLOAD=true zaroori
-   • Auto mode mein always allowed
+   Groq:
+     1. GROQ_API_KEY
+     2. GROQ_API_KEY_AI
+
+   Cerebras:
+     1. CEREBRAS_API_KEY            ← Correct spelling
+     2. CEREBRAS_API_KEY_AI
+     3. CELEBRAS_API_KEY_AI         ← Aapka typo wala naam
 """
 
 import os
+
+
+# ═══════════════════════════════════════════════════════════
+# 🔧 HELPER — Get first non-empty env var
+# ═══════════════════════════════════════════════════════════
+
+def _env(*names, default=""):
+    """
+    Return first non-empty env value from given names.
+    
+    Args:
+        *names: Multiple env var names to try
+        default: Fallback if none found
+    
+    Returns:
+        First non-empty value, or default
+    """
+    for name in names:
+        val = os.environ.get(name, "").strip()
+        if val:
+            return val
+    return default
 
 
 # ═══════════════════════════════════════════════════════════
@@ -46,58 +67,90 @@ import os
 # ═══════════════════════════════════════════════════════════
 
 class Config:
-    """Config — multi-mode upload system (Story)."""
+    """Config — multi-mode upload system (Story) with fallback names."""
     
     # ─── TELEGRAM ───
-    TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-    TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+    TG_TOKEN = _env("TELEGRAM_BOT_TOKEN")
+    TG_CHAT_ID = _env("TELEGRAM_CHAT_ID")
     
     # ─── FACEBOOK ───
-    META_TOKEN = os.environ.get("FACEBOOK_META_TOKEN", "").strip()
-    PAGE_ID = os.environ.get("FACEBOOK_PAGE_ID", "").strip()
+    # Try both names (aapke paas FACEBOOK_INSTAGRAM_META_TOKEN hai)
+    META_TOKEN = _env(
+        "FACEBOOK_META_TOKEN",
+        "FACEBOOK_INSTAGRAM_META_TOKEN",
+    )
+    PAGE_ID = _env("FACEBOOK_PAGE_ID")
     
     # ─── INSTAGRAM ───
-    IG_TOKEN = os.environ.get("FACEBOOK_INSTAGRAM_META_TOKEN", "").strip()
-    IG_BUSINESS_ID = os.environ.get("INSTAGRAM_BUSINESS_ACCOUNT_ID", "").strip()
+    # Try both names
+    IG_TOKEN = _env(
+        "FACEBOOK_INSTAGRAM_META_TOKEN",
+        "FACEBOOK_META_TOKEN",
+    )
+    IG_BUSINESS_ID = _env("INSTAGRAM_BUSINESS_ACCOUNT_ID")
     
     # ─── YOUTUBE ───
-    YT_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
-    YT_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
-    YT_REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
-    YT_PLAYLIST_ID = os.environ.get("DAILY_HADEES_YT_PLAYLIST_ID", "").strip()
+    YT_CLIENT_ID = _env("YOUTUBE_CLIENT_ID")
+    YT_CLIENT_SECRET = _env("YOUTUBE_CLIENT_SECRET")
+    YT_REFRESH_TOKEN = _env("YOUTUBE_REFRESH_TOKEN")
+    YT_PLAYLIST_ID = _env("DAILY_HADEES_YT_PLAYLIST_ID")
     
     # ─── DRIVE ───
-    DRIVE_CLIENT_ID = os.environ.get("GOOGLE_DRIVE_CLIENT_ID")
-    DRIVE_CLIENT_SECRET = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
-    DRIVE_REFRESH_TOKEN = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN")
-    DRIVE_STORY_FOLDER_ID = os.environ.get("GDRIVE_STORY_VIDEO_FOLDER_ID")
+    DRIVE_CLIENT_ID = _env("GOOGLE_DRIVE_CLIENT_ID")
+    DRIVE_CLIENT_SECRET = _env("GOOGLE_DRIVE_CLIENT_SECRET")
+    DRIVE_REFRESH_TOKEN = _env("GOOGLE_DRIVE_REFRESH_TOKEN")
+    DRIVE_STORY_FOLDER_ID = _env(
+        "GDRIVE_STORY_VIDEO_FOLDER_ID",
+        "GDRIVE_SHORT_VIDEO_FOLDER_ID",  # Fallback
+    )
     
-    # ─── AI PROVIDERS ───
-    OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-    GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-    MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
-    CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY")
-    COHERE_API_KEY = os.environ.get("COHERE_API_KEY")
+    # ─── AI PROVIDERS (with _AI suffix support) ───
+    OPENROUTER_API_KEY = _env(
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_API_KEY_AI",
+    )
+    GROQ_API_KEY = _env(
+        "GROQ_API_KEY",
+        "GROQ_API_KEY_AI",
+    )
+    GEMINI_API_KEY = _env(
+        "GEMINI_API_KEY",
+        "GEMINI_API_KEY_AI",
+    )
+    MISTRAL_API_KEY = _env(
+        "MISTRAL_API_KEY",
+        "MISTRAL_API_KEY_AI",
+    )
+    CEREBRAS_API_KEY = _env(
+        "CEREBRAS_API_KEY",           # Correct spelling
+        "CEREBRAS_API_KEY_AI",        # Correct + _AI
+        "CELEBRAS_API_KEY_AI",        # Aapka typo wala
+    )
+    COHERE_API_KEY = _env(
+        "COHERE_API_KEY",
+        "COHERE_API_KEY_AI",
+    )
+    HUGGINGFACE_API_KEY = _env(
+        "HUGGINGFACE_API_KEY",
+        "HUGGINGFACE_API_KEY_AI",
+    )
     
     # ─── TTS / TRANSLATION ───
-    ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
-    DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY")
+    ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
+    DEEPL_API_KEY = _env("DEEPL_API_KEY")
     
     # ─── MEDIA APIS ───
-    PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
-    PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
-    FREESOUND_API_KEY = os.environ.get("FREESOUND_API_KEY")
+    PEXELS_API_KEY = _env("PEXELS_API_KEY")
+    PIXABAY_API_KEY = _env("PIXABAY_API_KEY")
+    FREESOUND_API_KEY = _env("FREESOUND_API_KEY")
     
     # ─── HADITH ───
-    HADITH_API_URL = os.environ.get("HADITH_API_URL")
+    HADITH_API_URL = _env("HADITH_API_URL")
     
     # ─── RUNTIME ───
-    EVENT_NAME = os.environ.get("GITHUB_EVENT_NAME", "").strip()
-    UPLOAD_TARGET = os.environ.get("UPLOAD_TARGET", "drive_only").strip().lower()
-    CONFIRM_UPLOAD = str(
-        os.environ.get("CONFIRM_UPLOAD", "false")
-    ).lower() == "true"
+    EVENT_NAME = _env("GITHUB_EVENT_NAME")
+    UPLOAD_TARGET = _env("UPLOAD_TARGET", default="drive_only").lower()
+    CONFIRM_UPLOAD = _env("CONFIRM_UPLOAD", default="false").lower() == "true"
     
     # ═══════════════════════════════════════════════════════
     # 🎯 UPLOAD LOGIC PROPERTIES
@@ -115,10 +168,7 @@ class Config:
     
     @property
     def is_confirmed(self) -> bool:
-        """
-        Manual mode mein tick mark lagaya?
-        Auto mode mein always True.
-        """
+        """Manual mode mein tick mark lagaya?"""
         if self.is_scheduled:
             return True
         return self.CONFIRM_UPLOAD
@@ -134,12 +184,7 @@ class Config:
     
     @property
     def should_upload_facebook(self) -> bool:
-        """
-        Facebook Story upload?
-        
-        Auto:     Always True
-        Manual:   Only if confirmed AND target in (fb_ig, all)
-        """
+        """Facebook Story upload?"""
         if self.is_scheduled:
             return True
         if not self.is_confirmed:
@@ -148,12 +193,7 @@ class Config:
     
     @property
     def should_upload_instagram(self) -> bool:
-        """
-        Instagram Story upload?
-        
-        Auto:     Always True
-        Manual:   Only if confirmed AND target in (fb_ig, all)
-        """
+        """Instagram Story upload?"""
         if self.is_scheduled:
             return True
         if not self.is_confirmed:
@@ -162,14 +202,9 @@ class Config:
     
     @property
     def should_upload_youtube(self) -> bool:
-        """
-        YouTube Shorts upload?
-        
-        Auto:     False (schedule mein skip — kyunki Story format hai)
-        Manual:   Only if confirmed AND target in (youtube, all)
-        """
+        """YouTube Shorts upload?"""
         if self.is_scheduled:
-            return False        # Auto mein YouTube skip
+            return False
         if not self.is_confirmed:
             return False
         return self.UPLOAD_TARGET in ("youtube", "all")
@@ -179,12 +214,7 @@ class Config:
     # ─────────────────────────────────────────────────────
     
     def available_platforms(self) -> list:
-        """
-        Which platforms have valid credentials?
-        
-        Returns:
-            List like ["facebook", "instagram", "youtube"]
-        """
+        """Which platforms have valid credentials?"""
         platforms = []
         
         # ───── Facebook ─────
@@ -202,7 +232,7 @@ class Config:
         return platforms
     
     # ─────────────────────────────────────────────────────
-    # 🎯 RUN CONTEXT — for logging
+    # 🎯 RUN CONTEXT
     # ─────────────────────────────────────────────────────
     
     def describe(self) -> str:
@@ -223,7 +253,7 @@ class Config:
         return f"🎯 MANUAL → {targets.get(self.UPLOAD_TARGET, '?')}"
     
     def summary(self) -> dict:
-        """Full config summary — for logs/telegram."""
+        """Full config summary."""
         return {
             "event": self.EVENT_NAME or "local",
             "mode": "auto" if self.is_scheduled else "manual",
@@ -248,21 +278,42 @@ if __name__ == "__main__":
     print("=" * 50)
     
     cfg = Config()
-    summary = cfg.summary()
     
     print(f"\n📍 Run Context:")
-    print(f"   Event:     {summary['event']}")
-    print(f"   Mode:      {summary['mode']}")
-    print(f"   Target:    {summary['target']}")
-    print(f"   Confirmed: {summary['confirmed']}")
+    print(f"   Event:     {cfg.EVENT_NAME or 'local'}")
+    print(f"   Mode:      {'auto' if cfg.is_scheduled else 'manual'}")
+    print(f"   Target:    {cfg.UPLOAD_TARGET}")
+    print(f"   Confirmed: {cfg.CONFIRM_UPLOAD}")
     
-    print(f"\n🎯 Upload Decisions:")
-    for platform, should in summary["should_upload"].items():
-        icon = "✅" if should else "⏭️"
-        print(f"   {icon} {platform}")
+    print(f"\n🔑 Key Secrets Detected:")
+    checks = [
+        ("Telegram Bot", cfg.TG_TOKEN),
+        ("Telegram Chat", cfg.TG_CHAT_ID),
+        ("Facebook Meta", cfg.META_TOKEN),
+        ("Facebook Page", cfg.PAGE_ID),
+        ("Instagram Token", cfg.IG_TOKEN),
+        ("Instagram ID", cfg.IG_BUSINESS_ID),
+        ("YouTube Client", cfg.YT_CLIENT_ID),
+        ("Drive Client", cfg.DRIVE_CLIENT_ID),
+        ("Drive Folder", cfg.DRIVE_STORY_FOLDER_ID),
+        ("OpenRouter", cfg.OPENROUTER_API_KEY),
+        ("Groq", cfg.GROQ_API_KEY),
+        ("Gemini", cfg.GEMINI_API_KEY),
+        ("Mistral", cfg.MISTRAL_API_KEY),
+        ("Cerebras", cfg.CEREBRAS_API_KEY),
+        ("Cohere", cfg.COHERE_API_KEY),
+        ("DeepL", cfg.DEEPL_API_KEY),
+        ("ElevenLabs", cfg.ELEVENLABS_API_KEY),
+        ("Pexels", cfg.PEXELS_API_KEY),
+    ]
+    
+    for label, value in checks:
+        icon = "✅" if value else "❌"
+        length = f"({len(value)} chars)" if value else ""
+        print(f"   {icon} {label:20} {length}")
     
     print(f"\n🌐 Available Platforms:")
-    for p in summary["available"]:
-        print(f"   ✓ {p}")
+    for p in cfg.available_platforms():
+        print(f"   ✅ {p}")
     
     print(f"\n📖 Description: {cfg.describe()}")
