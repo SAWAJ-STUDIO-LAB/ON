@@ -1,24 +1,34 @@
 # ═══════════════════════════════════════════════════════════════════════
-# SawajStudioBot — Story Video Pipeline (Facebook + Instagram)
+# SawajStudioBot — Story Video Pipeline (FB Story + IG Story + YT Shorts)
 # ═══════════════════════════════════════════════════════════════════════
 #
 # 🎯 MODES:
-#   • AUTO (schedule) → FB + IG dono par upload (automatic)
-#   • MANUAL         → Aap choose karein:
-#                        - facebook       (sirf FB)
-#                        - instagram      (sirf IG)
-#                        - both           (FB + IG dono)
-#                        - drive_only     (sirf Google Drive)
+#   • AUTO (schedule)  → Drive + FB Story + IG Story (YT skip by default)
+#   • MANUAL           → Aap choose karein:
+#                        1. drive_only  → Sirf Google Drive
+#                        2. fb_ig       → Facebook Story + Instagram Story
+#                        3. youtube     → YouTube Shorts
+#                        4. all         → Drive + FB + IG + YT
 #
 # ⏰ Schedule: Every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
 #
+# 🔐 Safety:
+#   • Manual mode mein CONFIRM_UPLOAD=true zaroori
+#   • Secrets verification har run pe
 # ═══════════════════════════════════════════════════════════════════════
 
-name: 📖 Story Video (FB + IG)
+name: 📖 Story Video (FB + IG + YT)
+
+# ═══════════════════════════════════════════════════════════════════════
+# 🎯 TRIGGERS
+# ═══════════════════════════════════════════════════════════════════════
 
 on:
+  # ───── AUTO: Har 6 ghante ─────
   schedule:
-    - cron: '0 */6 * * *'   # Every 6 hours — AUTO upload to FB + IG
+    - cron: '0 */6 * * *'
+
+  # ───── MANUAL: User choose kare ─────
   workflow_dispatch:
     inputs:
       upload_target:
@@ -27,10 +37,11 @@ on:
         default: 'drive_only'
         type: choice
         options:
-          - drive_only        # Sirf Google Drive
-          - facebook          # Sirf Facebook
-          - instagram         # Sirf Instagram
-          - both              # Facebook + Instagram dono
+          - drive_only
+          - fb_ig
+          - youtube
+          - all
+
       confirm_upload:
         description: '✅ CONFIRM — Tick karo warna Drive-only chalega'
         required: true
@@ -77,7 +88,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       upload_mode: ${{ steps.decide.outputs.upload_mode }}
-      platform: ${{ steps.decide.outputs.platform }}
+      upload_target: ${{ steps.decide.outputs.upload_target }}
+      confirmed: ${{ steps.decide.outputs.confirmed }}
 
     steps:
       - name: 📥 Checkout
@@ -91,12 +103,13 @@ jobs:
           CONFIRM="${{ github.event.inputs.confirm_upload }}"
 
           # ═══════════════════════════════════════════════════════
-          # AUTO (schedule) → Mode = "all", Platform = "both"
+          # AUTO (schedule) → Mode = "auto", Target = "auto"
           # ═══════════════════════════════════════════════════════
           if [ "$EVENT" = "schedule" ]; then
-            MODE="online"
-            PLATFORM="both"
-            echo "🤖 AUTO MODE: FB + IG dono par upload hoga"
+            MODE="auto"
+            TARGET="auto"
+            CONFIRM="true"
+            echo "🤖 AUTO MODE: Drive + FB Story + IG Story"
 
           # ═══════════════════════════════════════════════════════
           # MANUAL → Check confirmation
@@ -104,38 +117,32 @@ jobs:
           else
             [ -z "$TARGET" ] && TARGET="drive_only"
 
-            # Agar confirm_upload = true nahi hai, toh Drive-only karo
             if [ "$CONFIRM" != "true" ]; then
               echo "::warning::⚠️ CONFIRM tick nahi kiya → Drive-only mode"
-              MODE="offline"
-              PLATFORM="none"
+              MODE="manual"
+              TARGET="drive_only"
             else
-              # Confirmation ✓ mila
-              if [ "$TARGET" = "drive_only" ]; then
-                MODE="offline"
-                PLATFORM="none"
-                echo "📁 Drive-only mode"
-              else
-                MODE="online"
-                PLATFORM="$TARGET"
-                echo "📤 Manual upload → $PLATFORM"
-              fi
+              MODE="manual"
+              echo "📤 Manual upload → $TARGET"
             fi
           fi
 
           echo "upload_mode=$MODE" >> $GITHUB_OUTPUT
-          echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
-          echo "✅ Final: Mode=$MODE | Platform=$PLATFORM"
+          echo "upload_target=$TARGET" >> $GITHUB_OUTPUT
+          echo "confirmed=$CONFIRM" >> $GITHUB_OUTPUT
+          echo "✅ Final: Mode=$MODE | Target=$TARGET | Confirmed=$CONFIRM"
 
       - name: ✅ Verify Critical Files
         run: |
           GEN="${{ env.GENERATOR_DIR }}"
           MISSING=0
+
           for f in \
             "$GEN/G_entry/G2_run.py" \
             "$GEN/G_entry/G1_story_pipeline.py" \
             "$GEN/A_core/A1_config.py" \
             "$GEN/A_core/A5_base_pipeline.py" \
+            "$GEN/A_core/A6_secrets_check.py" \
             "$GEN/E_audio/E1_voice_ducking.py" \
             "$GEN/E_audio/E3_mastering.py" \
             "sawajstudiobot/video_requirement/requirements.txt" \
@@ -147,16 +154,17 @@ jobs:
               MISSING=$((MISSING + 1))
             fi
           done
+
           if [ $MISSING -gt 0 ]; then
             echo "::error::$MISSING critical file(s) missing!"
             exit 1
           fi
 
   # ─────────────────────────────────────────────────────────────────────
-  # JOB 2: GENERATE STORY VIDEO
+  # JOB 2: GENERATE + UPLOAD STORY VIDEO
   # ─────────────────────────────────────────────────────────────────────
   generate-story:
-    name: 📖 Generate Story Video
+    name: 📖 Generate & Upload Story Video
     runs-on: ubuntu-latest
     needs: validate
     timeout-minutes: 30
@@ -218,49 +226,57 @@ jobs:
 
       - name: ▶️ Run Story Pipeline
         env:
-          # Telegram
+          # ───── Telegram ─────
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-          # Facebook
+          # ───── Facebook ─────
           FACEBOOK_META_TOKEN: ${{ secrets.FACEBOOK_META_TOKEN }}
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
 
-          # Instagram
+          # ───── Instagram ─────
           FACEBOOK_INSTAGRAM_META_TOKEN: ${{ secrets.FACEBOOK_INSTAGRAM_META_TOKEN }}
           INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
 
-          # Google Drive
+          # ───── YouTube (optional) ─────
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          DAILY_HADEES_YT_PLAYLIST_ID: ${{ secrets.DAILY_HADEES_YT_PLAYLIST_ID }}
+
+          # ───── Google Drive ─────
           GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
           GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           GDRIVE_STORY_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_STORY_VIDEO_FOLDER_ID }}
 
-          # AI Providers (bina _AI ke)
+          # ───── AI Providers ─────
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY }}
 
-          # TTS / Translation
+          # ───── TTS / Translation ─────
           ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
           DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
 
-          # Media
+          # ───── Media APIs ─────
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
           HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
 
-          # Runtime
+          # ───── Runtime ─────
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-          UPLOAD_MODE: ${{ needs.validate.outputs.upload_mode }}
-          PLATFORM: ${{ needs.validate.outputs.platform }}
+          UPLOAD_TARGET: ${{ needs.validate.outputs.upload_target }}
+          CONFIRM_UPLOAD: ${{ needs.validate.outputs.confirmed }}
         run: |
-          echo "🎯 Mode: $UPLOAD_MODE | Platform: $PLATFORM"
+          echo "🎯 Event:     $GITHUB_EVENT_NAME"
+          echo "🎯 Target:    $UPLOAD_TARGET"
+          echo "🎯 Confirmed: $CONFIRM_UPLOAD"
+          echo ""
           cd "$GENERATOR_DIR"
           python3 G_entry/G2_run.py 2>&1 | tee pipeline.log
 
@@ -268,7 +284,7 @@ jobs:
         if: always()
         run: |
           if [ -f "${{ env.GENERATOR_DIR }}/pipeline.log" ]; then
-            tail -200 "${{ env.GENERATOR_DIR }}/pipeline.log"
+            tail -250 "${{ env.GENERATOR_DIR }}/pipeline.log"
           fi
 
       - name: 🔍 Verify Output
@@ -277,12 +293,16 @@ jobs:
         run: |
           FINAL_DIR="${{ env.GENERATOR_DIR }}/output/final"
           VIDEO=$(find "$FINAL_DIR" -name "*.mp4" -type f | head -1)
+
           if [ -z "$VIDEO" ]; then
             echo "::error::No video generated!"
             exit 1
           fi
+
           SIZE=$(du -h "$VIDEO" | cut -f1)
-          DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" 2>/dev/null || echo "?")
+          DURATION=$(ffprobe -v error -show_entries format=duration \
+            -of default=noprint_wrappers=1:nokey=1 "$VIDEO" 2>/dev/null || echo "?")
+
           echo "video_size=$SIZE" >> $GITHUB_OUTPUT
           echo "video_duration=$DURATION" >> $GITHUB_OUTPUT
           echo "✅ Video: $SIZE | ${DURATION}s"
@@ -311,7 +331,8 @@ jobs:
             echo "| Status | ${{ job.status == 'success' && '✅' || '❌' }} |"
             echo "| Event | \`${{ github.event_name }}\` |"
             echo "| Mode | \`${{ needs.validate.outputs.upload_mode }}\` |"
-            echo "| Platform | \`${{ needs.validate.outputs.platform }}\` |"
+            echo "| Target | \`${{ needs.validate.outputs.upload_target }}\` |"
+            echo "| Confirmed | \`${{ needs.validate.outputs.confirmed }}\` |"
             if [ "${{ steps.verify.outcome }}" = "success" ]; then
               echo "| Size | ${{ steps.verify.outputs.video_size }} |"
               echo "| Duration | ${{ steps.verify.outputs.video_duration }}s |"
