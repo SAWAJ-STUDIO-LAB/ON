@@ -1,0 +1,136 @@
+name: Send Long Video Repo 📤
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bundle-and-send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Combine Long Video Files into Single File
+        run: |
+          python3 - << 'EOF'
+          import os
+          import base64
+
+          output_file = "long_video_code_combined.txt"
+
+          # Story aur Short generators ko ignore karke sirf Long generator include karenge
+          IGNORE_DIRS = {
+              ".git", "__pycache__", "node_modules", "venv", "env",
+              "fb_ig_story_video_generator",
+              "fb_ig_yt_short_video_generator"
+          }
+          IGNORE_FILES = {output_file}
+
+          def build_tree(start_dir="."):
+              lines = ["📂 LONG VIDEO GENERATOR REPOSITORY STRUCTURE", "==================================================", "."]
+              
+              def _walk(directory, prefix=""):
+                  try:
+                      entries = sorted(os.listdir(directory))
+                  except Exception:
+                      return
+                  
+                  filtered = []
+                  for e in entries:
+                      if e in IGNORE_FILES or e in IGNORE_DIRS:
+                          continue
+                      path = os.path.join(directory, e)
+                      if os.path.isdir(path):
+                          if e.startswith(".") and e != ".github":
+                              continue
+                      filtered.append(e)
+
+                  count = len(filtered)
+                  for i, entry in enumerate(filtered):
+                      path = os.path.join(directory, entry)
+                      is_last = (i == count - 1)
+                      connector = "└── " if is_last else "├── "
+                      if os.path.isdir(path):
+                          lines.append(f"{prefix}{connector}{entry}/")
+                          new_prefix = prefix + ("    " if is_last else "│   ")
+                          _walk(path, new_prefix)
+                      else:
+                          lines.append(f"{prefix}{connector}{entry}")
+
+              _walk(start_dir)
+              return "\n".join(lines)
+
+          def is_binary_file(filepath):
+              try:
+                  with open(filepath, 'tr', encoding='utf-8') as f:
+                      f.read(2048)
+                      return False
+              except UnicodeDecodeError:
+                  return True
+
+          all_files = []
+          for root, dirs, files in os.walk("."):
+              dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not (d.startswith(".") and d != ".github")]
+              for file in sorted(files):
+                  if file not in IGNORE_FILES:
+                      all_files.append(os.path.join(root, file))
+
+          all_files.sort()
+          tree_view = build_tree(".")
+
+          with open(output_file, "w", encoding="utf-8") as outfile:
+              outfile.write("================================================================================\n")
+              outfile.write("       LONG VIDEO GENERATOR CODEBASE, MEDIA & DIRECTORY NOTE                    \n")
+              outfile.write("================================================================================\n\n")
+              outfile.write(tree_view)
+              outfile.write("\n\n" + "="*80 + "\n")
+              outfile.write("                             FULL FILE CONTENTS                                 \n")
+              outfile.write("="*80 + "\n\n")
+
+              success_count = 0
+              for filepath in all_files:
+                  relative_path = os.path.relpath(filepath, ".")
+                  outfile.write("\n" + "─"*80 + "\n")
+                  outfile.write(f"📄 FILE: {relative_path}\n")
+                  outfile.write("─"*80 + "\n\n")
+                  
+                  if is_binary_file(filepath):
+                      try:
+                          with open(filepath, "rb") as bfile:
+                              encoded = base64.b64encode(bfile.read()).decode('utf-8')
+                              outfile.write(f"# [IMAGE/BINARY FILE EMBEDDED AS BASE64 DATA]\n")
+                              outfile.write(f"data:application/octet-stream;base64,{encoded}\n\n")
+                          success_count += 1
+                      except Exception as e:
+                          outfile.write(f"# [Error reading binary file]: {e}\n\n")
+                  else:
+                      try:
+                          with open(filepath, "r", encoding="utf-8", errors="ignore") as infile:
+                              outfile.write(infile.read())
+                              outfile.write("\n\n")
+                          success_count += 1
+                      except Exception as e:
+                          outfile.write(f"# [Error reading text file]: {e}\n\n")
+
+          print(f"Successfully combined {success_count} files into {output_file}")
+          EOF
+
+      - name: Send Long Video File to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Error: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID secret is missing!"
+            exit 1
+          fi
+
+          curl -s -F chat_id="$TELEGRAM_CHAT_ID" \
+               -F document=@long_video_code_combined.txt \
+               -F caption="📦 Long Video (FB + YT) Generator Code + Assets Delivered!" \
+               https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument
