@@ -1,4 +1,4 @@
-name: Full Secrets &API Diagnosis Report
+name: Full Secrets & API Diagnosis Report
 
 on:
   workflow_dispatch:
@@ -559,7 +559,7 @@ jobs:
                   add_result(url_key, "skip", "Empty")
 
           # ============================================================
-          # BUILD PROFESSIONAL TELEGRAM REPORT
+          # BUILD SINGLE PROFESSIONAL TELEGRAM MESSAGE
           # ============================================================
 
           now = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M UTC")
@@ -567,15 +567,15 @@ jobs:
           run_id = os.environ.get('GITHUB_RUN_ID', 'manual')
           actor = os.environ.get('GITHUB_ACTOR', 'unknown')
 
-          # Group results by category for clean layout
+          # Compact categories
           categories = {
-              "🧠 AI / LLM Providers": [
+              "🧠 AI / LLM": [
                   "CEREBRAS_API_KEY_AI", "COHERE_API_KEY_AI", "DEEPGRAM_API_KEY",
                   "DEEPL_API_KEY", "ELEVENLABS_API_KEY", "GEMINI_API_KEY_AI",
                   "GROQ_API_KEY_AI", "HUGGINGFACE_API_KEY_AI", "MISTRAL_API_KEY_AI",
                   "OPENROUTER_API_KEY_AI", "TAVILY_API_KEY_AI", "JINA_API_KEY"
               ],
-              "🎬 Media & Stock APIs": [
+              "🎬 Media": [
                   "COVERR_API_KEY", "FREESOUND_API_KEY", "PEXELS_API_KEY",
                   "PIXABAY_API_KEY", "OPENWEATHER_API_KEY"
               ],
@@ -591,169 +591,137 @@ jobs:
               "▶️ YouTube": [
                   "YOUTUBE (Client+Secret+Refresh)", "DAILY_HADEES_YT_PLAYLIST_ID"
               ],
-              "🤖 Telegram & GitHub": [
+              "🤖 Telegram + GitHub": [
                   "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TOKEN_GITHUB"
               ],
-              "🌐 Utility URLs": [
+              "🌐 URLs": [
                   "HADITH_API_URL", "PRAYER_TIMES_API_URL", "QURAN_API_URL"
               ]
           }
 
           result_map = {r["name"]: r for r in results}
 
-          # Health percentage
+          # Health
           total = max(summary["total"], 1)
           health = int((summary["ok"] / total) * 100)
           if health >= 95:
-              health_emoji = "🟢"
-              health_text = "Excellent"
+              health_emoji, health_text = "🟢", "Excellent"
           elif health >= 80:
-              health_emoji = "🟡"
-              health_text = "Good"
+              health_emoji, health_text = "🟡", "Good"
           elif health >= 60:
-              health_emoji = "🟠"
-              health_text = "Fair"
+              health_emoji, health_text = "🟠", "Fair"
           else:
-              health_emoji = "🔴"
-              health_text = "Critical"
+              health_emoji, health_text = "🔴", "Critical"
 
-          # Progress bar
-          bar_len = 12
+          bar_len = 10
           filled = int(bar_len * health / 100)
           bar = "█" * filled + "░" * (bar_len - filled)
 
-          # ========== MESSAGE 1 : HEADER + SUMMARY ==========
-          msg1 = (
-              f"╔══════════════════════════════╗\n"
-              f"║  🔬  *SECRETS DIAGNOSIS*     ║\n"
-              f"╚══════════════════════════════╝\n\n"
-              f"📅  `{now}`\n"
-              f"📦  `{repo}`\n"
-              f"👤  `{actor}`\n"
-              f"🔢  Run `{run_id}`\n\n"
-              f"────────────────────────\n"
-              f"*SYSTEM HEALTH*\n"
-              f"{health_emoji}  *{health}%*  {health_text}\n"
-              f"`{bar}`\n\n"
-              f"✅  OK      →  *{summary['ok']}*\n"
-              f"❌  Failed  →  *{summary['fail']}*\n"
-              f"⚠️  Warning →  *{summary['warn']}*\n"
-              f"⏭️  Skipped →  *{summary['skip']}*\n"
-              f"📊  Total   →  *{summary['total']}*\n"
-              f"────────────────────────"
-          )
+          # Short name helper
+          def short_name(key):
+              name = key.replace("_API_KEY_AI", "").replace("_API_KEY", "").replace("_", " ")
+              return name[:22] + ".." if len(name) > 22 else name
 
-          messages = [msg1]
+          # Build single message
+          lines = []
+          lines.append("╔══════════════════════════╗")
+          lines.append("║  🔬 *SECRETS DIAGNOSIS*  ║")
+          lines.append("╚══════════════════════════╝")
+          lines.append("")
+          lines.append(f"📅 `{now}`")
+          lines.append(f"📦 `{repo}`")
+          lines.append(f"👤 `{actor}`  •  Run `{run_id}`")
+          lines.append("")
+          lines.append("────────────────────────")
+          lines.append(f"*HEALTH*  {health_emoji} *{health}%* {health_text}")
+          lines.append(f"`{bar}`")
+          lines.append(f"✅ {summary['ok']}   ❌ {summary['fail']}   ⚠️ {summary['warn']}   ⏭️ {summary['skip']}   📊 {summary['total']}")
+          lines.append("────────────────────────")
 
-          # ========== CATEGORY MESSAGES ==========
+          # Categories (compact)
           for cat_name, keys in categories.items():
-              cat_lines = []
-              cat_ok = 0
-              cat_fail = 0
+              cat_items = []
               for key in keys:
                   r = result_map.get(key)
                   if not r:
                       continue
+                  icon = r["emoji"]
+                  name = short_name(key)
                   if r["status"] == "ok":
-                      cat_ok += 1
-                  elif r["status"] == "fail":
-                      cat_fail += 1
-
-                  status_icon = r["emoji"]
-                  detail = r["detail"][:90] if r["detail"] else ""
-                  # Clean short name for display
-                  display_name = key.replace("_API_KEY_AI", "").replace("_API_KEY", "").replace("_", " ")
-                  if len(display_name) > 28:
-                      display_name = display_name[:26] + ".."
-
-                  if r["status"] == "ok":
-                      cat_lines.append(f"{status_icon}  `{display_name}`")
+                      cat_items.append(f"{icon} `{name}`")
                   else:
-                      cat_lines.append(f"{status_icon}  `{display_name}`\n      └ {detail}")
+                      # Only show detail for failures / warnings
+                      detail = (r["detail"] or "")[:60]
+                      cat_items.append(f"{icon} `{name}`\n     └ {detail}")
 
-              if not cat_lines:
-                  continue
+              if cat_items:
+                  lines.append(f"\n*{cat_name}*")
+                  lines.extend(cat_items)
 
-              status_summary = f"✅{cat_ok}"
-              if cat_fail:
-                  status_summary += f"  ❌{cat_fail}"
-
-              cat_msg = (
-                  f"*{cat_name}*\n"
-                  f"_{status_summary}_\n\n"
-                  + "\n".join(cat_lines)
-              )
-              messages.append(cat_msg)
-
-          # ========== FINAL FOOTER ==========
-          footer = (
-              f"────────────────────────\n"
-              f"*Diagnosis Complete*\n\n"
-          )
+          # Footer with failures highlight
+          lines.append("\n────────────────────────")
           if summary["fail"] == 0:
-              footer += "🎉  All systems operational\n"
+              lines.append("🎉 *All systems operational*")
           else:
-              footer += f"⚠️  *{summary['fail']} issue(s)* need attention\n"
-              # List failed ones clearly
-              fails = [r for r in results if r["status"] == "fail"]
-              for f in fails:
-                  footer += f"\n❌  `{f['name']}`\n      {f['detail'][:100]}"
+              lines.append(f"⚠️ *{summary['fail']} issue(s) found*")
+              for r in results:
+                  if r["status"] == "fail":
+                      lines.append(f"❌ `{r['name']}`")
+                      lines.append(f"   {r['detail'][:90]}")
 
-          footer += (
-              f"\n\n_Generated by GitHub Actions_\n"
-              f"_Sawaj Studio Lab_"
-          )
-          messages.append(footer)
+          lines.append("")
+          lines.append("_Sawaj Studio Lab • GitHub Actions_")
 
-          # Print full report to Actions log
+          full_msg = "\n".join(lines)
+
+          # Safety: Telegram hard limit 4096
+          if len(full_msg) > 4050:
+              full_msg = full_msg[:4000] + "\n\n… _(truncated)_"
+
+          # Print preview
           print("\n" + "="*60)
-          print("PROFESSIONAL REPORT PREVIEW")
+          print("SINGLE MESSAGE REPORT PREVIEW")
           print("="*60)
-          for i, m in enumerate(messages, 1):
-              print(f"\n----- MESSAGE {i}/{len(messages)} -----")
-              print(m)
+          print(full_msg)
           print("="*60)
+          print(f"Length: {len(full_msg)} chars")
 
-          # Send to Telegram
+          # Send ONE message only
           send_flag = os.environ.get("SEND_TELEGRAM", "true").lower() == "true"
           bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
           chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
           if send_flag and bot_token and chat_id:
-              print(f"\n📤 Sending {len(messages)} professional message(s) to Telegram...")
-              for i, msg in enumerate(messages, 1):
-                  payload = {
-                      "chat_id": chat_id,
-                      "text": msg,
-                      "parse_mode": "Markdown",
-                      "disable_web_page_preview": True
-                  }
-                  try:
-                      resp = requests.post(
+              print(f"\n📤 Sending SINGLE professional message to Telegram...")
+              payload = {
+                  "chat_id": chat_id,
+                  "text": full_msg,
+                  "parse_mode": "Markdown",
+                  "disable_web_page_preview": True
+              }
+              try:
+                  resp = requests.post(
+                      f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                      json=payload,
+                      timeout=20
+                  )
+                  if resp.status_code == 200:
+                      print("✅ Single message sent successfully")
+                  else:
+                      print(f"❌ Failed: {resp.status_code} → {resp.text[:200]}")
+                      # Fallback plain text
+                      payload.pop("parse_mode", None)
+                      resp2 = requests.post(
                           f"https://api.telegram.org/bot{bot_token}/sendMessage",
                           json=payload,
-                          timeout=15
+                          timeout=20
                       )
-                      if resp.status_code == 200:
-                          print(f"  ✅ Message {i}/{len(messages)} sent")
-                      else:
-                          print(f"  ❌ Message {i} failed: {resp.status_code} → {resp.text[:180]}")
-                          # Fallback plain text
-                          payload.pop("parse_mode", None)
-                          resp2 = requests.post(
-                              f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                              json=payload,
-                              timeout=15
-                          )
-                          print(f"  Fallback status: {resp2.status_code}")
-                  except Exception as e:
-                      print(f"  ❌ Exception on message {i}: {e}")
-                  time.sleep(0.45)
-              print("✅ Telegram professional report finished.")
+                      print(f"Fallback status: {resp2.status_code}")
+              except Exception as e:
+                  print(f"❌ Exception: {e}")
           else:
-              print("\n⏭️ Telegram send skipped (flag=false or missing BOT_TOKEN / CHAT_ID)")
+              print("\n⏭️ Telegram send skipped")
 
-          # Final status for Actions
           if summary["fail"] > 0:
               print(f"\n⚠️ Completed with {summary['fail']} failures")
           else:
