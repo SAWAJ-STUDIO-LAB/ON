@@ -1,4 +1,4 @@
-name: Full Secrets & API Diagnosis Report
+name: Full_Secrets APi Report
 
 on:
   workflow_dispatch:
