@@ -1,4 +1,4 @@
-name: Full_Secrets APi Report
+name: Full Secrets & API Diagnosis Report
 
 on:
   workflow_dispatch:
@@ -50,7 +50,6 @@ jobs:
           OPENROUTER_API_KEY_AI: ${{ secrets.OPENROUTER_API_KEY_AI }}
           TAVILY_API_KEY_AI: ${{ secrets.TAVILY_API_KEY_AI }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
 
           # === Media / Content APIs ===
           COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
@@ -76,7 +75,7 @@ jobs:
           GDRIVE_STORY_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_STORY_VIDEO_FOLDER_ID }}
           DAILY_HADEES_YT_PLAYLIST_ID: ${{ secrets.DAILY_HADEES_YT_PLAYLIST_ID }}
 
-          # === Telegram ===
+          # === Telegram (for reporting) ===
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
@@ -90,320 +89,612 @@ jobs:
 
         run: |
           python << 'PYTHON_SCRIPT'
-          import os, requests
+          import os
+          import requests
+          import json
+          import time
           from datetime import datetime, timezone
 
           results = []
           summary = {"total": 0, "ok": 0, "fail": 0, "warn": 0, "skip": 0}
 
-          def mask_val(val):
-              if not val: return "MISSING"
-              val = str(val).strip()
-              if len(val) <= 8: return "****"
-              return val[:4] + "..." + val[-4:]
-
           def add_result(name, status, detail, http_code=None):
               summary["total"] += 1
               summary[status] += 1
               emoji = {"ok": "✅", "fail": "❌", "warn": "⚠️", "skip": "⏭️"}.get(status, "❓")
-              results.append({"name": name, "status": status, "emoji": emoji,
-                              "detail": detail[:180] if detail else "", "code": http_code})
-              print(f"{emoji} {name}: {status.upper()} | {detail[:120]}")
+              results.append({
+                  "name": name,
+                  "status": status,
+                  "emoji": emoji,
+                  "detail": detail[:300] if detail else "",
+                  "code": http_code
+              })
+              print(f"{emoji} {name}: {status.upper()} | {detail[:150]}")
 
           def safe_get(url, headers=None, params=None, timeout=12):
               try:
-                  return requests.get(url, headers=headers or {}, params=params or {}, timeout=timeout)
+                  r = requests.get(url, headers=headers or {}, params=params or {}, timeout=timeout)
+                  return r
               except Exception as e:
-                  return type('o', (object,), {'status_code': 0, 'text': str(e), 'json': lambda: {}})()
+                  return type('obj', (object,), {'status_code': 0, 'text': str(e), 'json': lambda: {}})()
 
           def safe_post(url, headers=None, json_data=None, data=None, timeout=12):
               try:
-                  return requests.post(url, headers=headers or {}, json=json_data, data=data, timeout=timeout)
+                  r = requests.post(url, headers=headers or {}, json=json_data, data=data, timeout=timeout)
+                  return r
               except Exception as e:
-                  return type('o', (object,), {'status_code': 0, 'text': str(e), 'json': lambda: {}})()
+                  return type('obj', (object,), {'status_code': 0, 'text': str(e), 'json': lambda: {}})()
 
           def has_value(key):
               val = os.environ.get(key, "").strip()
               return bool(val) and val.lower() not in ("", "none", "null", "undefined")
 
-          # ===== AI / LLM =====
+          # ============================================================
+          # 1. AI / LLM PROVIDERS
+          # ============================================================
+
+          # Cerebras
           if has_value("CEREBRAS_API_KEY_AI"):
-              r = safe_get("https://api.cerebras.ai/v1/models", headers={"Authorization": f"Bearer {os.environ['CEREBRAS_API_KEY_AI']}"})
-              add_result("CEREBRAS_API_KEY_AI", "ok" if r.status_code == 200 else "fail",
-                         f"Models: {len(r.json().get('data', []))}" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("CEREBRAS_API_KEY_AI", "skip", "Empty")
-
-          if has_value("COHERE_API_KEY_AI"):
-              r = safe_post("https://api.cohere.com/v1/check-api-key", headers={"Authorization": f"Bearer {os.environ['COHERE_API_KEY_AI']}"})
-              if r.status_code == 200 and r.json().get("valid"): add_result("COHERE_API_KEY_AI", "ok", "Key valid & active")
-              elif r.status_code == 200: add_result("COHERE_API_KEY_AI", "fail", "Key invalid")
-              else: add_result("COHERE_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("COHERE_API_KEY_AI", "skip", "Empty")
-
-          if has_value("DEEPGRAM_API_KEY"):
-              r = safe_get("https://api.deepgram.com/v1/auth/token", headers={"Authorization": f"Token {os.environ['DEEPGRAM_API_KEY']}"})
-              add_result("DEEPGRAM_API_KEY", "ok" if r.status_code == 200 else "fail",
-                         "Credentials valid" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("DEEPGRAM_API_KEY", "skip", "Empty")
-
-          if has_value("DEEPL_API_KEY"):
-              r = safe_get("https://api-free.deepl.com/v2/usage", headers={"Authorization": f"DeepL-Auth-Key {os.environ['DEEPL_API_KEY']}"})
+              r = safe_get(
+                  "https://api.cerebras.ai/v1/models",
+                  headers={"Authorization": f"Bearer {os.environ['CEREBRAS_API_KEY_AI']}"}
+              )
               if r.status_code == 200:
-                  d = r.json(); add_result("DEEPL_API_KEY", "ok", f"Usage: {d.get('character_count','?')}/{d.get('character_limit','?')}")
-              else: add_result("DEEPL_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("DEEPL_API_KEY", "skip", "Empty")
-
-          if has_value("ELEVENLABS_API_KEY"):
-              r = safe_get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": os.environ['ELEVENLABS_API_KEY']})
-              if r.status_code == 200:
-                  t = r.json().get('subscription', {}).get('tier', '?'); add_result("ELEVENLABS_API_KEY", "ok", f"Tier: {t}")
-              else: add_result("ELEVENLABS_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("ELEVENLABS_API_KEY", "skip", "Empty")
-
-          if has_value("GEMINI_API_KEY_AI"):
-              r = safe_get(f"https://generativelanguage.googleapis.com/v1beta/models?key={os.environ['GEMINI_API_KEY_AI']}")
-              if r.status_code == 200:
-                  add_result("GEMINI_API_KEY_AI", "ok", f"{len(r.json().get('models', []))} models")
-              else: add_result("GEMINI_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("GEMINI_API_KEY_AI", "skip", "Empty")
-
-          if has_value("GROQ_API_KEY_AI"):
-              r = safe_get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {os.environ['GROQ_API_KEY_AI']}"})
-              if r.status_code == 200:
-                  add_result("GROQ_API_KEY_AI", "ok", f"{len(r.json().get('data', []))} models")
-              else: add_result("GROQ_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("GROQ_API_KEY_AI", "skip", "Empty")
-
-          if has_value("HUGGINGFACE_API_KEY_AI"):
-              r = safe_get("https://huggingface.co/api/whoami-v2", headers={"Authorization": f"Bearer {os.environ['HUGGINGFACE_API_KEY_AI']}"})
-              if r.status_code == 200:
-                  u = r.json().get('name', 'ok'); add_result("HUGGINGFACE_API_KEY_AI", "ok", f"User: {u}")
-              else: add_result("HUGGINGFACE_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("HUGGINGFACE_API_KEY_AI", "skip", "Empty")
-
-          if has_value("MISTRAL_API_KEY_AI"):
-              r = safe_get("https://api.mistral.ai/v1/models", headers={"Authorization": f"Bearer {os.environ['MISTRAL_API_KEY_AI']}"})
-              if r.status_code == 200:
-                  add_result("MISTRAL_API_KEY_AI", "ok", f"{len(r.json().get('data', []))} models")
-              else: add_result("MISTRAL_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("MISTRAL_API_KEY_AI", "skip", "Empty")
-
-          if has_value("OPENROUTER_API_KEY_AI"):
-              r = safe_get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY_AI']}"})
-              if r.status_code == 200:
-                  d = r.json().get('data', {}); add_result("OPENROUTER_API_KEY_AI", "ok", f"Label: {d.get('label','ok')}")
-              else: add_result("OPENROUTER_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("OPENROUTER_API_KEY_AI", "skip", "Empty")
-
-          if has_value("TAVILY_API_KEY_AI"):
-              r = safe_post("https://api.tavily.com/search", json_data={"api_key": os.environ['TAVILY_API_KEY_AI'], "query": "test", "max_results": 1})
-              add_result("TAVILY_API_KEY_AI", "ok" if r.status_code == 200 else "fail",
-                         "Search OK" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("TAVILY_API_KEY_AI", "skip", "Empty")
-
-          if has_value("JINA_API_KEY"):
-              r = safe_get("https://api.jina.ai/v1/models", headers={"Authorization": f"Bearer {os.environ['JINA_API_KEY']}"})
-              if r.status_code == 200: add_result("JINA_API_KEY", "ok", "Valid")
+                  add_result("CEREBRAS_API_KEY_AI", "ok", f"Valid. Models endpoint OK")
               else:
-                  r2 = safe_post("https://api.jina.ai/v1/embeddings",
-                                 headers={"Authorization": f"Bearer {os.environ['JINA_API_KEY']}", "Content-Type": "application/json"},
-                                 json_data={"model": "jina-embeddings-v2-base-en", "input": ["test"]})
-                  add_result("JINA_API_KEY", "ok" if r2.status_code == 200 else "fail",
-                             "Embeddings OK" if r2.status_code == 200 else f"HTTP {r.status_code}/{r2.status_code}", r2.status_code)
-          else: add_result("JINA_API_KEY", "skip", "Empty")
+                  add_result("CEREBRAS_API_KEY_AI", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("CEREBRAS_API_KEY_AI", "skip", "Secret empty / not set")
 
-          if has_value("NVIDIA_API_KEY"):
-              r = safe_get("https://integrate.api.nvidia.com/v1/models", headers={"Authorization": f"Bearer {os.environ['NVIDIA_API_KEY']}"})
+          # Cohere
+          if has_value("COHERE_API_KEY_AI"):
+              r = safe_post(
+                  "https://api.cohere.com/v1/check-api-key",
+                  headers={"Authorization": f"Bearer {os.environ['COHERE_API_KEY_AI']}", "Content-Type": "application/json"}
+              )
               if r.status_code == 200:
-                  add_result("NVIDIA_API_KEY", "ok", f"{len(r.json().get('data', []))} models available")
-              else: add_result("NVIDIA_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("NVIDIA_API_KEY", "skip", "Empty")
+                  data = r.json() if hasattr(r, 'json') else {}
+                  valid = data.get("valid", False)
+                  if valid:
+                      add_result("COHERE_API_KEY_AI", "ok", "Key is valid & active")
+                  else:
+                      add_result("COHERE_API_KEY_AI", "fail", f"Key invalid: {data}", r.status_code)
+              else:
+                  # fallback to models
+                  r2 = safe_get("https://api.cohere.com/v1/models", headers={"Authorization": f"Bearer {os.environ['COHERE_API_KEY_AI']}"})
+                  if r2.status_code == 200:
+                      add_result("COHERE_API_KEY_AI", "ok", "Valid (models list OK)")
+                  else:
+                      add_result("COHERE_API_KEY_AI", "fail", f"HTTP {r.status_code}/{r2.status_code}", r.status_code)
+          else:
+              add_result("COHERE_API_KEY_AI", "skip", "Secret empty / not set")
 
-          # ===== MEDIA =====
+          # Deepgram
+          if has_value("DEEPGRAM_API_KEY"):
+              r = safe_get(
+                  "https://api.deepgram.com/v1/auth/token",
+                  headers={"Authorization": f"Token {os.environ['DEEPGRAM_API_KEY']}"}
+              )
+              if r.status_code == 200:
+                  add_result("DEEPGRAM_API_KEY", "ok", "Valid credentials")
+              else:
+                  add_result("DEEPGRAM_API_KEY", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("DEEPGRAM_API_KEY", "skip", "Secret empty / not set")
+
+          # DeepL
+          if has_value("DEEPL_API_KEY"):
+              r = safe_get(
+                  "https://api-free.deepl.com/v2/usage",
+                  headers={"Authorization": f"DeepL-Auth-Key {os.environ['DEEPL_API_KEY']}"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  add_result("DEEPL_API_KEY", "ok", f"Valid. Character usage: {data.get('character_count', '?')}/{data.get('character_limit', '?')}")
+              else:
+                  # try pro endpoint
+                  r2 = safe_get("https://api.deepl.com/v2/usage", headers={"Authorization": f"DeepL-Auth-Key {os.environ['DEEPL_API_KEY']}"})
+                  if r2.status_code == 200:
+                      add_result("DEEPL_API_KEY", "ok", "Valid (Pro endpoint)")
+                  else:
+                      add_result("DEEPL_API_KEY", "fail", f"HTTP {r.status_code}/{r2.status_code}", r.status_code)
+          else:
+              add_result("DEEPL_API_KEY", "skip", "Secret empty / not set")
+
+          # ElevenLabs
+          if has_value("ELEVENLABS_API_KEY"):
+              r = safe_get(
+                  "https://api.elevenlabs.io/v1/user",
+                  headers={"xi-api-key": os.environ['ELEVENLABS_API_KEY']}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  add_result("ELEVENLABS_API_KEY", "ok", f"Valid. Subscription: {data.get('subscription', {}).get('tier', 'unknown')}")
+              else:
+                  add_result("ELEVENLABS_API_KEY", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("ELEVENLABS_API_KEY", "skip", "Secret empty / not set")
+
+          # Gemini
+          if has_value("GEMINI_API_KEY_AI"):
+              r = safe_get(
+                  f"https://generativelanguage.googleapis.com/v1beta/models?key={os.environ['GEMINI_API_KEY_AI']}"
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  count = len(data.get("models", []))
+                  add_result("GEMINI_API_KEY_AI", "ok", f"Valid. {count} models available")
+              else:
+                  add_result("GEMINI_API_KEY_AI", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("GEMINI_API_KEY_AI", "skip", "Secret empty / not set")
+
+          # Groq
+          if has_value("GROQ_API_KEY_AI"):
+              r = safe_get(
+                  "https://api.groq.com/openai/v1/models",
+                  headers={"Authorization": f"Bearer {os.environ['GROQ_API_KEY_AI']}"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  count = len(data.get("data", []))
+                  add_result("GROQ_API_KEY_AI", "ok", f"Valid. {count} models")
+              else:
+                  add_result("GROQ_API_KEY_AI", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("GROQ_API_KEY_AI", "skip", "Secret empty / not set")
+
+          # HuggingFace
+          if has_value("HUGGINGFACE_API_KEY_AI"):
+              r = safe_get(
+                  "https://huggingface.co/api/whoami-v2",
+                  headers={"Authorization": f"Bearer {os.environ['HUGGINGFACE_API_KEY_AI']}"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  add_result("HUGGINGFACE_API_KEY_AI", "ok", f"Valid. User: {data.get('name', data.get('fullname', 'ok'))}")
+              else:
+                  add_result("HUGGINGFACE_API_KEY_AI", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("HUGGINGFACE_API_KEY_AI", "skip", "Secret empty / not set")
+
+          # Mistral
+          if has_value("MISTRAL_API_KEY_AI"):
+              r = safe_get(
+                  "https://api.mistral.ai/v1/models",
+                  headers={"Authorization": f"Bearer {os.environ['MISTRAL_API_KEY_AI']}"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  count = len(data.get("data", []))
+                  add_result("MISTRAL_API_KEY_AI", "ok", f"Valid. {count} models")
+              else:
+                  add_result("MISTRAL_API_KEY_AI", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("MISTRAL_API_KEY_AI", "skip", "Secret empty / not set")
+
+          # OpenRouter
+          if has_value("OPENROUTER_API_KEY_AI"):
+              r = safe_get(
+                  "https://openrouter.ai/api/v1/auth/key",
+                  headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY_AI']}"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  label = data.get("data", {}).get("label", "ok")
+                  add_result("OPENROUTER_API_KEY_AI", "ok", f"Valid. Label: {label}")
+              else:
+                  # fallback models
+                  r2 = safe_get("https://openrouter.ai/api/v1/models", headers={"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY_AI']}"})
+                  if r2.status_code == 200:
+                      add_result("OPENROUTER_API_KEY_AI", "ok", "Valid (models OK)")
+                  else:
+                      add_result("OPENROUTER_API_KEY_AI", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("OPENROUTER_API_KEY_AI", "skip", "Secret empty / not set")
+
+          # Tavily
+          if has_value("TAVILY_API_KEY_AI"):
+              r = safe_post(
+                  "https://api.tavily.com/search",
+                  headers={"Content-Type": "application/json"},
+                  json_data={"api_key": os.environ['TAVILY_API_KEY_AI'], "query": "test", "max_results": 1}
+              )
+              if r.status_code == 200:
+                  add_result("TAVILY_API_KEY_AI", "ok", "Valid. Search endpoint OK")
+              else:
+                  add_result("TAVILY_API_KEY_AI", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("TAVILY_API_KEY_AI", "skip", "Secret empty / not set")
+
+          # Jina
+          if has_value("JINA_API_KEY"):
+              r = safe_get(
+                  "https://api.jina.ai/v1/models",
+                  headers={"Authorization": f"Bearer {os.environ['JINA_API_KEY']}"}
+              )
+              if r.status_code in (200, 401, 403):  # some endpoints may vary
+                  if r.status_code == 200:
+                      add_result("JINA_API_KEY", "ok", "Valid")
+                  else:
+                      # try embeddings lightweight
+                      r2 = safe_post(
+                          "https://api.jina.ai/v1/embeddings",
+                          headers={"Authorization": f"Bearer {os.environ['JINA_API_KEY']}", "Content-Type": "application/json"},
+                          json_data={"model": "jina-embeddings-v2-base-en", "input": ["test"]}
+                      )
+                      if r2.status_code == 200:
+                          add_result("JINA_API_KEY", "ok", "Valid (embeddings OK)")
+                      else:
+                          add_result("JINA_API_KEY", "fail", f"HTTP {r.status_code}/{r2.status_code}", r.status_code)
+              else:
+                  add_result("JINA_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("JINA_API_KEY", "skip", "Secret empty / not set")
+
+          # ============================================================
+          # 2. MEDIA / STOCK APIs
+          # ============================================================
+
+          # Coverr
           if has_value("COVERR_API_KEY"):
-              r = safe_get("https://api.coverr.co/videos", headers={"Authorization": f"Bearer {os.environ['COVERR_API_KEY']}"}, params={"page_size": 1})
-              add_result("COVERR_API_KEY", "ok" if r.status_code == 200 else "fail", "Valid" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("COVERR_API_KEY", "skip", "Empty")
+              r = safe_get(
+                  "https://api.coverr.co/videos",
+                  headers={"Authorization": f"Bearer {os.environ['COVERR_API_KEY']}"},
+                  params={"page_size": 1}
+              )
+              if r.status_code == 200:
+                  add_result("COVERR_API_KEY", "ok", "Valid")
+              else:
+                  add_result("COVERR_API_KEY", "fail", f"HTTP {r.status_code}: {r.text[:100]}", r.status_code)
+          else:
+              add_result("COVERR_API_KEY", "skip", "Secret empty / not set")
 
+          # Freesound
           if has_value("FREESOUND_API_KEY"):
-              r = safe_get("https://freesound.org/apiv2/search/text/", params={"query": "test", "token": os.environ['FREESOUND_API_KEY'], "page_size": 1})
-              add_result("FREESOUND_API_KEY", "ok" if r.status_code == 200 else "fail", "Valid" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("FREESOUND_API_KEY", "skip", "Empty")
+              r = safe_get(
+                  "https://freesound.org/apiv2/search/text/",
+                  params={"query": "test", "token": os.environ['FREESOUND_API_KEY'], "page_size": 1}
+              )
+              if r.status_code == 200:
+                  add_result("FREESOUND_API_KEY", "ok", "Valid")
+              else:
+                  add_result("FREESOUND_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("FREESOUND_API_KEY", "skip", "Secret empty / not set")
 
+          # Pexels
           if has_value("PEXELS_API_KEY"):
-              r = safe_get("https://api.pexels.com/v1/search", headers={"Authorization": os.environ['PEXELS_API_KEY']}, params={"query": "nature", "per_page": 1})
-              add_result("PEXELS_API_KEY", "ok" if r.status_code == 200 else "fail", "Valid" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("PEXELS_API_KEY", "skip", "Empty")
+              r = safe_get(
+                  "https://api.pexels.com/v1/search",
+                  headers={"Authorization": os.environ['PEXELS_API_KEY']},
+                  params={"query": "nature", "per_page": 1}
+              )
+              if r.status_code == 200:
+                  add_result("PEXELS_API_KEY", "ok", "Valid")
+              else:
+                  add_result("PEXELS_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("PEXELS_API_KEY", "skip", "Secret empty / not set")
 
+          # Pixabay
           if has_value("PIXABAY_API_KEY"):
-              r = safe_get("https://pixabay.com/api/", params={"key": os.environ['PIXABAY_API_KEY'], "q": "nature", "per_page": 3})
-              add_result("PIXABAY_API_KEY", "ok" if r.status_code == 200 else "fail", "Valid" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("PIXABAY_API_KEY", "skip", "Empty")
+              r = safe_get(
+                  "https://pixabay.com/api/",
+                  params={"key": os.environ['PIXABAY_API_KEY'], "q": "nature", "per_page": 3}
+              )
+              if r.status_code == 200:
+                  add_result("PIXABAY_API_KEY", "ok", "Valid")
+              else:
+                  add_result("PIXABAY_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("PIXABAY_API_KEY", "skip", "Secret empty / not set")
 
+          # OpenWeather
           if has_value("OPENWEATHER_API_KEY"):
-              r = safe_get("https://api.openweathermap.org/data/2.5/weather", params={"q": "London", "appid": os.environ['OPENWEATHER_API_KEY']})
-              if r.status_code == 200: add_result("OPENWEATHER_API_KEY", "ok", f"City: {r.json().get('name','?')}")
-              else: add_result("OPENWEATHER_API_KEY", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("OPENWEATHER_API_KEY", "skip", "Empty")
+              r = safe_get(
+                  "https://api.openweathermap.org/data/2.5/weather",
+                  params={"q": "London", "appid": os.environ['OPENWEATHER_API_KEY']}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  add_result("OPENWEATHER_API_KEY", "ok", f"Valid. City: {data.get('name', '?')}")
+              else:
+                  add_result("OPENWEATHER_API_KEY", "fail", f"HTTP {r.status_code}: {r.text[:100]}", r.status_code)
+          else:
+              add_result("OPENWEATHER_API_KEY", "skip", "Secret empty / not set")
 
-          # ===== META =====
+          # ============================================================
+          # 3. META / FACEBOOK / INSTAGRAM
+          # ============================================================
+
           if has_value("FACEBOOK_INSTAGRAM_META_TOKEN"):
-              r = safe_get("https://graph.facebook.com/v19.0/me", params={"access_token": os.environ['FACEBOOK_INSTAGRAM_META_TOKEN'], "fields": "id,name"})
-              if r.status_code == 200: add_result("FACEBOOK_INSTAGRAM_META_TOKEN", "ok", f"ID: {r.json().get('id','?')}")
-              else: add_result("FACEBOOK_INSTAGRAM_META_TOKEN", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("FACEBOOK_INSTAGRAM_META_TOKEN", "skip", "Empty")
+              r = safe_get(
+                  "https://graph.facebook.com/v19.0/me",
+                  params={"access_token": os.environ['FACEBOOK_INSTAGRAM_META_TOKEN'], "fields": "id,name"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  add_result("FACEBOOK_INSTAGRAM_META_TOKEN", "ok", f"Valid. ID: {data.get('id', '?')} Name: {data.get('name', '?')}")
+              else:
+                  add_result("FACEBOOK_INSTAGRAM_META_TOKEN", "fail", f"HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              add_result("FACEBOOK_INSTAGRAM_META_TOKEN", "skip", "Secret empty / not set")
 
           if has_value("FACEBOOK_PAGE_ID"):
               if has_value("FACEBOOK_INSTAGRAM_META_TOKEN"):
-                  r = safe_get(f"https://graph.facebook.com/v19.0/{os.environ['FACEBOOK_PAGE_ID']}", params={"access_token": os.environ['FACEBOOK_INSTAGRAM_META_TOKEN'], "fields": "id,name"})
-                  if r.status_code == 200: add_result("FACEBOOK_PAGE_ID", "ok", f"Page: {r.json().get('name', r.json().get('id'))}")
-                  else: add_result("FACEBOOK_PAGE_ID", "fail", f"HTTP {r.status_code}", r.status_code)
-              else: add_result("FACEBOOK_PAGE_ID", "warn", "Token missing")
-          else: add_result("FACEBOOK_PAGE_ID", "skip", "Empty")
+                  r = safe_get(
+                      f"https://graph.facebook.com/v19.0/{os.environ['FACEBOOK_PAGE_ID']}",
+                      params={"access_token": os.environ['FACEBOOK_INSTAGRAM_META_TOKEN'], "fields": "id,name"}
+                  )
+                  if r.status_code == 200:
+                      data = r.json() if hasattr(r, 'json') else {}
+                      add_result("FACEBOOK_PAGE_ID", "ok", f"Valid Page: {data.get('name', data.get('id'))}")
+                  else:
+                      add_result("FACEBOOK_PAGE_ID", "fail", f"HTTP {r.status_code}", r.status_code)
+              else:
+                  add_result("FACEBOOK_PAGE_ID", "warn", "ID present but META_TOKEN missing → cannot fully verify")
+          else:
+              add_result("FACEBOOK_PAGE_ID", "skip", "Secret empty / not set")
 
           if has_value("INSTAGRAM_BUSINESS_ACCOUNT_ID"):
               if has_value("FACEBOOK_INSTAGRAM_META_TOKEN"):
-                  r = safe_get(f"https://graph.facebook.com/v19.0/{os.environ['INSTAGRAM_BUSINESS_ACCOUNT_ID']}", params={"access_token": os.environ['FACEBOOK_INSTAGRAM_META_TOKEN'], "fields": "id,username"})
-                  if r.status_code == 200: add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "ok", f"@{r.json().get('username', r.json().get('id'))}")
-                  else: add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "fail", f"HTTP {r.status_code}", r.status_code)
-              else: add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "warn", "Token missing")
-          else: add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "skip", "Empty")
+                  r = safe_get(
+                      f"https://graph.facebook.com/v19.0/{os.environ['INSTAGRAM_BUSINESS_ACCOUNT_ID']}",
+                      params={"access_token": os.environ['FACEBOOK_INSTAGRAM_META_TOKEN'], "fields": "id,username"}
+                  )
+                  if r.status_code == 200:
+                      data = r.json() if hasattr(r, 'json') else {}
+                      add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "ok", f"Valid IG: @{data.get('username', data.get('id'))}")
+                  else:
+                      add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "fail", f"HTTP {r.status_code}", r.status_code)
+              else:
+                  add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "warn", "ID present but META_TOKEN missing")
+          else:
+              add_result("INSTAGRAM_BUSINESS_ACCOUNT_ID", "skip", "Secret empty / not set")
 
-          # ===== GOOGLE DRIVE =====
-          if all(has_value(k) for k in ["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET", "GOOGLE_DRIVE_REFRESH_TOKEN"]):
-              r = safe_post("https://oauth2.googleapis.com/token", data={
-                  "client_id": os.environ["GOOGLE_DRIVE_CLIENT_ID"],
-                  "client_secret": os.environ["GOOGLE_DRIVE_CLIENT_SECRET"],
-                  "refresh_token": os.environ["GOOGLE_DRIVE_REFRESH_TOKEN"],
-                  "grant_type": "refresh_token"})
-              add_result("GOOGLE_DRIVE (OAuth)", "ok" if r.status_code == 200 else "fail",
-                         "Refresh OK" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("GOOGLE_DRIVE (OAuth)", "skip", "Missing credentials")
+          # ============================================================
+          # 4. GOOGLE DRIVE / YOUTUBE (OAuth presence + basic check)
+          # ============================================================
 
-          for fk in ["GDRIVE_LONG_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID", "GDRIVE_STORY_VIDEO_FOLDER_ID"]:
-              if has_value(fk): add_result(fk, "ok", f"Value: {mask_val(os.environ[fk])}")
-              else: add_result(fk, "skip", "Empty")
+          gdrive_ok = all(has_value(k) for k in ["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET", "GOOGLE_DRIVE_REFRESH_TOKEN"])
+          if gdrive_ok:
+              # Try to refresh token to validate
+              r = safe_post(
+                  "https://oauth2.googleapis.com/token",
+                  data={
+                      "client_id": os.environ["GOOGLE_DRIVE_CLIENT_ID"],
+                      "client_secret": os.environ["GOOGLE_DRIVE_CLIENT_SECRET"],
+                      "refresh_token": os.environ["GOOGLE_DRIVE_REFRESH_TOKEN"],
+                      "grant_type": "refresh_token"
+                  }
+              )
+              if r.status_code == 200:
+                  add_result("GOOGLE_DRIVE (Client+Secret+Refresh)", "ok", "Refresh token valid → access token obtained")
+              else:
+                  add_result("GOOGLE_DRIVE (Client+Secret+Refresh)", "fail", f"Refresh failed HTTP {r.status_code}: {r.text[:120]}", r.status_code)
+          else:
+              missing = [k for k in ["GOOGLE_DRIVE_CLIENT_ID", "GOOGLE_DRIVE_CLIENT_SECRET", "GOOGLE_DRIVE_REFRESH_TOKEN"] if not has_value(k)]
+              add_result("GOOGLE_DRIVE OAuth set", "skip" if len(missing)==3 else "warn", f"Missing: {', '.join(missing)}")
 
-          # ===== YOUTUBE =====
-          if all(has_value(k) for k in ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"]):
-              r = safe_post("https://oauth2.googleapis.com/token", data={
-                  "client_id": os.environ["YOUTUBE_CLIENT_ID"],
-                  "client_secret": os.environ["YOUTUBE_CLIENT_SECRET"],
-                  "refresh_token": os.environ["YOUTUBE_REFRESH_TOKEN"],
-                  "grant_type": "refresh_token"})
-              add_result("YOUTUBE (OAuth)", "ok" if r.status_code == 200 else "fail",
-                         "Refresh OK" if r.status_code == 200 else f"HTTP {r.status_code}", r.status_code)
-          else: add_result("YOUTUBE (OAuth)", "skip", "Missing credentials")
+          for folder_key in ["GDRIVE_LONG_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID", "GDRIVE_STORY_VIDEO_FOLDER_ID"]:
+              if has_value(folder_key):
+                  add_result(folder_key, "ok", f"Present (value length {len(os.environ[folder_key])})")
+              else:
+                  add_result(folder_key, "skip", "Empty")
+
+          yt_ok = all(has_value(k) for k in ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"])
+          if yt_ok:
+              r = safe_post(
+                  "https://oauth2.googleapis.com/token",
+                  data={
+                      "client_id": os.environ["YOUTUBE_CLIENT_ID"],
+                      "client_secret": os.environ["YOUTUBE_CLIENT_SECRET"],
+                      "refresh_token": os.environ["YOUTUBE_REFRESH_TOKEN"],
+                      "grant_type": "refresh_token"
+                  }
+              )
+              if r.status_code == 200:
+                  add_result("YOUTUBE (Client+Secret+Refresh)", "ok", "Refresh token valid")
+              else:
+                  add_result("YOUTUBE (Client+Secret+Refresh)", "fail", f"Refresh failed HTTP {r.status_code}", r.status_code)
+          else:
+              missing = [k for k in ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"] if not has_value(k)]
+              add_result("YOUTUBE OAuth set", "skip" if len(missing)==3 else "warn", f"Missing: {', '.join(missing)}")
 
           if has_value("DAILY_HADEES_YT_PLAYLIST_ID"):
-              add_result("DAILY_HADEES_YT_PLAYLIST_ID", "ok", f"Value: {mask_val(os.environ['DAILY_HADEES_YT_PLAYLIST_ID'])}")
-          else: add_result("DAILY_HADEES_YT_PLAYLIST_ID", "skip", "Empty")
+              add_result("DAILY_HADEES_YT_PLAYLIST_ID", "ok", f"Present (len={len(os.environ['DAILY_HADEES_YT_PLAYLIST_ID'])})")
+          else:
+              add_result("DAILY_HADEES_YT_PLAYLIST_ID", "skip", "Empty")
 
-          # ===== TELEGRAM + GITHUB =====
+          # ============================================================
+          # 5. TELEGRAM + GITHUB + URL SECRETS
+          # ============================================================
+
           if has_value("TELEGRAM_BOT_TOKEN"):
               r = safe_get(f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/getMe")
-              if r.status_code == 200 and r.json().get("ok"):
-                  b = r.json().get("result", {}); add_result("TELEGRAM_BOT_TOKEN", "ok", f"Bot @{b.get('username')}")
-              else: add_result("TELEGRAM_BOT_TOKEN", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("TELEGRAM_BOT_TOKEN", "skip", "Empty")
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  if data.get("ok"):
+                      bot = data.get("result", {})
+                      add_result("TELEGRAM_BOT_TOKEN", "ok", f"Bot @{bot.get('username')} (id={bot.get('id')})")
+                  else:
+                      add_result("TELEGRAM_BOT_TOKEN", "fail", f"API error: {data}", r.status_code)
+              else:
+                  add_result("TELEGRAM_BOT_TOKEN", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("TELEGRAM_BOT_TOKEN", "skip", "Empty")
 
           if has_value("TELEGRAM_CHAT_ID"):
-              add_result("TELEGRAM_CHAT_ID", "ok", f"Value: {mask_val(os.environ['TELEGRAM_CHAT_ID'])}")
-          else: add_result("TELEGRAM_CHAT_ID", "skip", "Empty")
+              add_result("TELEGRAM_CHAT_ID", "ok", f"Present: {os.environ['TELEGRAM_CHAT_ID']}")
+          else:
+              add_result("TELEGRAM_CHAT_ID", "skip", "Empty")
 
           if has_value("TOKEN_GITHUB"):
-              r = safe_get("https://api.github.com/user", headers={"Authorization": f"Bearer {os.environ['TOKEN_GITHUB']}", "Accept": "application/vnd.github+json"})
-              if r.status_code == 200: add_result("TOKEN_GITHUB", "ok", f"User: {r.json().get('login')}")
-              else: add_result("TOKEN_GITHUB", "fail", f"HTTP {r.status_code}", r.status_code)
-          else: add_result("TOKEN_GITHUB", "skip", "Empty")
+              r = safe_get(
+                  "https://api.github.com/user",
+                  headers={"Authorization": f"Bearer {os.environ['TOKEN_GITHUB']}", "Accept": "application/vnd.github+json"}
+              )
+              if r.status_code == 200:
+                  data = r.json() if hasattr(r, 'json') else {}
+                  add_result("TOKEN_GITHUB", "ok", f"Valid. User: {data.get('login')}")
+              else:
+                  add_result("TOKEN_GITHUB", "fail", f"HTTP {r.status_code}", r.status_code)
+          else:
+              add_result("TOKEN_GITHUB", "skip", "Empty")
 
-          # ===== URLs =====
-          for uk in ["HADITH_API_URL", "PRAYER_TIMES_API_URL", "QURAN_API_URL"]:
-              if has_value(uk):
-                  u = os.environ[uk]
-                  if u.startswith("http"):
-                      r = safe_get(u, timeout=8)
-                      if r.status_code < 500: add_result(uk, "ok", f"HTTP {r.status_code} | {mask_val(u)}")
-                      else: add_result(uk, "warn", f"Server HTTP {r.status_code}")
-                  else: add_result(uk, "warn", f"Not URL: {mask_val(u)}")
-              else: add_result(uk, "skip", "Empty")
+          # URL-type secrets (just presence + basic reachability)
+          for url_key in ["HADITH_API_URL", "PRAYER_TIMES_API_URL", "QURAN_API_URL"]:
+              if has_value(url_key):
+                  url = os.environ[url_key]
+                  if url.startswith("http"):
+                      r = safe_get(url, timeout=8)
+                      if r.status_code < 500:
+                          add_result(url_key, "ok", f"Reachable (HTTP {r.status_code})")
+                      else:
+                          add_result(url_key, "warn", f"Server error HTTP {r.status_code}")
+                  else:
+                      add_result(url_key, "warn", f"Present but not a full URL: {url[:50]}")
+              else:
+                  add_result(url_key, "skip", "Empty")
 
           # ============================================================
-          # BUILD SINGLE MESSAGE
+          # BUILD SINGLE PROFESSIONAL TELEGRAM MESSAGE
           # ============================================================
+
           now = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M UTC")
           repo = os.environ.get('GITHUB_REPOSITORY', 'unknown')
           run_id = os.environ.get('GITHUB_RUN_ID', 'manual')
           actor = os.environ.get('GITHUB_ACTOR', 'unknown')
 
+          # Compact categories
           categories = {
-              "🧠 AI / LLM": ["CEREBRAS_API_KEY_AI", "COHERE_API_KEY_AI", "DEEPGRAM_API_KEY", "DEEPL_API_KEY", "ELEVENLABS_API_KEY", "GEMINI_API_KEY_AI", "GROQ_API_KEY_AI", "HUGGINGFACE_API_KEY_AI", "MISTRAL_API_KEY_AI", "OPENROUTER_API_KEY_AI", "TAVILY_API_KEY_AI", "JINA_API_KEY", "NVIDIA_API_KEY"],
-              "🎬 Media": ["COVERR_API_KEY", "FREESOUND_API_KEY", "PEXELS_API_KEY", "PIXABAY_API_KEY", "OPENWEATHER_API_KEY"],
-              "📱 Meta": ["FACEBOOK_INSTAGRAM_META_TOKEN", "FACEBOOK_PAGE_ID", "INSTAGRAM_BUSINESS_ACCOUNT_ID"],
-              "☁️ Drive": ["GOOGLE_DRIVE (OAuth)", "GDRIVE_LONG_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID", "GDRIVE_STORY_VIDEO_FOLDER_ID"],
-              "▶️ YouTube": ["YOUTUBE (OAuth)", "DAILY_HADEES_YT_PLAYLIST_ID"],
-              "🤖 Bots": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TOKEN_GITHUB"],
-              "🌐 URLs": ["HADITH_API_URL", "PRAYER_TIMES_API_URL", "QURAN_API_URL"]
+              "🧠 AI / LLM": [
+                  "CEREBRAS_API_KEY_AI", "COHERE_API_KEY_AI", "DEEPGRAM_API_KEY",
+                  "DEEPL_API_KEY", "ELEVENLABS_API_KEY", "GEMINI_API_KEY_AI",
+                  "GROQ_API_KEY_AI", "HUGGINGFACE_API_KEY_AI", "MISTRAL_API_KEY_AI",
+                  "OPENROUTER_API_KEY_AI", "TAVILY_API_KEY_AI", "JINA_API_KEY"
+              ],
+              "🎬 Media": [
+                  "COVERR_API_KEY", "FREESOUND_API_KEY", "PEXELS_API_KEY",
+                  "PIXABAY_API_KEY", "OPENWEATHER_API_KEY"
+              ],
+              "📱 Meta / Social": [
+                  "FACEBOOK_INSTAGRAM_META_TOKEN", "FACEBOOK_PAGE_ID",
+                  "INSTAGRAM_BUSINESS_ACCOUNT_ID"
+              ],
+              "☁️ Google Drive": [
+                  "GOOGLE_DRIVE (Client+Secret+Refresh)",
+                  "GDRIVE_LONG_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID",
+                  "GDRIVE_STORY_VIDEO_FOLDER_ID"
+              ],
+              "▶️ YouTube": [
+                  "YOUTUBE (Client+Secret+Refresh)", "DAILY_HADEES_YT_PLAYLIST_ID"
+              ],
+              "🤖 Telegram + GitHub": [
+                  "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TOKEN_GITHUB"
+              ],
+              "🌐 URLs": [
+                  "HADITH_API_URL", "PRAYER_TIMES_API_URL", "QURAN_API_URL"
+              ]
           }
 
           result_map = {r["name"]: r for r in results}
+
+          # Health
           total = max(summary["total"], 1)
           health = int((summary["ok"] / total) * 100)
-          if health >= 95: he, ht = "🟢", "Excellent"
-          elif health >= 80: he, ht = "🟡", "Good"
-          elif health >= 60: he, ht = "🟠", "Fair"
-          else: he, ht = "🔴", "Critical"
-          filled = int(10 * health / 100)
-          bar = "█" * filled + "░" * (10 - filled)
-
-          def sn(k):
-              n = k.replace("_API_KEY_AI","").replace("_API_KEY","").replace("_"," ")
-              return n[:20] + ".." if len(n) > 20 else n
-
-          lines = []
-          lines.append("╔══════════════════════════╗")
-          lines.append("║  🔬 *SECRETS DIAGNOSIS*  ║")
-          lines.append("╚══════════════════════════╝")
-          lines.append("")
-          lines.append(f"📅 `{now}`")
-          lines.append(f"📦 `{repo}`")
-          lines.append(f"👤 `{actor}` • Run `{run_id}`")
-          lines.append("────────────────────────")
-          lines.append(f"*HEALTH* {he} *{health}%* {ht}")
-          lines.append(f"`{bar}`")
-          lines.append(f"✅{summary['ok']} ❌{summary['fail']} ⚠️{summary['warn']} ⏭️{summary['skip']} 📊{summary['total']}")
-          lines.append("────────────────────────")
-
-          for cat, keys in categories.items():
-              items = []
-              for k in keys:
-                  r = result_map.get(k)
-                  if not r: continue
-                  if r["status"] == "ok":
-                      items.append(f"{r['emoji']} `{sn(k)}` | {r['detail']}")
-                  else:
-                      items.append(f"{r['emoji']} `{sn(k)}`\n     └ {r['detail'][:60]}")
-              if items:
-                  lines.append(f"\n*{cat}*")
-                  lines.extend(items)
-
-          lines.append("\n────────────────────────")
-          if summary["fail"] == 0:
-              lines.append("🎉 *All systems operational*")
+          if health >= 95:
+              health_emoji, health_text = "🟢", "Excellent"
+          elif health >= 80:
+              health_emoji, health_text = "🟡", "Good"
+          elif health >= 60:
+              health_emoji, health_text = "🟠", "Fair"
           else:
-              lines.append(f"⚠️ *{summary['fail']} issue(s) found*")
+              health_emoji, health_text = "🔴", "Critical"
+
+          bar_len = 10
+          filled = int(bar_len * health / 100)
+          bar = "█" * filled + "░" * (bar_len - filled)
+
+          # Short name helper
+          def short_name(key):
+              name = key.replace("_API_KEY_AI", "").replace("_API_KEY", "").replace("_", " ")
+              return name[:20] + ".." if len(name) > 20 else name
+
+          # Build single clean message with clear partitions
+          lines = []
+
+          # ===== HEADER =====
+          lines.append("┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+          lines.append("┃   🔬  *SECRETS DIAGNOSIS* ┃")
+          lines.append("┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+          lines.append("")
+          lines.append(f"📅  `{now}`")
+          lines.append(f"📦  `{repo}`")
+          lines.append(f"👤  `{actor}`")
+          lines.append(f"🔢  Run `{run_id}`")
+          lines.append("")
+
+          # ===== HEALTH BOX =====
+          lines.append("┌──────── HEALTH ────────┐")
+          lines.append(f"│  {health_emoji}  *{health}%*  {health_text}")
+          lines.append(f"│  `{bar}`")
+          lines.append(f"│  ✅ {summary['ok']}   ❌ {summary['fail']}   ⚠️ {summary['warn']}   ⏭️ {summary['skip']}")
+          lines.append("└────────────────────────┘")
+          lines.append("")
+
+          # ===== CATEGORIES WITH CLEAR PARTITION =====
+          first_cat = True
+          for cat_name, keys in categories.items():
+              cat_items = []
+              for key in keys:
+                  r = result_map.get(key)
+                  if not r:
+                      continue
+                  icon = r["emoji"]
+                  name = short_name(key)
+                  if r["status"] == "ok":
+                      cat_items.append(f"  {icon}  `{name}`")
+                  else:
+                      detail = (r["detail"] or "")[:55]
+                      cat_items.append(f"  {icon}  `{name}`")
+                      cat_items.append(f"       └ {detail}")
+
+              if not cat_items:
+                  continue
+
+              if not first_cat:
+                  lines.append("┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄")
+              first_cat = False
+
+              lines.append(f"▸ *{cat_name}*")
+              lines.extend(cat_items)
+              lines.append("")
+
+          # ===== FOOTER / ISSUES =====
+          lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+          if summary["fail"] == 0:
+              lines.append("🎉  *All systems operational*")
+          else:
+              lines.append(f"⚠️  *{summary['fail']} Issue(s) Found*")
+              lines.append("")
               for r in results:
                   if r["status"] == "fail":
-                      lines.append(f"❌ `{r['name']}`")
-                      lines.append(f"   {r['detail'][:90]}")
+                      lines.append(f"❌  `{r['name']}`")
+                      lines.append(f"    {r['detail'][:85]}")
+                      lines.append("")
 
-          lines.append("")
-          lines.append("_Sawaj Studio Lab • GitHub Actions_")
+          lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+          lines.append("_Sawaj Studio Lab  •  GitHub Actions_")
 
           full_msg = "\n".join(lines)
-          if len(full_msg) > 4000:
-              full_msg = full_msg[:3950] + "\n\n… _(truncated)_"
 
+          # Safety: Telegram hard limit 4096
+          if len(full_msg) > 4050:
+              full_msg = full_msg[:4000] + "\n\n… _(truncated)_"
+
+          # Print preview
           print("\n" + "="*60)
           print("SINGLE MESSAGE REPORT PREVIEW")
           print("="*60)
@@ -411,26 +702,41 @@ jobs:
           print("="*60)
           print(f"Length: {len(full_msg)} chars")
 
-          # ===== SEND SINGLE MESSAGE =====
-          if os.environ.get("SEND_TELEGRAM", "true").lower() == "true" and has_value("TELEGRAM_BOT_TOKEN") and has_value("TELEGRAM_CHAT_ID"):
-              print(f"\n📤 Sending SINGLE message to Telegram...")
-              payload = {"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": full_msg,
-                         "parse_mode": "Markdown", "disable_web_page_preview": True}
+          # Send ONE message only
+          send_flag = os.environ.get("SEND_TELEGRAM", "true").lower() == "true"
+          bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+
+          if send_flag and bot_token and chat_id:
+              print(f"\n📤 Sending SINGLE professional message to Telegram...")
+              payload = {
+                  "chat_id": chat_id,
+                  "text": full_msg,
+                  "parse_mode": "Markdown",
+                  "disable_web_page_preview": True
+              }
               try:
-                  resp = requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
-                                       json=payload, timeout=20)
+                  resp = requests.post(
+                      f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                      json=payload,
+                      timeout=20
+                  )
                   if resp.status_code == 200:
                       print("✅ Single message sent successfully")
                   else:
                       print(f"❌ Failed: {resp.status_code} → {resp.text[:200]}")
+                      # Fallback plain text
                       payload.pop("parse_mode", None)
-                      resp2 = requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
-                                            json=payload, timeout=20)
+                      resp2 = requests.post(
+                          f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                          json=payload,
+                          timeout=20
+                      )
                       print(f"Fallback status: {resp2.status_code}")
               except Exception as e:
                   print(f"❌ Exception: {e}")
           else:
-              print("\n⏭️ Telegram send skipped (either disabled or missing token/chat)")
+              print("\n⏭️ Telegram send skipped")
 
           if summary["fail"] > 0:
               print(f"\n⚠️ Completed with {summary['fail']} failures")
