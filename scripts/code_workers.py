@@ -1,3 +1,0 @@
-"""
-Sawaj Studio Module
-"""
