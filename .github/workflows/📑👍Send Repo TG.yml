@@ -1,4 +1,4 @@
-name: Send Repo to Telegram 📤
+name: 📑Send Repo to TG📤
 
 on:
   workflow_dispatch:
