@@ -34,15 +34,41 @@ jobs:
           python-version: '3.10'
 
       # ═══════════════════════════════════════════════════════════
+      # 📱 START MESSAGE — Telegram
+      # ═══════════════════════════════════════════════════════════
+      - name: 📱 Telegram Start
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "⚠️ Telegram secrets missing"
+            exit 0
+          fi
+          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            -d parse_mode="HTML" \
+            -d text="🏗️ <b>SAWAJ STUDIO STRUCTURE BUILD STARTED</b>
+
+          🕐 Started: $(date '+%Y-%m-%d %H:%M:%S UTC')
+          🔢 Run: #${{ github.run_number }}
+          👤 Actor: ${{ github.actor }}
+          🔗 Branch: ${{ github.ref_name }}" \
+            && echo "✅ Start message sent" \
+            || echo "⚠️ Start message failed"
+
+      # ═══════════════════════════════════════════════════════════
       # 🏗️ BUILD STRUCTURE
       # ═══════════════════════════════════════════════════════════
       - name: 🏗️ Build Folders + Files
+        id: build
         run: |
           cat > /tmp/build.py <<'PYEOF'
           import os
+          import json
 
           ROOT = "Sawaj_studio"
-
           files = []
 
           # ─── WORKFLOWS ───
@@ -173,7 +199,7 @@ jobs:
               files.append(f"{ROOT}/assets/{a}/.gitkeep")
 
           # ═══════════════════════════════════════════════════════
-          # CREATE FOLDERS + FILES
+          # CREATE
           # ═══════════════════════════════════════════════════════
           created_f = 0
           created_d = 0
@@ -207,6 +233,17 @@ jobs:
           print(f"📄 Files created:   {created_f}")
           print(f"⏭️  Files skipped:   {skipped}")
           print("=" * 60)
+
+          # Save stats for later
+          stats = {
+              "folders": created_d,
+              "files": created_f,
+              "skipped": skipped,
+              "total_folders": len(set(os.path.dirname(p) for p in files if os.path.dirname(p))),
+              "total_files": len(files),
+          }
+          with open("/tmp/stats.json", "w") as f:
+              json.dump(stats, f)
           PYEOF
 
           python3 /tmp/build.py
@@ -215,14 +252,150 @@ jobs:
       # 📤 COMMIT + PUSH
       # ═══════════════════════════════════════════════════════════
       - name: 📤 Commit & Push
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           if git diff --cached --quiet; then
             echo "✅ No changes"
+            echo "status=no_changes" >> $GITHUB_OUTPUT
           else
             git commit -m "🏗️ Build Sawaj Studio structure [skip ci]"
             git push origin HEAD
             echo "✅ Pushed"
+            echo "status=pushed" >> $GITHUB_OUTPUT
           fi
+
+      # ═══════════════════════════════════════════════════════════
+      # 🌳 GENERATE TREE REPORT
+      # ═══════════════════════════════════════════════════════════
+      - name: 🌳 Generate Report
+        if: always()
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tree
+
+          {
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "🌳 SAWAJ STUDIO — STRUCTURE REPORT"
+            echo "═══════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📅 Date: $(date '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "🔢 Run: #${{ github.run_number }}"
+            echo "👤 Actor: ${{ github.actor }}"
+            echo "🌿 Branch: ${{ github.ref_name }}"
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "📁 FOLDER STRUCTURE"
+            echo "═══════════════════════════════════════════════════════════════"
+            echo ""
+            tree Sawaj_studio/ -L 6 --dirsfirst 2>/dev/null || echo "Not found"
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "📊 STATISTICS"
+            echo "═══════════════════════════════════════════════════════════════"
+            echo ""
+            echo "📁 Total Folders:  $(find Sawaj_studio/ -type d 2>/dev/null | wc -l)"
+            echo "📄 Total Files:    $(find Sawaj_studio/ -type f 2>/dev/null | wc -l)"
+            echo "🐍 Python Files:   $(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l)"
+            echo "📝 Markdown Files: $(find Sawaj_studio/ -name '*.md' 2>/dev/null | wc -l)"
+            echo "📋 JSON Files:     $(find Sawaj_studio/ -name '*.json' 2>/dev/null | wc -l)"
+            echo "⚙️  YML Files:      $(find .github/ -name '*.yml' 2>/dev/null | wc -l)"
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+            echo "✅ Build Complete"
+            echo "═══════════════════════════════════════════════════════════════"
+          } > sawaj_structure_report.txt
+
+          echo "📋 Report size: $(wc -l < sawaj_structure_report.txt) lines"
+
+      # ═══════════════════════════════════════════════════════════
+      # 📱 SEND REPORT TO TELEGRAM
+      # ═══════════════════════════════════════════════════════════
+      - name: 📱 Telegram Report
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "⚠️ Telegram secrets missing"
+            exit 0
+          fi
+
+          FOLDERS=$(find Sawaj_studio/ -type d 2>/dev/null | wc -l)
+          FILES=$(find Sawaj_studio/ -type f 2>/dev/null | wc -l)
+          PY_FILES=$(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l)
+
+          # Summary message
+          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            -d parse_mode="HTML" \
+            -d text="✅ <b>SAWAJ STUDIO BUILD COMPLETE</b>
+
+          ═══════════════════════════
+          📁 <b>Folders:</b> $FOLDERS
+          📄 <b>Files:</b> $FILES
+          🐍 <b>Python:</b> $PY_FILES
+          ═══════════════════════════
+
+          🔢 Run: #${{ github.run_number }}
+          👤 Actor: ${{ github.actor }}
+          🌿 Branch: ${{ github.ref_name }}
+          🕐 Time: $(date '+%H:%M:%S UTC')
+
+          📎 Full tree report attached below 👇" \
+            && echo "✅ Summary sent" \
+            || echo "⚠️ Summary failed"
+
+          # Document
+          if [ -f sawaj_structure_report.txt ]; then
+            curl -s -F chat_id="$TG_CHAT" \
+                 -F document=@"sawaj_structure_report.txt" \
+                 -F caption="🌳 Sawaj Studio — Full Structure Report" \
+                 "https://api.telegram.org/bot$TG_TOKEN/sendDocument" \
+              && echo "✅ Document sent" \
+              || echo "⚠️ Document failed"
+          fi
+
+      # ═══════════════════════════════════════════════════════════
+      # 📱 FAILURE NOTIFICATION
+      # ═══════════════════════════════════════════════════════════
+      - name: 📱 Telegram on Failure
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            exit 0
+          fi
+
+          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            -d parse_mode="HTML" \
+            -d text="❌ <b>BUILD FAILED</b>
+
+          🔢 Run: #${{ github.run_number }}
+          👤 Actor: ${{ github.actor }}
+          🔗 <a href='https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'>View Logs</a>" \
+            || true
+
+      # ═══════════════════════════════════════════════════════════
+      # 📊 GITHUB SUMMARY
+      # ═══════════════════════════════════════════════════════════
+      - name: 📊 GitHub Summary
+        if: always()
+        run: |
+          {
+            echo "# 🏗️ Sawaj Studio Build"
+            echo ""
+            echo "| Metric | Count |"
+            echo "|--------|-------|"
+            echo "| Folders | $(find Sawaj_studio/ -type d 2>/dev/null | wc -l) |"
+            echo "| Files | $(find Sawaj_studio/ -type f 2>/dev/null | wc -l) |"
+            echo "| Python | $(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l) |"
+            echo ""
+            echo "🔢 Run: #${{ github.run_number }}"
+          } >> $GITHUB_STEP_SUMMARY
