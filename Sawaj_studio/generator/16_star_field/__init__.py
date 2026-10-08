@@ -1,3 +1,1 @@
-"""
-Sawaj Studio Module
-"""
+"""Star Field Module"""

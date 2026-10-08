@@ -1,3 +1,1 @@
-"""
-Sawaj Studio Module
-"""
+"""Background Module"""

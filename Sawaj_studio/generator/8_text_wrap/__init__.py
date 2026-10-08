@@ -1,3 +1,1 @@
-"""
-Sawaj Studio Module
-"""
+"""Text Wrap Module"""

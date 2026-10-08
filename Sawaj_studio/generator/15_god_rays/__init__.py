@@ -1,3 +1,1 @@
-"""
-Sawaj Studio Module
-"""
+"""God Rays Module"""

@@ -1,3 +1,10 @@
 """
-Sawaj Studio Module
+📊 Log Levels
 """
+DEBUG = "DEBUG"
+INFO = "INFO"
+OK = "OK"
+WARN = "WARN"
+ERROR = "ERROR"
+STEP = "STEP"
+API = "API"
