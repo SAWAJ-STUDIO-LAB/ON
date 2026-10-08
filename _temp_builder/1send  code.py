@@ -1,5 +1,5 @@
 """
-1send code.py
+1send_code.py
 A_core module ki saari files mein code daalta hai.
 """
 import os
@@ -45,42 +45,30 @@ from A_core.A2_env_fallback import get_env_fallback
 
 
 class Config:
-    """Story generator config — offline/online upload system."""
+    """Story generator config."""
 
-    # ─── Telegram ───
     TG_TOKEN = get_env("TELEGRAM_BOT_TOKEN")
     TG_CHAT_ID = get_env("TELEGRAM_CHAT_ID")
 
-    # ─── Facebook ───
     META_TOKEN = get_env_fallback(
-        "FACEBOOK_META_TOKEN",
-        "FACEBOOK_INSTAGRAM_META_TOKEN",
-    )
+        "FACEBOOK_META_TOKEN", "FACEBOOK_INSTAGRAM_META_TOKEN")
     PAGE_ID = get_env("FACEBOOK_PAGE_ID")
 
-    # ─── Instagram ───
     IG_TOKEN = get_env_fallback(
-        "FACEBOOK_INSTAGRAM_META_TOKEN",
-        "FACEBOOK_META_TOKEN",
-    )
+        "FACEBOOK_INSTAGRAM_META_TOKEN", "FACEBOOK_META_TOKEN")
     IG_BUSINESS_ID = get_env("INSTAGRAM_BUSINESS_ACCOUNT_ID")
 
-    # ─── YouTube ───
     YT_CLIENT_ID = get_env("YOUTUBE_CLIENT_ID")
     YT_CLIENT_SECRET = get_env("YOUTUBE_CLIENT_SECRET")
     YT_REFRESH_TOKEN = get_env("YOUTUBE_REFRESH_TOKEN")
     YT_PLAYLIST_ID = get_env("DAILY_HADEES_YT_PLAYLIST_ID")
 
-    # ─── Drive ───
     DRIVE_CLIENT_ID = get_env("GOOGLE_DRIVE_CLIENT_ID")
     DRIVE_CLIENT_SECRET = get_env("GOOGLE_DRIVE_CLIENT_SECRET")
     DRIVE_REFRESH_TOKEN = get_env("GOOGLE_DRIVE_REFRESH_TOKEN")
     DRIVE_STORY_FOLDER_ID = get_env_fallback(
-        "GDRIVE_STORY_VIDEO_FOLDER_ID",
-        "GDRIVE_SHORT_VIDEO_FOLDER_ID",
-    )
+        "GDRIVE_STORY_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID")
 
-    # ─── AI Providers ───
     OPENROUTER_API_KEY = get_env_fallback(
         "OPENROUTER_API_KEY", "OPENROUTER_API_KEY_AI")
     GROQ_API_KEY = get_env_fallback(
@@ -93,22 +81,16 @@ class Config:
         "CEREBRAS_API_KEY", "CEREBRAS_API_KEY_AI", "CELEBRAS_API_KEY_AI")
     COHERE_API_KEY = get_env_fallback(
         "COHERE_API_KEY", "COHERE_API_KEY_AI")
-    HUGGINGFACE_API_KEY = get_env_fallback(
-        "HUGGINGFACE_API_KEY", "HUGGINGFACE_API_KEY_AI")
 
-    # ─── TTS / Translation ───
     ELEVENLABS_API_KEY = get_env("ELEVENLABS_API_KEY")
     DEEPL_API_KEY = get_env("DEEPL_API_KEY")
 
-    # ─── Media ───
     PEXELS_API_KEY = get_env("PEXELS_API_KEY")
     PIXABAY_API_KEY = get_env("PIXABAY_API_KEY")
     FREESOUND_API_KEY = get_env("FREESOUND_API_KEY")
 
-    # ─── Hadith ───
     HADITH_API_URL = get_env("HADITH_API_URL")
 
-    # ─── Runtime ───
     EVENT_NAME = get_env("GITHUB_EVENT_NAME")
     UPLOAD_TARGET = get_env("UPLOAD_TARGET", default="drive_only").lower()
     CONFIRM_UPLOAD = get_env("CONFIRM_UPLOAD", default="false").lower() == "true"
@@ -121,22 +103,17 @@ Sirf upload decisions.
 from A_core.A3_config_class import Config
 
 
-def decide(cfg: Config = None) -> dict:
+def decide(cfg=None):
     """Return which platforms to upload to."""
     if cfg is None:
         cfg = Config()
-
     is_scheduled = cfg.EVENT_NAME == "schedule"
     is_confirmed = True if is_scheduled else cfg.CONFIRM_UPLOAD
-
     return {
         "drive": True,
-        "facebook": (is_scheduled or is_confirmed) and
-                    cfg.UPLOAD_TARGET in ("fb_ig", "all"),
-        "instagram": (is_scheduled or is_confirmed) and
-                     cfg.UPLOAD_TARGET in ("fb_ig", "all"),
-        "youtube": (not is_scheduled) and is_confirmed and
-                   cfg.UPLOAD_TARGET in ("youtube", "all"),
+        "facebook": (is_scheduled or is_confirmed) and cfg.UPLOAD_TARGET in ("fb_ig", "all"),
+        "instagram": (is_scheduled or is_confirmed) and cfg.UPLOAD_TARGET in ("fb_ig", "all"),
+        "youtube": (not is_scheduled) and is_confirmed and cfg.UPLOAD_TARGET in ("youtube", "all"),
     }
 ''',
 
@@ -147,11 +124,10 @@ Sirf available platforms check.
 from A_core.A3_config_class import Config
 
 
-def available_platforms(cfg: Config = None) -> list:
+def available_platforms(cfg=None):
     """Return platforms with valid credentials."""
     if cfg is None:
         cfg = Config()
-
     platforms = []
     if cfg.META_TOKEN and cfg.PAGE_ID:
         platforms.append("facebook")
@@ -274,6 +250,7 @@ A13_tg_buffer.py
 Sirf log buffer + counters.
 """
 import time
+from datetime import datetime
 
 LOG_BUFFER = []
 FILE_TIMERS = {}
@@ -284,13 +261,11 @@ RUN_HEADER = ["📖 STORY VIDEO RUN"]
 
 def now():
     """Current time HH:MM:SS."""
-    from datetime import datetime
     return datetime.now().strftime("%H:%M:%S")
 
 
 def reset():
     """Reset all buffers."""
-    global LOG_BUFFER
     LOG_BUFFER.clear()
     FILE_TIMERS.clear()
     STEP_COUNTER.update({"total": 0, "success": 0, "failed": 0})
@@ -405,10 +380,8 @@ from A_core.A13_tg_buffer import LOG_BUFFER
 
 def step(filename, action, result="ok", detail=""):
     """Add step to buffer."""
-    icon = {
-        "ok": "✅", "fail": "❌", "skip": "⏭️",
-        "warn": "⚠️", "info": "ℹ️",
-    }.get(result, "ℹ️")
+    icon = {"ok": "✅", "fail": "❌", "skip": "⏭️",
+            "warn": "⚠️", "info": "ℹ️"}.get(result, "ℹ️")
     line = f"{icon} <b>{filename}</b> → {action}"
     if detail:
         line += f" ({detail})"
@@ -424,10 +397,8 @@ from A_core.A13_tg_buffer import LOG_BUFFER
 
 def api_call(filename, api_name, status, detail=""):
     """Add API call to buffer."""
-    icon = {
-        "success": "🟢", "failed": "🔴",
-        "fallback": "🟡", "skipped": "⚪",
-    }.get(status, "⚫")
+    icon = {"success": "🟢", "failed": "🔴",
+            "fallback": "🟡", "skipped": "⚪"}.get(status, "⚫")
     line = f"{icon} <b>{api_name}</b> [{status.upper()}]"
     if detail:
         line += f" — {detail}"
@@ -582,10 +553,8 @@ def create_session():
     """Create HTTP session with retry."""
     session = requests.Session()
     retry = Retry(
-        total=5,
-        backoff_factor=1.5,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
+        total=5, backoff_factor=1.5,
+        status_forcelist=[429, 500, 502, 503, 504])
     session.mount("https://", HTTPAdapter(max_retries=retry))
     return session
 ''',
@@ -594,7 +563,6 @@ def create_session():
 A29_http_download.py
 Sirf file download.
 """
-import os
 from A_core.A9_log_step import log_step
 
 
@@ -675,50 +643,31 @@ Sirf secrets registry dict.
 
 SECRETS_REGISTRY = {
     "telegram": {
-        "label": "📱 Telegram",
-        "required": True,
+        "label": "📱 Telegram", "required": True,
         "secrets": {
-            "TELEGRAM_BOT_TOKEN": {
-                "label": "Bot Token",
-                "names": ["TELEGRAM_BOT_TOKEN"],
-            },
-            "TELEGRAM_CHAT_ID": {
-                "label": "Chat ID",
-                "names": ["TELEGRAM_CHAT_ID"],
-            },
+            "TELEGRAM_BOT_TOKEN": {"label": "Bot Token", "names": ["TELEGRAM_BOT_TOKEN"]},
+            "TELEGRAM_CHAT_ID": {"label": "Chat ID", "names": ["TELEGRAM_CHAT_ID"]},
         },
     },
     "facebook": {
-        "label": "📘 Facebook",
-        "required": True,
+        "label": "📘 Facebook", "required": True,
         "secrets": {
-            "FACEBOOK_META_TOKEN": {
-                "label": "Meta Token",
-                "names": ["FACEBOOK_META_TOKEN", "FACEBOOK_INSTAGRAM_META_TOKEN"],
-            },
-            "FACEBOOK_PAGE_ID": {
-                "label": "Page ID",
-                "names": ["FACEBOOK_PAGE_ID"],
-            },
+            "FACEBOOK_META_TOKEN": {"label": "Meta Token",
+                "names": ["FACEBOOK_META_TOKEN", "FACEBOOK_INSTAGRAM_META_TOKEN"]},
+            "FACEBOOK_PAGE_ID": {"label": "Page ID", "names": ["FACEBOOK_PAGE_ID"]},
         },
     },
     "instagram": {
-        "label": "📸 Instagram",
-        "required": True,
+        "label": "📸 Instagram", "required": True,
         "secrets": {
-            "FACEBOOK_INSTAGRAM_META_TOKEN": {
-                "label": "IG Token",
-                "names": ["FACEBOOK_INSTAGRAM_META_TOKEN", "FACEBOOK_META_TOKEN"],
-            },
-            "INSTAGRAM_BUSINESS_ACCOUNT_ID": {
-                "label": "IG Business ID",
-                "names": ["INSTAGRAM_BUSINESS_ACCOUNT_ID"],
-            },
+            "FACEBOOK_INSTAGRAM_META_TOKEN": {"label": "IG Token",
+                "names": ["FACEBOOK_INSTAGRAM_META_TOKEN", "FACEBOOK_META_TOKEN"]},
+            "INSTAGRAM_BUSINESS_ACCOUNT_ID": {"label": "IG Business ID",
+                "names": ["INSTAGRAM_BUSINESS_ACCOUNT_ID"]},
         },
     },
     "youtube": {
-        "label": "📺 YouTube",
-        "required": False,
+        "label": "📺 YouTube", "required": False,
         "secrets": {
             "YOUTUBE_CLIENT_ID": {"label": "Client ID", "names": ["YOUTUBE_CLIENT_ID"]},
             "YOUTUBE_CLIENT_SECRET": {"label": "Client Secret", "names": ["YOUTUBE_CLIENT_SECRET"]},
@@ -726,32 +675,30 @@ SECRETS_REGISTRY = {
         },
     },
     "drive": {
-        "label": "☁️ Google Drive",
-        "required": True,
+        "label": "☁️ Google Drive", "required": True,
         "secrets": {
             "GOOGLE_DRIVE_CLIENT_ID": {"label": "Client ID", "names": ["GOOGLE_DRIVE_CLIENT_ID"]},
             "GOOGLE_DRIVE_CLIENT_SECRET": {"label": "Client Secret", "names": ["GOOGLE_DRIVE_CLIENT_SECRET"]},
             "GOOGLE_DRIVE_REFRESH_TOKEN": {"label": "Refresh Token", "names": ["GOOGLE_DRIVE_REFRESH_TOKEN"]},
-            "GDRIVE_STORY_VIDEO_FOLDER_ID": {"label": "Folder ID", "names": ["GDRIVE_STORY_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID"]},
+            "GDRIVE_STORY_VIDEO_FOLDER_ID": {"label": "Folder ID",
+                "names": ["GDRIVE_STORY_VIDEO_FOLDER_ID", "GDRIVE_SHORT_VIDEO_FOLDER_ID"]},
         },
     },
     "ai_providers": {
-        "label": "🤖 AI",
-        "required": False,
-        "min_required": 1,
+        "label": "🤖 AI", "required": False, "min_required": 1,
         "secrets": {
-            "OPENROUTER_API_KEY": {"label": "OpenRouter", "names": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEY_AI"]},
+            "OPENROUTER_API_KEY": {"label": "OpenRouter",
+                "names": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEY_AI"]},
             "GROQ_API_KEY": {"label": "Groq", "names": ["GROQ_API_KEY", "GROQ_API_KEY_AI"]},
             "GEMINI_API_KEY": {"label": "Gemini", "names": ["GEMINI_API_KEY", "GEMINI_API_KEY_AI"]},
             "MISTRAL_API_KEY": {"label": "Mistral", "names": ["MISTRAL_API_KEY", "MISTRAL_API_KEY_AI"]},
-            "CEREBRAS_API_KEY": {"label": "Cerebras", "names": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEY_AI", "CELEBRAS_API_KEY_AI"]},
+            "CEREBRAS_API_KEY": {"label": "Cerebras",
+                "names": ["CEREBRAS_API_KEY", "CEREBRAS_API_KEY_AI", "CELEBRAS_API_KEY_AI"]},
             "COHERE_API_KEY": {"label": "Cohere", "names": ["COHERE_API_KEY", "COHERE_API_KEY_AI"]},
         },
     },
     "media": {
-        "label": "🎬 Media",
-        "required": False,
-        "min_required": 1,
+        "label": "🎬 Media", "required": False, "min_required": 1,
         "secrets": {
             "PEXELS_API_KEY": {"label": "Pexels", "names": ["PEXELS_API_KEY"]},
             "PIXABAY_API_KEY": {"label": "Pixabay", "names": ["PIXABAY_API_KEY"]},
@@ -759,8 +706,7 @@ SECRETS_REGISTRY = {
         },
     },
     "tts": {
-        "label": "🎙️ TTS",
-        "required": False,
+        "label": "🎙️ TTS", "required": False,
         "secrets": {
             "ELEVENLABS_API_KEY": {"label": "ElevenLabs", "names": ["ELEVENLABS_API_KEY"]},
             "DEEPL_API_KEY": {"label": "DeepL", "names": ["DEEPL_API_KEY"]},
@@ -776,7 +722,7 @@ Sirf env var check.
 import os
 
 
-def check_env(*names) -> tuple:
+def check_env(*names):
     """Check multiple env var names, return first found."""
     for name in names:
         val = os.environ.get(name, "").strip()
@@ -793,7 +739,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping Telegram API."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if not token:
@@ -817,7 +763,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping Facebook Graph API."""
     token = (os.environ.get("FACEBOOK_META_TOKEN", "").strip()
              or os.environ.get("FACEBOOK_INSTAGRAM_META_TOKEN", "").strip())
@@ -845,7 +791,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping Instagram Graph API."""
     token = os.environ.get("FACEBOOK_INSTAGRAM_META_TOKEN", "").strip()
     ig_id = os.environ.get("INSTAGRAM_BUSINESS_ACCOUNT_ID", "").strip()
@@ -872,7 +818,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping Google Drive OAuth."""
     cid = os.environ.get("GOOGLE_DRIVE_CLIENT_ID", "").strip()
     csec = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET", "").strip()
@@ -882,14 +828,12 @@ def ping() -> dict:
     try:
         r = requests.post(
             "https://oauth2.googleapis.com/token",
-            data={
-                "client_id": cid, "client_secret": csec,
-                "refresh_token": rt, "grant_type": "refresh_token",
-            }, timeout=10)
+            data={"client_id": cid, "client_secret": csec,
+                  "refresh_token": rt, "grant_type": "refresh_token"},
+            timeout=10)
         if r.status_code == 200 and "access_token" in r.json():
             return {"status": "working", "code": 200}
-        return {"status": "failed", "code": r.status_code,
-                "error": r.json().get("error", "")[:80]}
+        return {"status": "failed", "code": r.status_code}
     except Exception as e:
         return {"status": "error", "reason": str(e)[:60]}
 ''',
@@ -902,7 +846,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping OpenRouter."""
     key = (os.environ.get("OPENROUTER_API_KEY", "").strip()
            or os.environ.get("OPENROUTER_API_KEY_AI", "").strip())
@@ -927,7 +871,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping Groq."""
     key = (os.environ.get("GROQ_API_KEY", "").strip()
            or os.environ.get("GROQ_API_KEY_AI", "").strip())
@@ -952,7 +896,7 @@ import os
 import requests
 
 
-def ping() -> dict:
+def ping():
     """Ping Pexels."""
     key = os.environ.get("PEXELS_API_KEY", "").strip()
     if not key:
@@ -975,7 +919,7 @@ Sirf secrets summary banani.
 """
 
 
-def build(secrets_report, api_report) -> dict:
+def build(secrets_report, api_report):
     """Build summary dict."""
     total_secrets = 0
     working_secrets = 0
@@ -983,11 +927,7 @@ def build(secrets_report, api_report) -> dict:
         total_secrets += cat["total"]
         working_secrets += cat["set_count"]
 
-    checked = 0
-    working = 0
-    failed = 0
-    skipped = 0
-
+    checked = working = failed = skipped = 0
     for api in api_report.values():
         st = api.get("status", "")
         if st == "skipped":
@@ -1017,11 +957,10 @@ Sirf report format karna.
 """
 
 
-def format_report(report: dict) -> str:
+def format_report(report):
     """Format report as Telegram HTML."""
     lines = []
     s = report["summary"]
-
     lines.append("<b>🔐 SECRETS &amp; API VERIFICATION</b>")
     lines.append(f"🕐 {report['timestamp']}")
     lines.append("━━━━━━━━━━━━━━━━━━━━━")
@@ -1031,7 +970,6 @@ def format_report(report: dict) -> str:
     lines.append(f"🌐 APIs: <b>{s['working_apis']}/{s['checked_apis']}</b> ({s['health_pct']}%)")
     if s["failed_apis"] > 0:
         lines.append(f"❌ Failed: <b>{s['failed_apis']}</b>")
-
     return "\\n".join(lines)
 ''',
 
@@ -1041,7 +979,7 @@ Sirf message split karna.
 """
 
 
-def split(msg: str, max_len: int = 3800) -> list:
+def split(msg, max_len=3800):
     """Split long message into chunks."""
     if len(msg) <= max_len:
         return [msg]
@@ -1083,18 +1021,14 @@ def verify():
             "label": meta["label"],
             "required": meta["required"],
             "min_required": meta.get("min_required", 0),
-            "secrets": {},
-            "set_count": 0,
-            "missing_count": 0,
+            "secrets": {}, "set_count": 0, "missing_count": 0,
             "total": len(meta["secrets"]),
         }
         for sk, sm in meta["secrets"].items():
             found, actual, length = check_env(*sm["names"])
             cat_report["secrets"][sk] = {
-                "label": sm["label"],
-                "is_set": found,
-                "actual_name": actual if found else "",
-                "length": length,
+                "label": sm["label"], "is_set": found,
+                "actual_name": actual if found else "", "length": length,
             }
             if found:
                 cat_report["set_count"] += 1
@@ -1139,17 +1073,14 @@ A_core package — Story generator core modules.
 
 def main():
     """Write all files."""
-    base = BASE
-    os.makedirs(base, exist_ok=True)
+    os.makedirs(BASE, exist_ok=True)
     total = 0
-
     for filename, content in FILES.items():
-        path = os.path.join(base, filename)
+        path = os.path.join(BASE, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         total += 1
         print(f"  ✅ {path}")
-
     print(f"\\n🎉 A_core: {total} files written!")
 
 
