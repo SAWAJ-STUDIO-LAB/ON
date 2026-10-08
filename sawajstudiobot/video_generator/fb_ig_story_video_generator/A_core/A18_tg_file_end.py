@@ -1,9 +1,9 @@
-"""A18_tg_file_end.py — Sirf file_end."""
 import time
 from A_core.A13_tg_buffer import LOG_BUFFER, FILE_TIMERS, STEP_COUNTER
 
 
 def file_end(filename, status="success", note=""):
+    """Log the completion of a file processing step."""
     elapsed = time.time() - FILE_TIMERS.get(filename, time.time())
     if status == "success":
         STEP_COUNTER["success"] += 1

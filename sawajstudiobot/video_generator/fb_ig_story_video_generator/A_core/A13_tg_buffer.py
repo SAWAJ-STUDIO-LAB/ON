@@ -1,4 +1,3 @@
-"""A13_tg_buffer.py — Sirf buffer."""
 import time
 from datetime import datetime
 
@@ -10,11 +9,15 @@ RUN_HEADER = ["📖 STORY VIDEO RUN"]
 
 
 def now():
+    """Returns the current time as a formatted string."""
     return datetime.now().strftime("%H:%M:%S")
 
 
 def reset():
+    """Resets the logging buffer and counters for a new run."""
     LOG_BUFFER.clear()
     FILE_TIMERS.clear()
     STEP_COUNTER.update({"total": 0, "success": 0, "failed": 0})
     START_TIME[0] = time.time()
+
+    log("Log buffer and state reset for a new run.", level="INFO")

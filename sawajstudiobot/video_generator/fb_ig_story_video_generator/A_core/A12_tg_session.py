@@ -1,4 +1,4 @@
-"""A12_tg_session.py — Sirf session."""
 import requests
 
+# Create a session for efficient HTTP requests
 session = requests.Session()
