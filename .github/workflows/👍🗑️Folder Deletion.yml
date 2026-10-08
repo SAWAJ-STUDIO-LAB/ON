@@ -1,118 +1,57 @@
-name: 🗑️ Safe File & Folder Deletion Manager
+name: 📋 List All Files and Send to Telegram
 
 on:
   workflow_dispatch:
     inputs:
-      target_paths:
-        description: '📝 Paths to Delete (Comma or newline separated paths e.g. folder/subfolder or file.py)'
+      target_dir:
+        description: '📁 Directory to scan (e.g. Sawaj_studio or .)'
         required: true
         type: string
-        default: 'Sawaj_studio/generator/temp_module.py'
-      send_telegram:
-        description: '📱 Send deletion report to Telegram?'
-        required: false
-        default: true
-        type: boolean
+        default: 'Sawaj_studio'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  delete-files:
+  list-repository-files:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.TOKEN_GITHUB }}
 
-      - name: 🗑️ Safely Process and Delete Selected Paths
+      - name: 🔍 Generate Complete File List
         run: |
           python3 <<'PY'
           import os
-          import glob
-          import shutil
 
-          raw_input_paths = """${{ github.event.inputs.target_paths }}"""
-          paths_to_check = [p.strip() for p in raw_input_paths.replace(",", "\n").split("\n") if p.strip()]
+          target_dir = "${{ github.event.inputs.target_dir }}"
+          output_file = "repository_files_report.txt"
 
-          deleted_count = 0
-          skipped_count = 0
-          deleted_items = []
+          print(f"Scanning directory: {target_dir}")
 
-          print("=" * 60)
-          print("🗑️ SAWAJ STUDIO - SAFE DELETION MANAGER")
-          print("=" * 60)
+          file_list = []
+          for root, dirs, files in os.walk(target_dir):
+              for file in files:
+                  full_path = os.path.join(root, file)
+                  file_list.append(full_path)
 
-          # Dangerous root paths jinko galti se bhi delete hone se rokna hai
-          PROTECTED_PATHS = ["", ".", "/", "Sawaj_studio", "Sawaj_studio/", ".github", "src", "docs"]
+          # Sort files alphabetically
+          file_list.sort()
 
-          for target in paths_to_check:
-              # Normalize path
-              target = os.path.normpath(target)
+          with open(output_file, "w", encoding="utf-8") as f:
+              f.write("=" * 60 + "\n")
+              f.write(f"📁 SAWAJ STUDIO - REPOSITORY FILE LIST\n")
+              f.write("=" * 60 + "\n\n")
+              for idx, path in enumerate(file_list, 1):
+                  f.write(f"{idx}. {path}\n")
 
-              # Safety check: Prevent deleting core/root directories
-              if target in PROTECTED_PATHS or target.lower() in [p.lower() for p in PROTECTED_PATHS]:
-                  print(f"🛑 BLOCKED (Protected Path): {target} cannot be deleted.")
-                  skipped_count += 1
-                  continue
-
-              matched_files = glob.glob(target, recursive=True)
-              
-              if not matched_files and os.path.exists(target):
-                  matched_files = [target]
-
-              if matched_files:
-                  for path in matched_files:
-                      # Additional inner safety check
-                      if os.path.normpath(path) in [os.path.normpath(p) for p in PROTECTED_PATHS]:
-                          print(f"🛑 BLOCKED: Attempt to delete protected item -> {path}")
-                          continue
-
-                      try:
-                          if os.path.isdir(path):
-                              shutil.rmtree(path)
-                              print(f"📁 Deleted Folder Directory: {path}")
-                          elif os.path.isfile(path):
-                              os.remove(path)
-                              print(f"📄 Deleted File: {path}")
-                          
-                          deleted_items.append(path)
-                          deleted_count += 1
-                      except Exception as e:
-                          print(f"❌ Failed to delete {path}: {e}")
-              else:
-                  print(f"⚠️ Path not found: {target}")
-                  skipped_count += 1
-
-          print("=" * 60)
-          print(f"✅ Successfully deleted items: {deleted_count}")
-          print(f"⚠️ Skipped / Protected / Not found: {skipped_count}")
-          print("=" * 60)
-
-          with open("/tmp/deleted_summary.txt", "w") as f:
-              f.write("\n".join(deleted_items) if deleted_items else "No items deleted.")
+          print(f"Total files found: {len(file_list)}")
           PY
 
-      - name: 📤 Commit & Push Deletions
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "✅ No changes to commit."
-          else
-            git commit -m "🗑️ Safely deleted selected files/folders via workflow [skip ci]"
-            git push origin HEAD
-            echo "✅ Pushed deletions successfully!"
-          fi
-
-      - name: 📱 Send Deletion Report to Telegram
-        if: always() && github.event.inputs.send_telegram == 'true'
+      - name: 📱 Send File List to Telegram
+        if: always()
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -122,11 +61,15 @@ jobs:
             exit 0
           fi
 
-          DELETED_LIST=$(cat /tmp/deleted_summary.txt 2>/dev/null || echo "None")
+          if [ ! -f repository_files_report.txt ]; then
+            echo "⚠️ Report file missing"
+            exit 0
+          fi
 
           curl -s -F chat_id="$TG_CHAT" \
-               -F caption="🗑️ <b>Sawaj Studio Safe Deletion Report</b>%0A%0A<b>Deleted Items:</b>%0A<code>$DELETED_LIST</code>%0A%0A🔢 Run: #${{ github.run_number }}" \
+               -F document=@"repository_files_report.txt" \
+               -F caption="📋 <b>Sawaj Studio File List Report</b>%0A✅ Sabhi files ki list document file mein bhej di gayi hai.%0A🔢 Run: #${{ github.run_number }}" \
                -F parse_mode="HTML" \
-               "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-            && echo "✅ Telegram notification sent" \
+               "https://api.telegram.org/bot$TG_TOKEN/sendDocument" \
+            && echo "✅ Telegram document sent successfully" \
             || echo "⚠️ Telegram failed"
