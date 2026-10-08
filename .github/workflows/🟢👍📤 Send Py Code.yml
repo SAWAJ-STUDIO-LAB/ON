@@ -1,0 +1,85 @@
+name: 📤 Send Py Code
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  transfer:
+    name: 🚀 Transfer Code to All Files
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ▶️ Code1 (Story)
+        run: python "Code editor/Code1"
+
+      - name: ▶️ Code2 (Short)
+        run: python "Code editor/Code2"
+
+      - name: ▶️ Code3 (Long)
+        run: python "Code editor/Code3"
+
+      - name: ▶️ Code4 (Uploader)
+        run: python "Code editor/Code4"
+
+      - name: 📊 Count Files
+        id: count
+        run: |
+          STORY=$(find sawajstudiobot/video_generator/fb_ig_story_video_generator -name "*.py" -size +0c | wc -l)
+          SHORT=$(find sawajstudiobot/video_generator/fb_ig_yt_short_video_generator -name "*.py" -size +0c | wc -l)
+          LONG=$(find sawajstudiobot/video_generator/fb_yt_long_video_generator -name "*.py" -size +0c | wc -l)
+          UPL=$(find sawajstudiobot/video_uploader -name "*.py" -size +0c | wc -l)
+          echo "story=$STORY" >> $GITHUB_OUTPUT
+          echo "short=$SHORT" >> $GITHUB_OUTPUT
+          echo "long=$LONG" >> $GITHUB_OUTPUT
+          echo "upl=$UPL" >> $GITHUB_OUTPUT
+
+      - name: 📤 Commit
+        run: |
+          git config user.name "SawajBot"
+          git config user.email "bot@sawajstudio.com"
+          git add .
+          git commit -m "✅ Code transferred" || echo "No changes"
+          git push
+
+      - name: 📱 Telegram Report
+        env:
+          TG: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          S: ${{ steps.count.outputs.story }}
+          SH: ${{ steps.count.outputs.short }}
+          L: ${{ steps.count.outputs.long }}
+          U: ${{ steps.count.outputs.upl }}
+        run: |
+          if [ -z "$TG" ] || [ -z "$CHAT" ]; then exit 0; fi
+          MSG="✅ <b>CODE TRANSFER DONE</b>
+          ━━━━━━━━━━━━━━━
+          📖 Story: <b>$S</b>
+          🎬 Short: <b>$SH</b>
+          🎥 Long: <b>$L</b>
+          📤 Uploader: <b>$U</b>
+          ━━━━━━━━━━━━━━━
+          🕐 $(date -u '+%Y-%m-%d %H:%M UTC')"
+          curl -s -X POST "https://api.telegram.org/bot${TG}/sendMessage" \
+            -d "chat_id=${CHAT}" -d "text=${MSG}" -d "parse_mode=HTML" -o /dev/null
+
+      - name: ✅ Summary
+        run: |
+          echo "## ✅ Transfer Complete" >> $GITHUB_STEP_SUMMARY
+          echo "| Module | Files |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 📖 Story | ${{ steps.count.outputs.story }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎬 Short | ${{ steps.count.outputs.short }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎥 Long | ${{ steps.count.outputs.long }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📤 Uploader | ${{ steps.count.outputs.upl }} |" >> $GITHUB_STEP_SUMMARY
