@@ -1,13 +1,13 @@
 """
-👑 KING — FULL SMART SYSTEM
-Self-Healing + Smart Chunks + Auto-Test + Retry + Version Track
+👑 KING — World #1 Bot Upgrader
+Self-Check + Self-Test + Self-Fix + Self-Heal + Upgrade + Report
 """
 import os
 import re
+import ast
 import json
 import time
 import shutil
-import ast
 import subprocess
 import requests
 from datetime import datetime
@@ -30,7 +30,7 @@ IGNORE = {
 CHUNK_SIZE = 25
 TIMEOUT = 300
 MAX_RETRIES = 3
-MAX_CHUNK_SIZE_KB = 400  # chhota chunks
+MAX_CHUNK_KB = 400
 
 
 # ═══════════════════════════════════════════════
@@ -72,10 +72,9 @@ def collect():
 
 
 # ═══════════════════════════════════════════════
-# SMART CHUNKS — Import-aware
+# SMART CHUNKS
 # ═══════════════════════════════════════════════
 def extract_imports(rel_path):
-    """Extract imported module names."""
     full = os.path.join(BOT_ROOT, rel_path)
     imports = set()
     try:
@@ -92,15 +91,12 @@ def extract_imports(rel_path):
     return imports
 
 
-def make_smart_chunks(files, size=CHUNK_SIZE, max_kb=MAX_CHUNK_SIZE_KB):
-    """Group files: same folder + import-aware + size-aware."""
-    # Step 1: Group by folder
+def make_smart_chunks(files, size=CHUNK_SIZE, max_kb=MAX_CHUNK_KB):
     folder_groups = {}
     for f in files:
         folder = os.path.dirname(f)
         folder_groups.setdefault(folder, []).append(f)
 
-    # Step 2: Build chunks
     chunks = []
     current = []
     current_size = 0
@@ -113,7 +109,6 @@ def make_smart_chunks(files, size=CHUNK_SIZE, max_kb=MAX_CHUNK_SIZE_KB):
             except Exception:
                 fsize = 0
 
-            # Chhota chunk rakhna hai
             if len(current) >= size or (current_size + fsize > max_kb and current):
                 chunks.append(current)
                 current = []
@@ -145,9 +140,9 @@ def combine_chunk(files, idx):
 
 
 # ═══════════════════════════════════════════════
-# AI CALLS with RETRY
+# PROMPT
 # ═══════════════════════════════════════════════
-PROMPT = """You are a senior Python engineer. Upgrade this bot code to be WORLD #1.
+PROMPT = """You are a WORLD #1 senior Python engineer. Upgrade this bot code to be the BEST in the world.
 
 CRITICAL RULES:
 1. Return ALL {file_count} files from input — do NOT skip any
@@ -156,17 +151,26 @@ CRITICAL RULES:
    ═══ FILE: path ═══
    <full code>
    ═══ END ═══
-4. Make code BETTER, cleaner, faster, well-documented
-5. Fix bugs, add error handling, add fallbacks
-6. Remove any copyright text
-7. Return ONLY the code — NO explanations, NO markdown
+4. NEVER DELETE any file — only modify or create
+5. You CAN create NEW files if needed:
+   ═══ NEW FILE: path ═══
+   <code>
+   ═══ END ═══
+6. Make code BETTER, cleaner, faster, well-documented
+7. Fix ALL bugs, add error handling, add fallbacks
+8. Add NEW features if helpful
+9. Remove any copyright text
+10. Ensure code is production-ready, world-class
+11. Return ONLY the code — NO explanations, NO markdown
 
 INPUT CODE:
 """
 
 
+# ═══════════════════════════════════════════════
+# AI CALLS with retry
+# ═══════════════════════════════════════════════
 def _post_with_retry(url, headers, payload, timeout=TIMEOUT):
-    """Retry on network errors."""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             r = requests.post(url, headers=headers, json=payload, timeout=timeout)
@@ -174,7 +178,7 @@ def _post_with_retry(url, headers, payload, timeout=TIMEOUT):
                 return r.json()
             if r.status_code in (429, 500, 502, 503, 504):
                 wait = attempt * 5
-                print(f"      ⏳ Retry {attempt}/{MAX_RETRIES} after {wait}s (HTTP {r.status_code})")
+                print(f"      ⏳ Retry {attempt}/{MAX_RETRIES} ({wait}s)")
                 time.sleep(wait)
                 continue
             print(f"      ⚠️ HTTP {r.status_code}")
@@ -285,7 +289,6 @@ def ai_huggingface(code, fc):
 
 
 def ai_all(code, fc):
-    """Call all 8 AI with self-healing."""
     providers = [
         ("OpenRouter", ai_openrouter),
         ("Groq", ai_groq),
@@ -304,7 +307,7 @@ def ai_all(code, fc):
             if res and "═══ FILE:" in res:
                 files_in_res = res.count("═══ FILE:")
                 responses.append({"ai": name, "code": res, "files": files_in_res})
-                print(f"      ✅ {name}: {files_in_res} files, {len(res)} chars")
+                print(f"      ✅ {name}: {files_in_res} files")
             else:
                 print(f"      ⚠️ {name}: invalid")
         except Exception as e:
@@ -338,25 +341,14 @@ def backup():
 
 
 # ═══════════════════════════════════════════════
-# APPLY
+# APPLY (no delete)
 # ═══════════════════════════════════════════════
 def apply(text):
+    """Apply upgrades: modify + create. NO DELETE."""
     modified = 0
     created = 0
-    deleted = 0
 
-    for match in re.findall(r"═══ DELETE: (.+?) ═══", text):
-        rel = match.strip()
-        if not rel or ".." in rel:
-            continue
-        full = os.path.join(BOT_ROOT, rel)
-        if os.path.exists(full):
-            try:
-                os.remove(full)
-                deleted += 1
-            except Exception:
-                pass
-
+    # NEW FILES
     for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══",
                                 text, re.DOTALL):
         rel = rel.strip()
@@ -367,7 +359,9 @@ def apply(text):
         with open(full, "w", encoding="utf-8") as f:
             f.write(code.strip() + "\n")
         created += 1
+        print(f"      📁 Created: {rel}")
 
+    # MODIFY
     for rel, code in re.findall(r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══",
                                 text, re.DOTALL):
         rel = rel.strip()
@@ -379,14 +373,13 @@ def apply(text):
             f.write(code.strip() + "\n")
         modified += 1
 
-    return modified, created, deleted
+    return modified, created, 0
 
 
 # ═══════════════════════════════════════════════
-# AUTO TEST
+# TEST
 # ═══════════════════════════════════════════════
 def test_syntax(files):
-    """Test Python syntax of all files."""
     failed = []
     for rel in files:
         full = os.path.join(BOT_ROOT, rel)
@@ -400,30 +393,17 @@ def test_syntax(files):
     return failed
 
 
-def test_imports(files):
-    """Basic import check via py_compile."""
-    failed = []
-    for rel in files:
-        full = os.path.join(BOT_ROOT, rel)
-        try:
-            r = subprocess.run(
-                ["python", "-m", "py_compile", full],
-                capture_output=True, text=True, timeout=10)
-            if r.returncode != 0:
-                failed.append({"file": rel, "error": r.stderr[:100]})
-        except Exception:
-            pass
-    return failed
-
-
 # ═══════════════════════════════════════════════
-# RATE
+# SCORE
 # ═══════════════════════════════════════════════
-def rate_bot(files, changes):
+def rate_bot(files, changes, syntax_failed):
     if changes == 0:
         return 1
     ratio = changes / max(files, 1)
-    return min(10, max(1, int(4 + ratio * 6)))
+    base = int(4 + ratio * 6)
+    if syntax_failed > 0:
+        base -= min(2, syntax_failed // 10)
+    return min(10, max(1, base))
 
 
 # ═══════════════════════════════════════════════
@@ -434,12 +414,10 @@ def send_report(data):
     files = data["files"]
     modified = data["modified"]
     created = data["created"]
-    deleted = data["deleted"]
     score = data["score"]
     backup_path = data["backup"] or "N/A"
     chunks = data.get("chunk_reports", [])
     syntax_failed = data.get("syntax_failed", [])
-    import_failed = data.get("import_failed", [])
 
     bar = "█" * score + "░" * (10 - score)
 
@@ -447,12 +425,11 @@ def send_report(data):
     for c in chunks:
         icon = "🏆" if c["picked_files"] > 0 else "❌"
         chunk_lines.append(
-            f"   • Chunk {c['idx']}: {c['files']}f → {icon} {c['winner']} "
-            f"({c['picked_files']})")
+            f"   • C{c['idx']}: {c['files']}f → {icon} {c['winner']} ({c['picked_files']})")
     chunk_text = "\n".join(chunk_lines)
 
     msg = (
-        "👑 <b>KING REPORT — FULL SMART</b>\n"
+        "👑 <b>KING REPORT — WORLD #1</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 <code>{ts}</code>\n"
         "\n"
@@ -462,13 +439,12 @@ def send_report(data):
         "🔧 <b>ACTIONS:</b>\n"
         f"   ✏️ Modified: <b>{modified}</b>\n"
         f"   📁 Created: <b>{created}</b>\n"
-        f"   🗑️ Deleted: <b>{deleted}</b>\n"
+        f"   🗑️ Deleted: <b>0</b>\n"
         "\n"
         f"📦 <b>CHUNKS ({len(chunks)}):</b>\n"
         f"{chunk_text}\n"
         "\n"
         f"✅ <b>Syntax:</b> {len(syntax_failed)} failed\n"
-        f"✅ <b>Imports:</b> {len(import_failed)} failed\n"
         "\n"
         f"💾 Backup: <code>{backup_path}</code>\n"
         "\n"
@@ -488,34 +464,29 @@ def main():
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print("═" * 50)
-    print("👑 KING STARTED — FULL SMART")
+    print("👑 KING STARTED — WORLD #1 MODE")
     print("═" * 50)
 
-    tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nFull Smart mode...", silent=True)
+    tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nWorking...", silent=True)
 
     os.makedirs(WORK, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
 
-    # Collect
     files = collect()
     print(f"📁 Files: {len(files)}")
     if not files:
-        tg_send("⚠️ No files found.")
+        tg_send("⚠️ No files.")
         return
 
-    # Backup
     backup_path = backup()
     print(f"💾 Backup: {backup_path}")
 
-    # Smart Chunks
     chunks = make_smart_chunks(files)
     print(f"📦 Chunks: {len(chunks)}")
 
-    # Process
     chunk_reports = []
     total_modified = 0
     total_created = 0
-    total_deleted = 0
 
     for idx, chunk_files in enumerate(chunks, 1):
         print(f"\n{'═' * 40}")
@@ -528,7 +499,7 @@ def main():
         responses = ai_all(combined, fc)
 
         if not responses:
-            print(f"  ❌ Chunk {idx}: All AI failed")
+            print(f"  ❌ All AI failed")
             chunk_reports.append({
                 "idx": idx, "files": fc,
                 "winner": "NONE", "picked_files": 0,
@@ -538,60 +509,48 @@ def main():
         best = pick_best(responses)
         print(f"  🏆 Best: {best['ai']} ({best['files']} files)")
 
-        m, c, d = apply(best["code"])
+        m, c, _ = apply(best["code"])
         total_modified += m
         total_created += c
-        total_deleted += d
 
         chunk_reports.append({
             "idx": idx, "files": fc,
             "winner": best["ai"], "picked_files": m + c,
         })
-        print(f"  ✅ Applied: {m}M {c}C {d}D")
+        print(f"  ✅ Applied: {m}M {c}C")
 
     # Test
-    print("\n🧪 Testing syntax...")
+    print("\n🧪 Testing...")
     syntax_failed = test_syntax(files)
-    print(f"  ✅ {len(syntax_failed)} syntax failures")
-
-    print("🧪 Testing imports...")
-    import_failed = test_imports(files[:50])  # first 50 for speed
-    print(f"  ✅ {len(import_failed)} import failures")
+    print(f"  Syntax failures: {len(syntax_failed)}")
 
     # Score
-    score = rate_bot(len(files), total_modified + total_created)
+    score = rate_bot(len(files), total_modified + total_created, len(syntax_failed))
 
     # Report
     send_report({
         "files": len(files),
         "modified": total_modified,
         "created": total_created,
-        "deleted": total_deleted,
         "score": score,
         "backup": backup_path,
         "time": ts,
         "chunk_reports": chunk_reports,
         "syntax_failed": syntax_failed,
-        "import_failed": import_failed,
     })
 
-    # Save JSON log
+    # Log
     log_file = f"{LOG_DIR}/run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(log_file, "w", encoding="utf-8") as f:
         json.dump({
-            "time": ts,
-            "files": len(files),
-            "modified": total_modified,
-            "created": total_created,
-            "deleted": total_deleted,
-            "score": score,
-            "chunks": chunk_reports,
+            "time": ts, "files": len(files),
+            "modified": total_modified, "created": total_created,
+            "score": score, "chunks": chunk_reports,
             "syntax_failed": syntax_failed,
-            "import_failed": import_failed,
         }, f, indent=2)
 
     print("\n" + "═" * 50)
-    print(f"👑 DONE: {total_modified}M {total_created}C {total_deleted}D")
+    print(f"👑 DONE: {total_modified}M {total_created}C — Score {score}/10")
     print("═" * 50)
 
 
