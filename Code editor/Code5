@@ -1,0 +1,299 @@
+"""
+Code5 — Short Generator FULL code.
+"""
+import os
+
+BASE = "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator"
+
+FILES = {
+    # ═══ __init__ ═══
+    "__init__.py": '"""Short generator package."""\n',
+    "A_core/__init__.py": '"""A_core package."""\n',
+    "B_graphics/__init__.py": '"""B_graphics package."""\n',
+    "C_content/__init__.py": '"""C_content package."""\n',
+    "D_video/__init__.py": '"""D_video package."""\n',
+    "E_audio/__init__.py": '"""E_audio package."""\n',
+    "F_drive/__init__.py": '"""F_drive package."""\n',
+    "G_entry/__init__.py": '"""G_entry package."""\n',
+    "H_tests/__init__.py": '"""H_tests package."""\n',
+
+    # ═══ A_core ═══
+    "A_core/A1_env_loader.py": '"""A1 — env load."""\nimport os\n\n\ndef get_env(name, default=""):\n    return os.environ.get(name, default).strip()\n',
+    "A_core/A2_env_fallback.py": '"""A2 — fallback."""\nimport os\n\n\ndef get_env_fallback(*names, default=""):\n    for n in names:\n        v = os.environ.get(n, "").strip()\n        if v:\n            return v\n    return default\n',
+    "A_core/A3_config_class.py": '''"""A3 — Config."""
+from A_core.A1_env_loader import get_env
+from A_core.A2_env_fallback import get_env_fallback
+
+
+class Config:
+    TG_TOKEN = get_env("TELEGRAM_BOT_TOKEN")
+    TG_CHAT_ID = get_env("TELEGRAM_CHAT_ID")
+    META_TOKEN = get_env("FACEBOOK_META_TOKEN")
+    PAGE_ID = get_env("FACEBOOK_PAGE_ID")
+    IG_TOKEN = get_env("FACEBOOK_INSTAGRAM_META_TOKEN")
+    IG_BUSINESS_ID = get_env("INSTAGRAM_BUSINESS_ACCOUNT_ID")
+    YT_CLIENT_ID = get_env("YOUTUBE_CLIENT_ID")
+    YT_CLIENT_SECRET = get_env("YOUTUBE_CLIENT_SECRET")
+    YT_REFRESH_TOKEN = get_env("YOUTUBE_REFRESH_TOKEN")
+    YT_PLAYLIST_ID = get_env("DAILY_HADEES_YT_PLAYLIST_ID")
+    DRIVE_CLIENT_ID = get_env("GOOGLE_DRIVE_CLIENT_ID")
+    DRIVE_CLIENT_SECRET = get_env("GOOGLE_DRIVE_CLIENT_SECRET")
+    DRIVE_REFRESH_TOKEN = get_env("GOOGLE_DRIVE_REFRESH_TOKEN")
+    DRIVE_SHORT_FOLDER_ID = get_env("GDRIVE_SHORT_VIDEO_FOLDER_ID")
+    OPENROUTER_API_KEY = get_env("OPENROUTER_API_KEY")
+    GROQ_API_KEY = get_env("GROQ_API_KEY")
+    GEMINI_API_KEY = get_env("GEMINI_API_KEY")
+    MISTRAL_API_KEY = get_env("MISTRAL_API_KEY")
+    CEREBRAS_API_KEY = get_env("CEREBRAS_API_KEY")
+    COHERE_API_KEY = get_env("COHERE_API_KEY")
+    ELEVENLABS_API_KEY = get_env("ELEVENLABS_API_KEY")
+    DEEPL_API_KEY = get_env("DEEPL_API_KEY")
+    PEXELS_API_KEY = get_env("PEXELS_API_KEY")
+    PIXABAY_API_KEY = get_env("PIXABAY_API_KEY")
+    FREESOUND_API_KEY = get_env("FREESOUND_API_KEY")
+    HADITH_API_URL = get_env("HADITH_API_URL")
+    EVENT_NAME = get_env("GITHUB_EVENT_NAME")
+    UPLOAD_MODE = get_env("UPLOAD_MODE", default="offline").lower()
+    UPLOAD_CONFIRMED = get_env("UPLOAD_CONFIRMED", default="false").lower() == "true"
+''',
+    "A_core/A4_upload_decider.py": '''"""A4 — upload decisions."""
+from A_core.A3_config_class import Config
+
+
+def decide(cfg=None):
+    if cfg is None:
+        cfg = Config()
+    is_sched = cfg.EVENT_NAME == "schedule"
+    return {
+        "drive": True,
+        "social": is_sched or (cfg.UPLOAD_MODE == "online" and cfg.UPLOAD_CONFIRMED),
+    }
+''',
+    "A_core/A5_platform_checker.py": '''"""A5 — platforms."""
+from A_core.A3_config_class import Config
+
+
+def available_platforms(cfg=None):
+    if cfg is None:
+        cfg = Config()
+    p = []
+    if cfg.META_TOKEN and cfg.PAGE_ID:
+        p.append("facebook")
+    if cfg.IG_TOKEN and cfg.IG_BUSINESS_ID:
+        p.append("instagram")
+    if cfg.YT_REFRESH_TOKEN and cfg.YT_CLIENT_ID:
+        p.append("youtube")
+    return p
+''',
+    "A_core/A6_print_logger.py": '"""A6 — print."""\nfrom datetime import datetime\n\n\ndef log(msg, level="INFO"):\n    ts = datetime.now().strftime("%H:%M:%S")\n    print(f"[{ts}] [{level}] {msg}", flush=True)\n',
+    "A_core/A7_log_file_start.py": '"""A7 — file start."""\nfrom A_core.A6_print_logger import log\n\n\ndef log_file_start(name, purpose=""):\n    log(f"→ START {name}")\n',
+    "A_core/A8_log_file_end.py": '"""A8 — file end."""\nfrom A_core.A6_print_logger import log\n\n\ndef log_file_end(name, status="success", note=""):\n    log(f"← END {name} ({status})")\n',
+    "A_core/A9_log_step.py": '"""A9 — step."""\nfrom A_core.A6_print_logger import log\n\n\ndef log_step(name, action, result="ok", detail=""):\n    log(f"  • {name} :: {action} → {result} {detail}")\n',
+    "A_core/A10_log_api.py": '"""A10 — api."""\nfrom A_core.A6_print_logger import log\n\n\ndef log_api(name, api, status, detail=""):\n    log(f"  ★ {name} :: {api} → {status}")\n',
+    "A_core/A11_log_error.py": '"""A11 — error."""\nfrom A_core.A6_print_logger import log\n\n\ndef log_error(name, error, tb=""):\n    log(f"  ✗ {name} :: ERROR → {error}", level="ERROR")\n',
+    "A_core/A12_tg_session.py": '"""A12 — session."""\nimport requests\n\nsession = requests.Session()\n',
+    "A_core/A13_tg_buffer.py": '"""A13 — buffer."""\nimport time\nfrom datetime import datetime\n\nLOG_BUFFER = []\nFILE_TIMERS = {}\nSTEP_COUNTER = {"total": 0, "success": 0, "failed": 0}\nSTART_TIME = [None]\nRUN_HEADER = ["🎬 SHORT VIDEO RUN"]\n\n\ndef now():\n    return datetime.now().strftime("%H:%M:%S")\n\n\ndef reset():\n    LOG_BUFFER.clear()\n    FILE_TIMERS.clear()\n    STEP_COUNTER.update({"total": 0, "success": 0, "failed": 0})\n    START_TIME[0] = time.time()\n',
+    "A_core/A14_tg_creds.py": '"""A14 — creds."""\nimport os\n\n\ndef get_creds():\n    return (os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),\n            os.environ.get("TELEGRAM_CHAT_ID", "").strip())\n',
+    "A_core/A15_tg_send_raw.py": '"""A15 — send raw."""\nfrom A_core.A12_tg_session import session\nfrom A_core.A14_tg_creds import get_creds\n\n\ndef send_raw(msg, silent=False):\n    token, chat_id = get_creds()\n    if token and chat_id:\n        try:\n            session.post(f"https://api.telegram.org/bot{token}/sendMessage",\n                         json={"chat_id": chat_id, "text": msg[:4000],\n                               "parse_mode": "HTML",\n                               "disable_web_page_preview": True,\n                               "disable_notification": silent}, timeout=15)\n        except Exception:\n            pass\n    print(msg, flush=True)\n',
+    "A_core/A16_tg_run_start.py": '"""A16 — run start."""\nfrom A_core.A13_tg_buffer import reset, now, RUN_HEADER\nfrom A_core.A15_tg_send_raw import send_raw\n\n\ndef run_start(title="🎬 SHORT VIDEO RUN"):\n    reset()\n    RUN_HEADER[0] = title\n    send_raw(f"▶️ <b>{title} STARTED</b>\\n🕐 {now()}", silent=True)\n',
+    "A_core/A17_tg_file_start.py": '"""A17 — file start."""\nimport time\nfrom A_core.A13_tg_buffer import LOG_BUFFER, FILE_TIMERS, STEP_COUNTER\n\n\ndef file_start(filename, purpose=""):\n    FILE_TIMERS[filename] = time.time()\n    STEP_COUNTER["total"] += 1\n    line = f"📂 <b>{filename}</b>"\n    if purpose:\n        line += f" — <i>{purpose}</i>"\n    LOG_BUFFER.append(line)\n',
+    "A_core/A18_tg_file_end.py": '"""A18 — file end."""\nimport time\nfrom A_core.A13_tg_buffer import LOG_BUFFER, FILE_TIMERS, STEP_COUNTER\n\n\ndef file_end(filename, status="success", note=""):\n    el = time.time() - FILE_TIMERS.get(filename, time.time())\n    if status == "success":\n        STEP_COUNTER["success"] += 1\n        icon = "✅"\n    else:\n        STEP_COUNTER["failed"] += 1\n        icon = "❌"\n    line = f"{icon} <b>{filename}</b> done in {el:.2f}s"\n    if note:\n        line += f" — {note}"\n    LOG_BUFFER.append(line)\n',
+    "A_core/A19_tg_step.py": '"""A19 — step."""\nfrom A_core.A13_tg_buffer import LOG_BUFFER\n\n\ndef step(filename, action, result="ok", detail=""):\n    icon = {"ok": "✅", "fail": "❌", "skip": "⏭️", "warn": "⚠️", "info": "ℹ️"}.get(result, "ℹ️")\n    line = f"{icon} <b>{filename}</b> → {action}"\n    if detail:\n        line += f" ({detail})"\n    LOG_BUFFER.append(line)\n',
+    "A_core/A20_tg_api_call.py": '"""A20 — api call."""\nfrom A_core.A13_tg_buffer import LOG_BUFFER\n\n\ndef api_call(filename, api_name, status, detail=""):\n    icon = {"success": "🟢", "failed": "🔴", "fallback": "🟡", "skipped": "⚪"}.get(status, "⚫")\n    line = f"{icon} <b>{api_name}</b> [{status.upper()}]"\n    if detail:\n        line += f" — {detail}"\n    LOG_BUFFER.append(line)\n',
+    "A_core/A21_tg_file_error.py": '"""A21 — file error."""\nfrom A_core.A13_tg_buffer import LOG_BUFFER, STEP_COUNTER\n\n\ndef file_error(filename, error, tb=""):\n    STEP_COUNTER["failed"] += 1\n    line = f"🚨 <b>{filename}</b> ERROR: {str(error)[:150]}"\n    if tb:\n        line += f"\\n<code>{tb[:200]}</code>"\n    LOG_BUFFER.append(line)\n',
+    "A_core/A22_tg_header.py": '"""A22 — header."""\nfrom A_core.A13_tg_buffer import LOG_BUFFER\n\n\ndef header(title):\n    LOG_BUFFER.append(f"\\n<b>━━━ {title} ━━━</b>")\n',
+    "A_core/A23_tg_send.py": '"""A23 — send tg."""\nfrom A_core.A15_tg_send_raw import send_raw\n\n\ndef send_tg(msg, silent=False):\n    send_raw(msg, silent=silent)\n',
+    "A_core/A24_tg_report.py": '''"""A24 — report."""
+import time
+from A_core.A13_tg_buffer import LOG_BUFFER, START_TIME, RUN_HEADER, now
+from A_core.A15_tg_send_raw import send_raw
+
+
+def send_full_report(extra_sections=None, silent=False):
+    tt = time.time() - (START_TIME[0] or time.time())
+    head = (f"<b>{RUN_HEADER[0]} — FULL REPORT</b>\\n"
+            f"🕐 {now()}  |  ⏱️ {tt:.1f}s\\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━\\n")
+    body = "\\n".join(LOG_BUFFER)
+    full = head + body
+    if extra_sections:
+        full += "\\n\\n" + "\\n".join(extra_sections)
+    chunks, cur = [], ""
+    for line in full.split("\\n"):
+        if len(cur) + len(line) + 1 > 3800:
+            chunks.append(cur)
+            cur = line
+        else:
+            cur += ("\\n" if cur else "") + line
+    if cur:
+        chunks.append(cur)
+    for i, c in enumerate(chunks, 1):
+        prefix = f"📄 <b>Report {i}/{len(chunks)}</b>\\n" if len(chunks) > 1 else ""
+        send_raw(prefix + c, silent=silent)
+''',
+    "A_core/A25_tg_summary.py": '''"""A25 — summary."""
+import time
+from A_core.A13_tg_buffer import STEP_COUNTER, START_TIME, now
+from A_core.A15_tg_send_raw import send_raw
+
+
+def send_summary(silent=False):
+    t = STEP_COUNTER["total"]
+    ok = STEP_COUNTER["success"]
+    f = STEP_COUNTER["failed"]
+    tt = time.time() - (START_TIME[0] or time.time())
+    icon = "🎉" if f == 0 else "⚠️"
+    msg = (f"{icon} <b>RUN COMPLETE</b>\\n"
+           f"📁 Files: <b>{t}</b>\\n"
+           f"✅ Success: <b>{ok}</b>\\n"
+           f"❌ Failed: <b>{f}</b>\\n"
+           f"⏱️ Time: <b>{tt:.1f}s</b>")
+    send_raw(msg, silent=silent)
+''',
+    "A_core/A26_sanitize.py": '"""A26 — sanitize."""\nimport re\n\n\ndef sanitize(t):\n    if not t:\n        return ""\n    t = re.sub(r\'[\\u200b-\\u200f\\ufeff\\u202a-\\u202e]\', \'\', str(t))\n    return t.replace(\'"\', \'\').replace("\'", \'\').replace("\\n", " ").strip()\n',
+    "A_core/A27_ensure_dir.py": '"""A27 — ensure dir."""\nimport os\n\n\ndef ensure_dir(path):\n    os.makedirs(path, exist_ok=True)\n    return path\n',
+    "A_core/A28_http_session.py": '''"""A28 — session."""
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+def create_session():
+    s = requests.Session()
+    r = Retry(total=5, backoff_factor=1.5, status_forcelist=[429, 500, 502, 503, 504])
+    s.mount("https://", HTTPAdapter(max_retries=r))
+    return s
+''',
+    "A_core/A29_http_download.py": '"""A29 — download."""\nfrom A_core.A9_log_step import log_step\n\n\ndef download(session, url, path, min_size=12000):\n    try:\n        r = session.get(url, timeout=35)\n        if r.status_code == 200 and len(r.content) > min_size:\n            with open(path, "wb") as f:\n                f.write(r.content)\n            log_step("A29", f"OK: {path}", "ok")\n            return True\n    except Exception as e:\n        log_step("A29", "err", "fail", str(e)[:60])\n    return False\n',
+    "A_core/A30_cmd_runner.py": '"""A30 — cmd."""\nimport subprocess\nfrom A_core.A9_log_step import log_step\nfrom A_core.A11_log_error import log_error\n\n\ndef run_cmd(cmd):\n    log_step("A30", f"CMD: {cmd[:80]}", "ok")\n    try:\n        subprocess.run(cmd, shell=True, check=True)\n    except subprocess.CalledProcessError as e:\n        log_error("A30", f"CMD failed: {str(e)[:120]}")\n        raise\n',
+    "A_core/A31_cleanup.py": '"""A31 — cleanup."""\nimport os\nimport shutil\nfrom A_core.A9_log_step import log_step\n\n\ndef cleanup(files, folder=None):\n    log_step("A31", "Cleanup", "ok")\n    for f in files:\n        if os.path.exists(f):\n            os.remove(f)\n    if folder:\n        shutil.rmtree(folder, ignore_errors=True)\n',
+    "A_core/A32_api_tracker.py": '"""A32 — tracker."""\n\n\ndef create_tracker():\n    return {"AI": {}, "TTS": {}, "Music": {}, "Background": {},\n            "Translation": {}, "Hadith": {}, "Drive": {},\n            "Facebook": {}, "Instagram": {}, "YouTube": {}}\n',
+
+    # ═══ B_graphics — core 10 files ═══
+    "B_graphics/B1_font_paths.py": '''"""B1 — font paths."""
+import os
+
+
+def get_paths(script="latin", bold=True):
+    weight = "Bold" if bold else "Regular"
+    names = {
+        "devanagari": [f"NotoSansDevanagari-{weight}.ttf", "NotoSansDevanagari-Bold.ttf"],
+        "arabic": [f"NotoNaskhArabic-{weight}.ttf", "NotoNaskhArabic-Bold.ttf"],
+        "latin": [f"NotoSans-{weight}.ttf", "NotoSans-Bold.ttf", "DejaVuSans-Bold.ttf"],
+    }.get(script, ["NotoSans-Bold.ttf"])
+    home = os.path.expanduser("~")
+    cwd = os.getcwd()
+    dirs = [f"{home}/.fonts", "/usr/share/fonts/truetype/noto",
+            "/usr/share/fonts/truetype/dejavu", f"{cwd}/assets/fonts"]
+    return [os.path.join(d, n) for d in dirs for n in names]
+''',
+    "B_graphics/B2_font_load.py": '"""B2 — font load."""\nimport os\nfrom PIL import ImageFont\nfrom B_graphics.B1_font_paths import get_paths\n\n\ndef load(size, script="latin", bold=True):\n    for path in get_paths(script, bold):\n        if os.path.exists(path):\n            try:\n                return ImageFont.truetype(path, size)\n            except Exception:\n                continue\n    return ImageFont.load_default()\n',
+    "B_graphics/B3_font_cache.py": '"""B3 — cache."""\nCACHE = {}\n\n\ndef get(key):\n    return CACHE.get(key)\n\n\ndef set_(key, value):\n    CACHE[key] = value\n',
+    "B_graphics/B4_font_info.py": '"""B4 — info."""\nimport os\nfrom B_graphics.B1_font_paths import get_paths\n\n\ndef info(script="latin", bold=True):\n    for p in get_paths(script, bold):\n        if os.path.exists(p):\n            return {"found": p, "fallback": False}\n    return {"found": None, "fallback": True}\n',
+    "B_graphics/B5_text_measure.py": '"""B5 — measure."""\n\n\ndef measure(draw, text, font):\n    if not text:\n        return 0, 0, 0, 0\n    try:\n        bbox = draw.textbbox((0, 0), text, font=font)\n        return bbox[2] - bbox[0], bbox[3] - bbox[1], bbox[0], bbox[1]\n    except AttributeError:\n        w, h = draw.textsize(text, font=font)\n        return w, h, 0, 0\n',
+    "B_graphics/B6_text_wrap.py": '"""B6 — wrap."""\n\n\ndef wrap(draw, text, font, max_width=950):\n    if not text:\n        return []\n    words = text.split()\n    lines, cur = [], ""\n    for w in words:\n        test = (cur + " " + w).strip() if cur else w\n        bbox = draw.textbbox((0, 0), test, font=font)\n        if bbox[2] - bbox[0] <= max_width:\n            cur = test\n        else:\n            if cur:\n                lines.append(cur)\n            cur = w\n    if cur:\n        lines.append(cur)\n    return lines\n',
+    "B_graphics/B7_text_draw_center.py": '"""B7 — center."""\n\n\ndef draw_centered(draw, text, y, font, fill, shadow=True, offset=3, canvas_width=1080):\n    if not text:\n        return\n    bbox = draw.textbbox((0, 0), text, font=font)\n    w = bbox[2] - bbox[0]\n    x = (canvas_width - w) // 2 - bbox[0]\n    if shadow:\n        draw.text((x + offset, y + offset - bbox[1]), text, font=font, fill=(0, 0, 0, 200))\n    draw.text((x, y - bbox[1]), text, font=font, fill=fill)\n',
+    "B_graphics/B8_text_draw_multi.py": '"""B8 — multi."""\nfrom B_graphics.B7_text_draw_center import draw_centered\n\n\ndef draw_multi(draw, lines, start_y, font, fill, line_spacing=12, canvas_width=1080):\n    y = start_y\n    for line in lines:\n        if not line:\n            continue\n        draw_centered(draw, line, y, font, fill, canvas_width=canvas_width)\n        bbox = draw.textbbox((0, 0), line, font=font)\n        y += (bbox[3] - bbox[1]) + line_spacing\n    return y\n',
+    "B_graphics/B9_text_draw_at.py": '"""B9 — at."""\n\n\ndef draw_at(draw, text, x, y, font, fill, shadow=True, offset=3):\n    if not text:\n        return\n    bbox = draw.textbbox((0, 0), text, font=font)\n    dx, dy = x - bbox[0], y - bbox[1]\n    if shadow:\n        draw.text((dx + offset, dy + offset), text, font=font, fill=(0, 0, 0, 200))\n    draw.text((dx, dy), text, font=font, fill=fill)\n',
+    "B_graphics/B10_sparkle_draw.py": '''"""B10 — sparkles."""
+import math
+import random
+
+
+def draw_sparkles(draw, t, count=15):
+    rng = random.Random(1337)
+    for _ in range(count):
+        bx = rng.randint(80, 1000)
+        by = rng.randint(200, 1800)
+        size = rng.randint(3, 9)
+        phase = rng.uniform(0, 6.28)
+        speed = rng.uniform(0.5, 1.5)
+        dx = int(8 * math.sin(t * speed + phase))
+        dy = int(6 * math.cos(t * speed * 0.7 + phase))
+        pulse = math.sin(t * 2.5 * speed + phase)
+        a = max(60, min(255, int(150 + 100 * pulse)))
+        x, y = bx + dx, by + dy
+        draw.line([(x - size, y), (x + size, y)], fill=(255, 240, 180, a), width=1)
+        draw.line([(x, y - size), (x, y + size)], fill=(255, 240, 180, a), width=1)
+''',
+
+    # ═══ C_content — Short-specific ═══
+    "C_content/C47_meaning_fallback.py": '"""C47 — meaning fallback."""\n\n\ndef get():\n    return "इस हदीस में नीयत की अहमियत बताई गई है। हर अमल का दारोमदार नीयत पर है।"\n',
+    "C_content/C48_meaning_main.py": '''"""C48 — meaning main."""
+from A_core.A4_upload_decider import decide  # noqa
+from A_core.A9_log_step import log_step
+
+
+def generate(session, hadith_hindi):
+    log_step("C48", "meaning generate", "ok")
+    if not hadith_hindi:
+        from C_content.C47_meaning_fallback import get
+        return get()
+    prompt = (f"Is Hadith ka short Hindi matlab likho (2-3 lines). "
+              f"Sirf matlab. Simple words.\\n\\n{hadith_hindi}")
+    try:
+        from C_content.C13_ai_main import call as ai_call
+        res = ai_call(session, prompt, 300, task="meaning")
+        if res and len(res) > 20:
+            from A_core.A26_sanitize import sanitize
+            return sanitize(res).replace("```", "").strip()
+    except Exception:
+        pass
+    from C_content.C47_meaning_fallback import get
+    return get()
+''',
+
+    # ═══ G_entry Short ═══
+    "G_entry/G16_pipeline_run.py": '"""G16 — pipeline."""\nfrom A_core.A9_log_step import log_step\n\n\ndef run(base):\n    log_step("G16", "Short pipeline start", "ok")\n    log_step("G16", "Short pipeline done", "ok")\n    return True\n',
+    "G_entry/G17_main.py": '''"""G17 — main."""
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from A_core.A16_tg_run_start import run_start
+from A_core.A24_tg_report import send_full_report
+from A_core.A25_tg_summary import send_summary
+from A_core.A28_http_session import create_session
+from A_core.A32_api_tracker import create_tracker
+
+
+class BasePipeline:
+    def __init__(self):
+        self.session = create_session()
+        self.api_status = create_tracker()
+
+
+def main():
+    run_start("🎬 SHORT VIDEO RUN")
+    base = BasePipeline()
+    try:
+        from G_entry.G16_pipeline_run import run
+        run(base)
+        send_full_report()
+        send_summary()
+        sys.exit(0)
+    except Exception:
+        send_full_report()
+        send_summary()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+''',
+}
+
+
+def main():
+    total = 0
+    for rel, content in FILES.items():
+        full = os.path.join(BASE, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(content)
+        total += 1
+    print(f"🎉 Short: {total} files written!")
+
+
+if __name__ == "__main__":
+    main()
