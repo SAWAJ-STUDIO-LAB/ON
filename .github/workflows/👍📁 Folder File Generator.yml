@@ -1,4 +1,4 @@
-name: 👍📁 🏗️Folder File Generator
+name: 📁 Folder File Generator
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   build:
-    name: 📁 Generate Folders + Files
+    name: 📁 Sync Structure
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -37,18 +37,23 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # ═══════════════════════════════════════════════════════════
-      # ③ GENERATE FOLDERS + FILES
+      # ③ SMART SYNC — Build + Repair + Delete
       # ═══════════════════════════════════════════════════════════
-      - name: 📁 Generate Folders + Files
+      - name: 🏗️ Smart Sync Structure
         run: |
           python3 <<'PYEOF'
           import os
+          import shutil
 
           ROOT = "Sawaj_studio"
-          files = []
 
-          # ─── WORKFLOWS ───
-          files += [
+          # ═══════════════════════════════════════════════════════
+          # EXPECTED STRUCTURE
+          # ═══════════════════════════════════════════════════════
+          expected_files = []
+
+          # Workflows
+          expected_files += [
               ".github/workflows/story.yml",
               ".github/workflows/short.yml",
               ".github/workflows/long.yml",
@@ -56,23 +61,8 @@ jobs:
               ".github/workflows/clean.yml",
           ]
 
-          # ─── SCRIPTS ───
-          files += [
-              "scripts/code_config.py",
-              "scripts/code_logger.py",
-              "scripts/code_telegram.py",
-              "scripts/code_utils.py",
-              "scripts/code_pipeline.py",
-              "scripts/code_secrets.py",
-              "scripts/code_fonts.py",
-              "scripts/code_graphics.py",
-              "scripts/code_content.py",
-              "scripts/code_workers.py",
-              "scripts/code_uploaders.py",
-          ]
-
-          # ─── DOCS ───
-          files += [
+          # Docs
+          expected_files += [
               f"{ROOT}/docs/1_setup/installation.md",
               f"{ROOT}/docs/1_setup/environment.md",
               f"{ROOT}/docs/1_setup/deployment.md",
@@ -87,7 +77,7 @@ jobs:
               f"{ROOT}/docs/4_changelog/roadmap.md",
           ]
 
-          # ─── GENERATOR A-Z ───
+          # Generator A-Z
           modules = {
               "1_config": ["1_env_loader.py","2_secret_reader.py","3_path_builder.py","4_mode_decider.py","5_folder_creator.py","6_default_settings.py","7_platform_config.py","8_worker_selector.py","9_validation.py"],
               "2_logger": ["1_console_logger.py","2_file_logger.py","3_timestamp.py","4_log_levels.py","5_error_tracker.py","6_step_logger.py","7_api_logger.py","8_buffer.py"],
@@ -117,13 +107,13 @@ jobs:
               "26_thumbnail": ["1_thumb_draw.py","2_gradient_bg.py","3_title_text.py","4_label_text.py","5_lang_lines.py","6_logo_overlay.py","7_cta_text.py"],
           }
 
-          files.append(f"{ROOT}/generator/__init__.py")
+          expected_files.append(f"{ROOT}/generator/__init__.py")
           for mod, fl in modules.items():
-              files.append(f"{ROOT}/generator/{mod}/__init__.py")
+              expected_files.append(f"{ROOT}/generator/{mod}/__init__.py")
               for f in fl:
-                  files.append(f"{ROOT}/generator/{mod}/{f}")
+                  expected_files.append(f"{ROOT}/generator/{mod}/{f}")
 
-          # ─── WORKERS ───
+          # Workers
           workers = ["worker_story", "worker_short", "worker_long"]
           worker_subs = {
               "1_pipeline": ["1_pipeline_steps.py","2_step_orchestrator.py"],
@@ -136,17 +126,17 @@ jobs:
           }
 
           for w in workers:
-              files.append(f"{ROOT}/generator/{w}/__init__.py")
-              files.append(f"{ROOT}/generator/{w}/2_config/__init__.py")
+              expected_files.append(f"{ROOT}/generator/{w}/__init__.py")
+              expected_files.append(f"{ROOT}/generator/{w}/2_config/__init__.py")
               short = w.replace("worker_", "")
-              files.append(f"{ROOT}/generator/{w}/2_config/1_{short}_settings.py")
-              files.append(f"{ROOT}/generator/{w}/2_config/2_{short}_template.json")
+              expected_files.append(f"{ROOT}/generator/{w}/2_config/1_{short}_settings.py")
+              expected_files.append(f"{ROOT}/generator/{w}/2_config/2_{short}_template.json")
               for sub, fl in worker_subs.items():
-                  files.append(f"{ROOT}/generator/{w}/{sub}/__init__.py")
+                  expected_files.append(f"{ROOT}/generator/{w}/{sub}/__init__.py")
                   for f in fl:
-                      files.append(f"{ROOT}/generator/{w}/{sub}/{f}")
+                      expected_files.append(f"{ROOT}/generator/{w}/{sub}/{f}")
 
-          # ─── UPLOADERS ───
+          # Uploaders
           uploaders = {
               "1_youtube_upload": {
                   "1_auth": ["1_oauth.py"],
@@ -174,35 +164,65 @@ jobs:
               },
           }
 
-          files.append(f"{ROOT}/uploader/__init__.py")
+          expected_files.append(f"{ROOT}/uploader/__init__.py")
           for up, subs in uploaders.items():
-              files.append(f"{ROOT}/uploader/{up}/__init__.py")
+              expected_files.append(f"{ROOT}/uploader/{up}/__init__.py")
               for sub, fl in subs.items():
-                  files.append(f"{ROOT}/uploader/{up}/{sub}/__init__.py")
+                  expected_files.append(f"{ROOT}/uploader/{up}/{sub}/__init__.py")
                   for f in fl:
-                      files.append(f"{ROOT}/uploader/{up}/{sub}/{f}")
+                      expected_files.append(f"{ROOT}/uploader/{up}/{sub}/{f}")
 
-          # ─── ASSETS ───
+          # Assets
           assets = ["1_emoji","2_photo","3_icon","4_sticker","5_effect","6_sound","7_font","8_logo"]
-          files.append(f"{ROOT}/assets/__init__.py")
+          expected_files.append(f"{ROOT}/assets/__init__.py")
           for a in assets:
-              files.append(f"{ROOT}/assets/{a}/__init__.py")
-              files.append(f"{ROOT}/assets/{a}/.gitkeep")
+              expected_files.append(f"{ROOT}/assets/{a}/__init__.py")
+              expected_files.append(f"{ROOT}/assets/{a}/.gitkeep")
 
           # ═══════════════════════════════════════════════════════
-          # CREATE
+          # BUILD EXPECTED FOLDERS SET
           # ═══════════════════════════════════════════════════════
-          created_f = 0
-          created_d = 0
-          skipped = 0
+          expected_folders = set()
+          for path in expected_files:
+              d = os.path.dirname(path)
+              if d:
+                  expected_folders.add(d)
 
-          for path in files:
-              folder = os.path.dirname(path)
-              if folder and not os.path.exists(folder):
+          # ═══════════════════════════════════════════════════════
+          # SCAN EXISTING
+          # ═══════════════════════════════════════════════════════
+          existing_files = set()
+          existing_folders = set()
+
+          if os.path.exists(ROOT):
+              for root, dirs, files in os.walk(ROOT):
+                  for d in dirs:
+                      existing_folders.add(os.path.join(root, d))
+                  for f in files:
+                      existing_files.add(os.path.join(root, f))
+
+          if os.path.exists(".github/workflows"):
+              for f in os.listdir(".github/workflows"):
+                  existing_files.add(os.path.join(".github/workflows", f))
+
+          # ═══════════════════════════════════════════════════════
+          # ① CREATE MISSING FOLDERS
+          # ═══════════════════════════════════════════════════════
+          created_folders = 0
+          for folder in sorted(expected_folders):
+              if not os.path.exists(folder):
                   os.makedirs(folder, exist_ok=True)
-                  created_d += 1
+                  created_folders += 1
 
+          # ═══════════════════════════════════════════════════════
+          # ② CREATE MISSING FILES
+          # ═══════════════════════════════════════════════════════
+          created_files = 0
+          for path in expected_files:
               if not os.path.exists(path):
+                  folder = os.path.dirname(path)
+                  if folder:
+                      os.makedirs(folder, exist_ok=True)
                   with open(path, "w", encoding="utf-8") as f:
                       if path.endswith(".py"):
                           f.write('"""\nSawaj Studio Module\n"""\n')
@@ -215,15 +235,60 @@ jobs:
                           f.write("# TODO\n")
                       else:
                           f.write("")
-                  created_f += 1
-              else:
-                  skipped += 1
+                  created_files += 1
 
+          # ═══════════════════════════════════════════════════════
+          # ③ DELETE EXTRA FILES (Not expected, inside Sawaj_studio)
+          # ═══════════════════════════════════════════════════════
+          deleted_files = 0
+          expected_set = set(expected_files)
+
+          for f in existing_files:
+              if ROOT in f and f not in expected_set:
+                  # Only delete if it's a placeholder or empty
+                  try:
+                      size = os.path.getsize(f)
+                      if size < 200:
+                          os.remove(f)
+                          deleted_files += 1
+                  except Exception:
+                      pass
+
+          # ═══════════════════════════════════════════════════════
+          # ④ DELETE EXTRA EMPTY FOLDERS (Not expected)
+          # ═══════════════════════════════════════════════════════
+          deleted_folders = 0
+
+          # Rescan folders
+          current_folders = set()
+          if os.path.exists(ROOT):
+              for root, dirs, _ in os.walk(ROOT):
+                  for d in dirs:
+                      current_folders.add(os.path.join(root, d))
+
+          # Delete in reverse order (deepest first)
+          for folder in sorted(current_folders, key=lambda x: -x.count(os.sep)):
+              if folder not in expected_folders:
+                  # Only if empty
+                  try:
+                      if os.path.exists(folder) and not os.listdir(folder):
+                          os.rmdir(folder)
+                          deleted_folders += 1
+                  except Exception:
+                      pass
+
+          # ═══════════════════════════════════════════════════════
+          # REPORT
+          # ═══════════════════════════════════════════════════════
           print("=" * 60)
-          print(f"📁 Folders: {created_d}")
-          print(f"📄 Files:   {created_f}")
-          print(f"⏭️  Skipped: {skipped}")
-          print(f"📦 Total:   {len(files)}")
+          print("🏗️  SMART SYNC REPORT")
+          print("=" * 60)
+          print(f"📁 Folders created:  {created_folders}")
+          print(f"📄 Files created:    {created_files}")
+          print(f"🗑️  Files deleted:    {deleted_files}")
+          print(f"🗑️  Folders deleted:  {deleted_folders}")
+          print(f"📦 Expected files:   {len(expected_files)}")
+          print(f"📦 Expected folders: {len(expected_folders)}")
           print("=" * 60)
           PYEOF
 
@@ -235,11 +300,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin ${{ github.ref_name }} || true
-          git add .
+          git add -A
           if git diff --cached --quiet; then
             echo "✅ No changes"
           else
-            git commit -m "📁 Generate Sawaj Studio folders + files [skip ci]"
+            git commit -m "🏗️ Smart sync Sawaj Studio structure [skip ci]"
             git push origin HEAD
             echo "✅ Pushed"
           fi
@@ -255,7 +320,6 @@ jobs:
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
-            echo "⚠️ Telegram secrets missing"
             exit 0
           fi
           FOLDERS=$(find Sawaj_studio/ -type d 2>/dev/null | wc -l)
@@ -265,7 +329,7 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
             -d chat_id="$TG_CHAT" \
             -d parse_mode="HTML" \
-            -d text="📁 <b>FOLDER FILE GENERATOR</b>
+            -d text="🏗️ <b>SMART SYNC COMPLETE</b>
 
           ━━━━━━━━━━━━━━━━━━━━
           📁 Folders: <b>$FOLDERS</b>
@@ -273,9 +337,11 @@ jobs:
           🐍 Python: <b>$PY</b>
           ━━━━━━━━━━━━━━━━━━━━
 
-          🔢 Run: #${{ github.run_number }}
-          👤 Actor: ${{ github.actor }}
-          🕐 $(date '+%H:%M:%S UTC')" || true
+          ✅ Sahi rakhha
+          ✅ Galat delete
+          ✅ Missing banaya
+
+          🔢 Run: #${{ github.run_number }}" || true
 
       # ═══════════════════════════════════════════════════════════
       # ⑥ SUMMARY
@@ -284,7 +350,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "# 📁 Folder File Generator"
+            echo "# 🏗️ Smart Sync"
             echo ""
             echo "| Metric | Count |"
             echo "|--------|-------|"
