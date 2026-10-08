@@ -1,0 +1,68 @@
+name: 📤 Send Py Code
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 🚀 Send Code to All Files
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ▶️ Run 1send code.py (A_core)
+        run: python "_temp_builder/1send code.py"
+
+      - name: ▶️ Run 2Send code.py (B_graphics)
+        run: python "_temp_builder/2Send code.py"
+
+      - name: ▶️ Run 3Send code.py (C_content)
+        run: python "_temp_builder/3Send code.py"
+
+      - name: ▶️ Run 4Send code.py (D_video)
+        run: python "_temp_builder/4Send code.py"
+
+      - name: ▶️ Run 5Send code.py (E_audio + F_drive)
+        run: python "_temp_builder/5Send code.py"
+
+      - name: ▶️ Run 6Send code.py (G_entry)
+        run: python "_temp_builder/6Send code.py"
+
+      - name: ▶️ Run 7Send code.py (H_tests)
+        run: python "_temp_builder/7Send code.py"
+
+      - name: ▶️ Run 8Send code.py (video_uploader)
+        run: python "_temp_builder/8Send code.py"
+
+      - name: ▶️ Run 9Send code.py (video_requirement)
+        run: python "_temp_builder/9Send code.py"
+
+      - name: 🧹 Delete Builder Folder
+        run: |
+          rm -rf _temp_builder
+          echo "✅ Builder folder deleted"
+
+      - name: 📤 Commit Changes
+        run: |
+          git config user.name "SawajBot"
+          git config user.email "bot@sawajstudio.com"
+          git add .
+          git commit -m "🤖 Code injected into all files" || echo "No changes"
+          git push
+
+      - name: ✅ Summary
+        run: |
+          echo "## ✅ Code Injection Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All files have been populated with their code." >> $GITHUB_STEP_SUMMARY
