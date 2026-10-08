@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
@@ -24,7 +26,9 @@ jobs:
           python-version: '3.11'
 
       - name: 📦 Install Packages
-        run: pip install requests
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
 
       - name: 👑 Run King
         env:
@@ -45,12 +49,14 @@ jobs:
         run: |
           git config user.name "SawajBot King"
           git config user.email "king@sawajstudio.com"
-          git add .
-          git commit -m "👑 King upgraded the bot" || echo "No changes"
-          git push
+          git add -A
+          git commit -m "👑 King upgraded the bot — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
+          git push || echo "Push failed or nothing to push"
 
       - name: ✅ Summary
         if: always()
         run: |
           echo "## 👑 King Working Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Check Telegram for full report." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Check **Telegram** for full report." >> $GITHUB_STEP_SUMMARY
+          echo "- Check **Actions log** for details." >> $GITHUB_STEP_SUMMARY
