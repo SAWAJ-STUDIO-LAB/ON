@@ -1,11 +1,14 @@
 """
-👑 KING — Bot Update Upgrade (CHUNKS + 8 AI + FULL WORKING)
+👑 KING — FULL SMART SYSTEM
+Self-Healing + Smart Chunks + Auto-Test + Retry + Version Track
 """
 import os
 import re
 import json
 import time
 import shutil
+import ast
+import subprocess
 import requests
 from datetime import datetime
 
@@ -15,20 +18,19 @@ from datetime import datetime
 BOT_ROOT = "sawajstudiobot"
 WORK = "bot update upgrade/_work"
 BACKUP = "bot update upgrade/_backups"
+LOG_DIR = "bot update upgrade/_logs"
 
-# Strong IGNORE — kuch bhi backup/cache ka scan nahi hoga
 IGNORE = {
     "__pycache__", ".git", ".github", "output",
-    "_work", "_backups", "venv", "node_modules",
+    "_work", "_backups", "_logs", "venv", "node_modules",
     "bot update upgrade", "Code editor", "_temp_builder",
     "htmlcov", ".pytest_cache", ".mypy_cache",
 }
 
-# AI chunk size — 30 files per chunk (safe limit)
-CHUNK_SIZE = 30
-
-# Timeout (300 sec = 5 min per AI)
+CHUNK_SIZE = 25
 TIMEOUT = 300
+MAX_RETRIES = 3
+MAX_CHUNK_SIZE_KB = 400  # chhota chunks
 
 
 # ═══════════════════════════════════════════════
@@ -48,8 +50,7 @@ def tg_send(msg, silent=False):
                   "disable_notification": silent},
             timeout=15)
         return r.status_code == 200
-    except Exception as e:
-        print(f"❌ Telegram: {e}")
+    except Exception:
         return False
 
 
@@ -59,13 +60,11 @@ def tg_send(msg, silent=False):
 def collect():
     files = []
     for root, dirs, fnames in os.walk(BOT_ROOT):
-        # Strong ignore — dir name ya path ka koi bhi hissa match kare
         dirs[:] = [d for d in dirs if d not in IGNORE
                    and not any(ig in os.path.join(root, d) for ig in IGNORE)]
         for fn in fnames:
             if fn.endswith(".py"):
                 full = os.path.join(root, fn)
-                # Skip agar path mein kuch ignore wala hai
                 if any(ig in full for ig in IGNORE):
                     continue
                 files.append(os.path.relpath(full, BOT_ROOT))
@@ -73,22 +72,66 @@ def collect():
 
 
 # ═══════════════════════════════════════════════
-# CHUNKS — Files ko chhote groups mein baanto
+# SMART CHUNKS — Import-aware
 # ═══════════════════════════════════════════════
-def make_chunks(files, size=CHUNK_SIZE):
-    """Split files into chunks."""
+def extract_imports(rel_path):
+    """Extract imported module names."""
+    full = os.path.join(BOT_ROOT, rel_path)
+    imports = set()
+    try:
+        with open(full, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
+            elif isinstance(node, ast.Import):
+                for n in node.names:
+                    imports.add(n.name)
+    except Exception:
+        pass
+    return imports
+
+
+def make_smart_chunks(files, size=CHUNK_SIZE, max_kb=MAX_CHUNK_SIZE_KB):
+    """Group files: same folder + import-aware + size-aware."""
+    # Step 1: Group by folder
+    folder_groups = {}
+    for f in files:
+        folder = os.path.dirname(f)
+        folder_groups.setdefault(folder, []).append(f)
+
+    # Step 2: Build chunks
     chunks = []
-    for i in range(0, len(files), size):
-        chunks.append(files[i:i + size])
+    current = []
+    current_size = 0
+
+    for folder, flist in folder_groups.items():
+        for f in flist:
+            full = os.path.join(BOT_ROOT, f)
+            try:
+                fsize = os.path.getsize(full) // 1024
+            except Exception:
+                fsize = 0
+
+            # Chhota chunk rakhna hai
+            if len(current) >= size or (current_size + fsize > max_kb and current):
+                chunks.append(current)
+                current = []
+                current_size = 0
+
+            current.append(f)
+            current_size += fsize
+
+    if current:
+        chunks.append(current)
+
     return chunks
 
 
-def combine_chunk(files, chunk_idx):
-    """Combine chunk files into 1 string."""
-    os.makedirs(WORK, exist_ok=True)
-    path = f"{WORK}/chunk_{chunk_idx}.txt"
+def combine_chunk(files, idx):
+    path = f"{WORK}/chunk_{idx}.txt"
     with open(path, "w", encoding="utf-8") as out:
-        out.write(f"# Chunk {chunk_idx} — {len(files)} files\n\n")
+        out.write(f"# Chunk {idx} — {len(files)} files\n\n")
         for rel in files:
             full = os.path.join(BOT_ROOT, rel)
             try:
@@ -97,14 +140,12 @@ def combine_chunk(files, chunk_idx):
             except Exception:
                 code = ""
             out.write(f"═══ FILE: {rel} ═══\n{code}\n═══ END ═══\n\n")
-    size_kb = os.path.getsize(path) // 1024
-    print(f"  📦 Chunk {chunk_idx}: {len(files)} files → {size_kb} KB")
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
 # ═══════════════════════════════════════════════
-# AI CALLS
+# AI CALLS with RETRY
 # ═══════════════════════════════════════════════
 PROMPT = """You are a senior Python engineer. Upgrade this bot code to be WORLD #1.
 
@@ -118,20 +159,32 @@ CRITICAL RULES:
 4. Make code BETTER, cleaner, faster, well-documented
 5. Fix bugs, add error handling, add fallbacks
 6. Remove any copyright text
-7. Return ONLY the code — NO explanations, NO markdown, NO chat
+7. Return ONLY the code — NO explanations, NO markdown
 
 INPUT CODE:
 """
 
 
-def _post(url, headers, payload, timeout=TIMEOUT):
-    try:
-        r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        if r.status_code == 200:
-            return r.json()
-        print(f"    ⚠️ HTTP {r.status_code}: {r.text[:80]}")
-    except Exception as e:
-        print(f"    ❌ {str(e)[:80]}")
+def _post_with_retry(url, headers, payload, timeout=TIMEOUT):
+    """Retry on network errors."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            r = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code in (429, 500, 502, 503, 504):
+                wait = attempt * 5
+                print(f"      ⏳ Retry {attempt}/{MAX_RETRIES} after {wait}s (HTTP {r.status_code})")
+                time.sleep(wait)
+                continue
+            print(f"      ⚠️ HTTP {r.status_code}")
+            return None
+        except requests.exceptions.Timeout:
+            print(f"      ⏳ Timeout retry {attempt}/{MAX_RETRIES}")
+            time.sleep(5)
+        except Exception as e:
+            print(f"      ❌ {str(e)[:60]}")
+            time.sleep(3)
     return None
 
 
@@ -139,13 +192,11 @@ def ai_openrouter(code, fc):
     key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if not key:
         return None
-    d = _post("https://openrouter.ai/api/v1/chat/completions",
-              {"Authorization": f"Bearer {key}"},
-              {"model": "openai/gpt-4o-mini",
-               "messages": [{"role": "user",
-                             "content": PROMPT.format(file_count=fc) + code}],
-               "max_tokens": 16000,
-               "temperature": 0.3})
+    d = _post_with_retry("https://openrouter.ai/api/v1/chat/completions",
+                         {"Authorization": f"Bearer {key}"},
+                         {"model": "openai/gpt-4o-mini",
+                          "messages": [{"role": "user", "content": PROMPT.format(file_count=fc) + code}],
+                          "max_tokens": 16000, "temperature": 0.3})
     return d["choices"][0]["message"]["content"] if d else None
 
 
@@ -153,13 +204,11 @@ def ai_groq(code, fc):
     key = os.environ.get("GROQ_API_KEY", "").strip()
     if not key:
         return None
-    d = _post("https://api.groq.com/openai/v1/chat/completions",
-              {"Authorization": f"Bearer {key}"},
-              {"model": "llama-3.3-70b-versatile",
-               "messages": [{"role": "user",
-                             "content": PROMPT.format(file_count=fc) + code}],
-               "max_tokens": 16000,
-               "temperature": 0.3})
+    d = _post_with_retry("https://api.groq.com/openai/v1/chat/completions",
+                         {"Authorization": f"Bearer {key}"},
+                         {"model": "llama-3.3-70b-versatile",
+                          "messages": [{"role": "user", "content": PROMPT.format(file_count=fc) + code}],
+                          "max_tokens": 16000, "temperature": 0.3})
     return d["choices"][0]["message"]["content"] if d else None
 
 
@@ -167,7 +216,7 @@ def ai_gemini(code, fc):
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         return None
-    d = _post(
+    d = _post_with_retry(
         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}",
         {},
         {"contents": [{"parts": [{"text": PROMPT.format(file_count=fc) + code}]}],
@@ -179,13 +228,11 @@ def ai_mistral(code, fc):
     key = os.environ.get("MISTRAL_API_KEY", "").strip()
     if not key:
         return None
-    d = _post("https://api.mistral.ai/v1/chat/completions",
-              {"Authorization": f"Bearer {key}"},
-              {"model": "mistral-small-latest",
-               "messages": [{"role": "user",
-                             "content": PROMPT.format(file_count=fc) + code}],
-               "max_tokens": 16000,
-               "temperature": 0.3})
+    d = _post_with_retry("https://api.mistral.ai/v1/chat/completions",
+                         {"Authorization": f"Bearer {key}"},
+                         {"model": "mistral-small-latest",
+                          "messages": [{"role": "user", "content": PROMPT.format(file_count=fc) + code}],
+                          "max_tokens": 16000, "temperature": 0.3})
     return d["choices"][0]["message"]["content"] if d else None
 
 
@@ -193,13 +240,11 @@ def ai_cerebras(code, fc):
     key = os.environ.get("CEREBRAS_API_KEY", "").strip()
     if not key:
         return None
-    d = _post("https://api.cerebras.ai/v1/chat/completions",
-              {"Authorization": f"Bearer {key}"},
-              {"model": "llama3.1-8b",
-               "messages": [{"role": "user",
-                             "content": PROMPT.format(file_count=fc) + code}],
-               "max_tokens": 16000,
-               "temperature": 0.3})
+    d = _post_with_retry("https://api.cerebras.ai/v1/chat/completions",
+                         {"Authorization": f"Bearer {key}"},
+                         {"model": "llama3.1-8b",
+                          "messages": [{"role": "user", "content": PROMPT.format(file_count=fc) + code}],
+                          "max_tokens": 16000, "temperature": 0.3})
     return d["choices"][0]["message"]["content"] if d else None
 
 
@@ -207,10 +252,10 @@ def ai_cohere(code, fc):
     key = os.environ.get("COHERE_API_KEY", "").strip()
     if not key:
         return None
-    d = _post("https://api.cohere.com/v1/chat",
-              {"Authorization": f"Bearer {key}"},
-              {"model": "command-r-plus",
-               "message": PROMPT.format(file_count=fc) + code})
+    d = _post_with_retry("https://api.cohere.com/v1/chat",
+                         {"Authorization": f"Bearer {key}"},
+                         {"model": "command-r-plus",
+                          "message": PROMPT.format(file_count=fc) + code})
     return d["text"] if d else None
 
 
@@ -218,13 +263,11 @@ def ai_nvidia(code, fc):
     key = os.environ.get("NVIDIA_API_KEY", "").strip()
     if not key:
         return None
-    d = _post("https://integrate.api.nvidia.com/v1/chat/completions",
-              {"Authorization": f"Bearer {key}"},
-              {"model": "meta/llama-3.1-70b-instruct",
-               "messages": [{"role": "user",
-                             "content": PROMPT.format(file_count=fc) + code}],
-               "max_tokens": 16000,
-               "temperature": 0.3})
+    d = _post_with_retry("https://integrate.api.nvidia.com/v1/chat/completions",
+                         {"Authorization": f"Bearer {key}"},
+                         {"model": "meta/llama-3.1-70b-instruct",
+                          "messages": [{"role": "user", "content": PROMPT.format(file_count=fc) + code}],
+                          "max_tokens": 16000, "temperature": 0.3})
     return d["choices"][0]["message"]["content"] if d else None
 
 
@@ -232,19 +275,17 @@ def ai_huggingface(code, fc):
     key = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
     if not key:
         return None
-    d = _post(
+    d = _post_with_retry(
         "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-70B-Instruct/v1/chat/completions",
         {"Authorization": f"Bearer {key}"},
         {"model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
-         "messages": [{"role": "user",
-                       "content": PROMPT.format(file_count=fc) + code}],
-         "max_tokens": 8000,
-         "temperature": 0.3})
+         "messages": [{"role": "user", "content": PROMPT.format(file_count=fc) + code}],
+         "max_tokens": 8000, "temperature": 0.3})
     return d["choices"][0]["message"]["content"] if d else None
 
 
 def ai_all(code, fc):
-    """Call all 8 AI."""
+    """Call all 8 AI with self-healing."""
     providers = [
         ("OpenRouter", ai_openrouter),
         ("Groq", ai_groq),
@@ -271,9 +312,6 @@ def ai_all(code, fc):
     return responses
 
 
-# ═══════════════════════════════════════════════
-# PICK BEST
-# ═══════════════════════════════════════════════
 def pick_best(responses):
     if not responses:
         return None
@@ -281,8 +319,7 @@ def pick_best(responses):
     def score(r):
         return r["files"] * 10000 + len(r["code"])
 
-    best = max(responses, key=score)
-    return best
+    return max(responses, key=score)
 
 
 # ═══════════════════════════════════════════════
@@ -308,7 +345,6 @@ def apply(text):
     created = 0
     deleted = 0
 
-    # DELETE
     for match in re.findall(r"═══ DELETE: (.+?) ═══", text):
         rel = match.strip()
         if not rel or ".." in rel:
@@ -321,7 +357,6 @@ def apply(text):
             except Exception:
                 pass
 
-    # NEW FILES
     for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══",
                                 text, re.DOTALL):
         rel = rel.strip()
@@ -333,7 +368,6 @@ def apply(text):
             f.write(code.strip() + "\n")
         created += 1
 
-    # MODIFY
     for rel, code in re.findall(r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══",
                                 text, re.DOTALL):
         rel = rel.strip()
@@ -349,6 +383,50 @@ def apply(text):
 
 
 # ═══════════════════════════════════════════════
+# AUTO TEST
+# ═══════════════════════════════════════════════
+def test_syntax(files):
+    """Test Python syntax of all files."""
+    failed = []
+    for rel in files:
+        full = os.path.join(BOT_ROOT, rel)
+        try:
+            with open(full, "r", encoding="utf-8") as f:
+                ast.parse(f.read())
+        except SyntaxError as e:
+            failed.append({"file": rel, "error": str(e)[:100]})
+        except Exception:
+            pass
+    return failed
+
+
+def test_imports(files):
+    """Basic import check via py_compile."""
+    failed = []
+    for rel in files:
+        full = os.path.join(BOT_ROOT, rel)
+        try:
+            r = subprocess.run(
+                ["python", "-m", "py_compile", full],
+                capture_output=True, text=True, timeout=10)
+            if r.returncode != 0:
+                failed.append({"file": rel, "error": r.stderr[:100]})
+        except Exception:
+            pass
+    return failed
+
+
+# ═══════════════════════════════════════════════
+# RATE
+# ═══════════════════════════════════════════════
+def rate_bot(files, changes):
+    if changes == 0:
+        return 1
+    ratio = changes / max(files, 1)
+    return min(10, max(1, int(4 + ratio * 6)))
+
+
+# ═══════════════════════════════════════════════
 # REPORT
 # ═══════════════════════════════════════════════
 def send_report(data):
@@ -359,36 +437,42 @@ def send_report(data):
     deleted = data["deleted"]
     score = data["score"]
     backup_path = data["backup"] or "N/A"
-    chunk_reports = data.get("chunk_reports", [])
+    chunks = data.get("chunk_reports", [])
+    syntax_failed = data.get("syntax_failed", [])
+    import_failed = data.get("import_failed", [])
 
     bar = "█" * score + "░" * (10 - score)
 
     chunk_lines = []
-    for c in chunk_reports:
+    for c in chunks:
+        icon = "🏆" if c["picked_files"] > 0 else "❌"
         chunk_lines.append(
-            f"   • Chunk {c['idx']}: {c['files']} files → "
-            f"🏆 {c['winner']} ({c['picked_files']} upgraded)")
+            f"   • Chunk {c['idx']}: {c['files']}f → {icon} {c['winner']} "
+            f"({c['picked_files']})")
     chunk_text = "\n".join(chunk_lines)
 
     msg = (
-        "👑 <b>KING REPORT — FULL UPGRADE</b>\n"
+        "👑 <b>KING REPORT — FULL SMART</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 <code>{ts}</code>\n"
         "\n"
         "📁 <b>SCAN:</b>\n"
-        f"   • Files scanned: <b>{files}</b>\n"
+        f"   • Files: <b>{files}</b>\n"
         "\n"
         "🔧 <b>ACTIONS:</b>\n"
         f"   ✏️ Modified: <b>{modified}</b>\n"
         f"   📁 Created: <b>{created}</b>\n"
         f"   🗑️ Deleted: <b>{deleted}</b>\n"
         "\n"
-        "📦 <b>CHUNKS:</b>\n"
+        f"📦 <b>CHUNKS ({len(chunks)}):</b>\n"
         f"{chunk_text}\n"
+        "\n"
+        f"✅ <b>Syntax:</b> {len(syntax_failed)} failed\n"
+        f"✅ <b>Imports:</b> {len(import_failed)} failed\n"
         "\n"
         f"💾 Backup: <code>{backup_path}</code>\n"
         "\n"
-        "📈 <b>BOT SCORE:</b>\n"
+        "📈 <b>SCORE:</b>\n"
         f"   {bar} <b>{score}/10</b>\n"
         "\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -398,27 +482,19 @@ def send_report(data):
 
 
 # ═══════════════════════════════════════════════
-# RATE
-# ═══════════════════════════════════════════════
-def rate_bot(files, total_changes):
-    if total_changes == 0:
-        return 1
-    ratio = total_changes / max(files, 1)
-    score = int(4 + ratio * 6)
-    return min(10, max(1, score))
-
-
-# ═══════════════════════════════════════════════
 # MAIN
 # ═══════════════════════════════════════════════
 def main():
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print("═" * 50)
-    print("👑 KING STARTED — CHUNKS MODE")
+    print("👑 KING STARTED — FULL SMART")
     print("═" * 50)
 
-    tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nWorking...", silent=True)
+    tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nFull Smart mode...", silent=True)
+
+    os.makedirs(WORK, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     # Collect
     files = collect()
@@ -427,14 +503,15 @@ def main():
         tg_send("⚠️ No files found.")
         return
 
-    # Chunks
-    chunks = make_chunks(files)
+    # Backup
+    backup_path = backup()
+    print(f"💾 Backup: {backup_path}")
+
+    # Smart Chunks
+    chunks = make_smart_chunks(files)
     print(f"📦 Chunks: {len(chunks)}")
 
-    # Backup before anything
-    backup_path = backup()
-
-    # Process each chunk
+    # Process
     chunk_reports = []
     total_modified = 0
     total_created = 0
@@ -448,7 +525,6 @@ def main():
         combined = combine_chunk(chunk_files, idx)
         fc = len(chunk_files)
 
-        print(f"  🤖 Calling 8 AI...")
         responses = ai_all(combined, fc)
 
         if not responses:
@@ -460,7 +536,7 @@ def main():
             continue
 
         best = pick_best(responses)
-        print(f"  🏆 Winner: {best['ai']} ({best['files']} files)")
+        print(f"  🏆 Best: {best['ai']} ({best['files']} files)")
 
         m, c, d = apply(best["code"])
         total_modified += m
@@ -471,9 +547,18 @@ def main():
             "idx": idx, "files": fc,
             "winner": best["ai"], "picked_files": m + c,
         })
-        print(f"  ✅ Applied: {m} modified, {c} created, {d} deleted")
+        print(f"  ✅ Applied: {m}M {c}C {d}D")
 
-    # Rate
+    # Test
+    print("\n🧪 Testing syntax...")
+    syntax_failed = test_syntax(files)
+    print(f"  ✅ {len(syntax_failed)} syntax failures")
+
+    print("🧪 Testing imports...")
+    import_failed = test_imports(files[:50])  # first 50 for speed
+    print(f"  ✅ {len(import_failed)} import failures")
+
+    # Score
     score = rate_bot(len(files), total_modified + total_created)
 
     # Report
@@ -486,11 +571,27 @@ def main():
         "backup": backup_path,
         "time": ts,
         "chunk_reports": chunk_reports,
+        "syntax_failed": syntax_failed,
+        "import_failed": import_failed,
     })
 
+    # Save JSON log
+    log_file = f"{LOG_DIR}/run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(log_file, "w", encoding="utf-8") as f:
+        json.dump({
+            "time": ts,
+            "files": len(files),
+            "modified": total_modified,
+            "created": total_created,
+            "deleted": total_deleted,
+            "score": score,
+            "chunks": chunk_reports,
+            "syntax_failed": syntax_failed,
+            "import_failed": import_failed,
+        }, f, indent=2)
+
     print("\n" + "═" * 50)
-    print(f"👑 DONE: {total_modified} modified, "
-          f"{total_created} created, {total_deleted} deleted")
+    print(f"👑 DONE: {total_modified}M {total_created}C {total_deleted}D")
     print("═" * 50)
 
 
