@@ -1,4 +1,4 @@
-name: 📁 Folder File Generator
+name: 👍📁 Folder File Generator
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   build:
-    name: 📁 Sync Structure
+    name: 📁 Sync Structure + Scripts
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -37,18 +37,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # ═══════════════════════════════════════════════════════════
-      # ③ SMART SYNC — Build + Repair + Delete
+      # ③ SMART SYNC
       # ═══════════════════════════════════════════════════════════
       - name: 🏗️ Smart Sync Structure
         run: |
           python3 <<'PYEOF'
           import os
-          import shutil
 
           ROOT = "Sawaj_studio"
 
           # ═══════════════════════════════════════════════════════
-          # EXPECTED STRUCTURE
+          # 1. EXPECTED FILES
           # ═══════════════════════════════════════════════════════
           expected_files = []
 
@@ -59,6 +58,13 @@ jobs:
               ".github/workflows/long.yml",
               ".github/workflows/report.yml",
               ".github/workflows/clean.yml",
+          ]
+
+          # Scripts — ONLY 3 FILES
+          expected_files += [
+              "scripts/core.py",
+              "scripts/graphics.py",
+              "scripts/content.py",
           ]
 
           # Docs
@@ -180,7 +186,7 @@ jobs:
               expected_files.append(f"{ROOT}/assets/{a}/.gitkeep")
 
           # ═══════════════════════════════════════════════════════
-          # BUILD EXPECTED FOLDERS SET
+          # 2. BUILD FOLDER SET
           # ═══════════════════════════════════════════════════════
           expected_folders = set()
           for path in expected_files:
@@ -189,7 +195,7 @@ jobs:
                   expected_folders.add(d)
 
           # ═══════════════════════════════════════════════════════
-          # SCAN EXISTING
+          # 3. SCAN EXISTING
           # ═══════════════════════════════════════════════════════
           existing_files = set()
           existing_folders = set()
@@ -201,12 +207,20 @@ jobs:
                   for f in files:
                       existing_files.add(os.path.join(root, f))
 
+          # Scan scripts folder
+          if os.path.exists("scripts"):
+              for f in os.listdir("scripts"):
+                  p = os.path.join("scripts", f)
+                  if os.path.isfile(p):
+                      existing_files.add(p)
+
+          # Scan workflows
           if os.path.exists(".github/workflows"):
               for f in os.listdir(".github/workflows"):
                   existing_files.add(os.path.join(".github/workflows", f))
 
           # ═══════════════════════════════════════════════════════
-          # ① CREATE MISSING FOLDERS
+          # 4. CREATE MISSING FOLDERS
           # ═══════════════════════════════════════════════════════
           created_folders = 0
           for folder in sorted(expected_folders):
@@ -215,7 +229,7 @@ jobs:
                   created_folders += 1
 
           # ═══════════════════════════════════════════════════════
-          # ② CREATE MISSING FILES
+          # 5. CREATE MISSING FILES
           # ═══════════════════════════════════════════════════════
           created_files = 0
           for path in expected_files:
@@ -238,44 +252,54 @@ jobs:
                   created_files += 1
 
           # ═══════════════════════════════════════════════════════
-          # ③ DELETE EXTRA FILES (Not expected, inside Sawaj_studio)
+          # 6. DELETE EXTRA FILES IN scripts/ (ONLY keep 3)
           # ═══════════════════════════════════════════════════════
-          deleted_files = 0
+          deleted_scripts = 0
+          if os.path.exists("scripts"):
+              for f in os.listdir("scripts"):
+                  p = os.path.join("scripts", f)
+                  if os.path.isfile(p) and p not in expected_files:
+                      try:
+                          os.remove(p)
+                          deleted_scripts += 1
+                          print(f"🗑️  Deleted: {p}")
+                      except Exception:
+                          pass
+
+          # ═══════════════════════════════════════════════════════
+          # 7. DELETE EXTRA FILES IN Sawaj_studio/
+          # ═══════════════════════════════════════════════════════
+          deleted_extra = 0
           expected_set = set(expected_files)
 
           for f in existing_files:
               if ROOT in f and f not in expected_set:
-                  # Only delete if it's a placeholder or empty
                   try:
                       size = os.path.getsize(f)
                       if size < 200:
                           os.remove(f)
-                          deleted_files += 1
+                          deleted_extra += 1
                   except Exception:
                       pass
 
           # ═══════════════════════════════════════════════════════
-          # ④ DELETE EXTRA EMPTY FOLDERS (Not expected)
+          # 8. DELETE EXTRA EMPTY FOLDERS
           # ═══════════════════════════════════════════════════════
           deleted_folders = 0
-
-          # Rescan folders
-          current_folders = set()
           if os.path.exists(ROOT):
+              current_folders = set()
               for root, dirs, _ in os.walk(ROOT):
                   for d in dirs:
                       current_folders.add(os.path.join(root, d))
 
-          # Delete in reverse order (deepest first)
-          for folder in sorted(current_folders, key=lambda x: -x.count(os.sep)):
-              if folder not in expected_folders:
-                  # Only if empty
-                  try:
-                      if os.path.exists(folder) and not os.listdir(folder):
-                          os.rmdir(folder)
-                          deleted_folders += 1
-                  except Exception:
-                      pass
+              for folder in sorted(current_folders, key=lambda x: -x.count(os.sep)):
+                  if folder not in expected_folders:
+                      try:
+                          if os.path.exists(folder) and not os.listdir(folder):
+                              os.rmdir(folder)
+                              deleted_folders += 1
+                      except Exception:
+                          pass
 
           # ═══════════════════════════════════════════════════════
           # REPORT
@@ -283,12 +307,13 @@ jobs:
           print("=" * 60)
           print("🏗️  SMART SYNC REPORT")
           print("=" * 60)
-          print(f"📁 Folders created:  {created_folders}")
-          print(f"📄 Files created:    {created_files}")
-          print(f"🗑️  Files deleted:    {deleted_files}")
-          print(f"🗑️  Folders deleted:  {deleted_folders}")
-          print(f"📦 Expected files:   {len(expected_files)}")
-          print(f"📦 Expected folders: {len(expected_folders)}")
+          print(f"📁 Folders created:       {created_folders}")
+          print(f"📄 Files created:         {created_files}")
+          print(f"🗑️  Scripts deleted:       {deleted_scripts}")
+          print(f"🗑️  Extra files deleted:   {deleted_extra}")
+          print(f"🗑️  Folders deleted:       {deleted_folders}")
+          print(f"📦 Expected files:        {len(expected_files)}")
+          print(f"📦 Expected folders:      {len(expected_folders)}")
           print("=" * 60)
           PYEOF
 
@@ -304,7 +329,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "✅ No changes"
           else
-            git commit -m "🏗️ Smart sync Sawaj Studio structure [skip ci]"
+            git commit -m "🏗️ Smart sync + keep only 3 scripts [skip ci]"
             git push origin HEAD
             echo "✅ Pushed"
           fi
@@ -325,6 +350,7 @@ jobs:
           FOLDERS=$(find Sawaj_studio/ -type d 2>/dev/null | wc -l)
           FILES=$(find Sawaj_studio/ -type f 2>/dev/null | wc -l)
           PY=$(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l)
+          SCRIPTS=$(ls scripts/ 2>/dev/null | wc -l)
 
           curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
             -d chat_id="$TG_CHAT" \
@@ -335,11 +361,13 @@ jobs:
           📁 Folders: <b>$FOLDERS</b>
           📄 Files: <b>$FILES</b>
           🐍 Python: <b>$PY</b>
+          📜 Scripts: <b>$SCRIPTS</b>
           ━━━━━━━━━━━━━━━━━━━━
 
           ✅ Sahi rakhha
           ✅ Galat delete
           ✅ Missing banaya
+          ✅ Scripts 3 tak limit
 
           🔢 Run: #${{ github.run_number }}" || true
 
@@ -357,4 +385,5 @@ jobs:
             echo "| Folders | $(find Sawaj_studio/ -type d 2>/dev/null | wc -l) |"
             echo "| Files | $(find Sawaj_studio/ -type f 2>/dev/null | wc -l) |"
             echo "| Python | $(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l) |"
+            echo "| Scripts | $(ls scripts/ 2>/dev/null | wc -l) |"
           } >> $GITHUB_STEP_SUMMARY
