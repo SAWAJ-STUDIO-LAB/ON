@@ -1,4 +1,4 @@
-name: 📑Send Repo to TG📤
+name: 👍🟢Send Repo code TG📤
 
 on:
   workflow_dispatch:
