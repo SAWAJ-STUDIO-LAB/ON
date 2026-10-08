@@ -1,4 +1,4 @@
-name: 🤖 Bot Update Upgrade
+name: 👑 Bot Update Upgrade — KING
 
 on:
   workflow_dispatch:
@@ -9,10 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  upgrade:
-    name: 🚀 AI Bot Upgrade
+  king:
+    name: 👑 King Working
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: 📥 Checkout
@@ -26,7 +26,7 @@ jobs:
       - name: 📦 Install Packages
         run: pip install requests
 
-      - name: 🚀 Run Upgrade
+      - name: 👑 Run King
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -34,12 +34,23 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_AI }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_AI }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY_AI }}
-        run: python "bot update upgrade/run.py"
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY_AI }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY_AI }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
+        run: python "bot update upgrade/king.py"
 
       - name: 📤 Commit
+        if: always()
         run: |
-          git config user.name "SawajBot"
-          git config user.email "bot@sawajstudio.com"
+          git config user.name "SawajBot King"
+          git config user.email "king@sawajstudio.com"
           git add .
-          git commit -m "🤖 Bot upgraded by AI" || echo "No changes"
+          git commit -m "👑 King upgraded the bot" || echo "No changes"
           git push
+
+      - name: ✅ Summary
+        if: always()
+        run: |
+          echo "## 👑 King Working Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Check Telegram for full report." >> $GITHUB_STEP_SUMMARY
