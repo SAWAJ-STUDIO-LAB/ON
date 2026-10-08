@@ -1,4 +1,4 @@
-name: 🏗️ Build Structure
+name: 📁 🏗️Folder File Generator
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: build-studio-${{ github.ref }}
+  group: folder-file-generator-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -15,22 +15,31 @@ env:
 
 jobs:
   build:
-    name: 🏗️ Build Structure
+    name: 📁 Generate Folders + Files
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
+      # ═══════════════════════════════════════════════════════════
+      # ① CHECKOUT
+      # ═══════════════════════════════════════════════════════════
       - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.TOKEN_GITHUB }}
 
+      # ═══════════════════════════════════════════════════════════
+      # ② SETUP PYTHON
+      # ═══════════════════════════════════════════════════════════
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: 🏗️ Build Structure
+      # ═══════════════════════════════════════════════════════════
+      # ③ GENERATE FOLDERS + FILES
+      # ═══════════════════════════════════════════════════════════
+      - name: 📁 Generate Folders + Files
         run: |
           python3 <<'PYEOF'
           import os
@@ -38,7 +47,7 @@ jobs:
           ROOT = "Sawaj_studio"
           files = []
 
-          # WORKFLOWS
+          # ─── WORKFLOWS ───
           files += [
               ".github/workflows/story.yml",
               ".github/workflows/short.yml",
@@ -47,7 +56,7 @@ jobs:
               ".github/workflows/clean.yml",
           ]
 
-          # SCRIPTS
+          # ─── SCRIPTS ───
           files += [
               "scripts/code_config.py",
               "scripts/code_logger.py",
@@ -62,7 +71,7 @@ jobs:
               "scripts/code_uploaders.py",
           ]
 
-          # DOCS
+          # ─── DOCS ───
           files += [
               f"{ROOT}/docs/1_setup/installation.md",
               f"{ROOT}/docs/1_setup/environment.md",
@@ -78,7 +87,7 @@ jobs:
               f"{ROOT}/docs/4_changelog/roadmap.md",
           ]
 
-          # GENERATOR A-Z
+          # ─── GENERATOR A-Z ───
           modules = {
               "1_config": ["1_env_loader.py","2_secret_reader.py","3_path_builder.py","4_mode_decider.py","5_folder_creator.py","6_default_settings.py","7_platform_config.py","8_worker_selector.py","9_validation.py"],
               "2_logger": ["1_console_logger.py","2_file_logger.py","3_timestamp.py","4_log_levels.py","5_error_tracker.py","6_step_logger.py","7_api_logger.py","8_buffer.py"],
@@ -114,7 +123,7 @@ jobs:
               for f in fl:
                   files.append(f"{ROOT}/generator/{mod}/{f}")
 
-          # WORKERS
+          # ─── WORKERS ───
           workers = ["worker_story", "worker_short", "worker_long"]
           worker_subs = {
               "1_pipeline": ["1_pipeline_steps.py","2_step_orchestrator.py"],
@@ -137,7 +146,7 @@ jobs:
                   for f in fl:
                       files.append(f"{ROOT}/generator/{w}/{sub}/{f}")
 
-          # UPLOADERS
+          # ─── UPLOADERS ───
           uploaders = {
               "1_youtube_upload": {
                   "1_auth": ["1_oauth.py"],
@@ -173,14 +182,16 @@ jobs:
                   for f in fl:
                       files.append(f"{ROOT}/uploader/{up}/{sub}/{f}")
 
-          # ASSETS
+          # ─── ASSETS ───
           assets = ["1_emoji","2_photo","3_icon","4_sticker","5_effect","6_sound","7_font","8_logo"]
           files.append(f"{ROOT}/assets/__init__.py")
           for a in assets:
               files.append(f"{ROOT}/assets/{a}/__init__.py")
               files.append(f"{ROOT}/assets/{a}/.gitkeep")
 
+          # ═══════════════════════════════════════════════════════
           # CREATE
+          # ═══════════════════════════════════════════════════════
           created_f = 0
           created_d = 0
           skipped = 0
@@ -216,6 +227,9 @@ jobs:
           print("=" * 60)
           PYEOF
 
+      # ═══════════════════════════════════════════════════════════
+      # ④ COMMIT + PUSH
+      # ═══════════════════════════════════════════════════════════
       - name: 📤 Commit & Push
         run: |
           git config user.name "github-actions[bot]"
@@ -225,19 +239,14 @@ jobs:
           if git diff --cached --quiet; then
             echo "✅ No changes"
           else
-            git commit -m "🏗️ Build Sawaj Studio structure [skip ci]"
+            git commit -m "📁 Generate Sawaj Studio folders + files [skip ci]"
             git push origin HEAD
             echo "✅ Pushed"
           fi
 
-      - name: 🌳 Tree Report
-        if: always()
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq tree
-          tree Sawaj_studio/ -L 8 --dirsfirst > structure_report.txt 2>/dev/null || true
-          echo "📋 Report: $(wc -l < structure_report.txt) lines"
-
+      # ═══════════════════════════════════════════════════════════
+      # ⑤ TELEGRAM REPORT
+      # ═══════════════════════════════════════════════════════════
       - name: 📱 Telegram Report
         if: always()
         continue-on-error: true
@@ -246,39 +255,40 @@ jobs:
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "⚠️ Telegram secrets missing"
             exit 0
           fi
           FOLDERS=$(find Sawaj_studio/ -type d 2>/dev/null | wc -l)
           FILES=$(find Sawaj_studio/ -type f 2>/dev/null | wc -l)
+          PY=$(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l)
+
           curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
             -d chat_id="$TG_CHAT" \
             -d parse_mode="HTML" \
-            -d text="🏗️ <b>SAWAJ STUDIO BUILD COMPLETE</b>
+            -d text="📁 <b>FOLDER FILE GENERATOR</b>
 
-          ━━━━━━━━━━━━━━━━━━━━━━━
+          ━━━━━━━━━━━━━━━━━━━━
           📁 Folders: <b>$FOLDERS</b>
           📄 Files: <b>$FILES</b>
-          ━━━━━━━━━━━━━━━━━━━━━━━
+          🐍 Python: <b>$PY</b>
+          ━━━━━━━━━━━━━━━━━━━━
 
           🔢 Run: #${{ github.run_number }}
-          👤 Actor: ${{ github.actor }}" \
-            || true
-          if [ -f structure_report.txt ]; then
-            curl -s -F chat_id="$TG_CHAT" \
-                 -F document=@"structure_report.txt" \
-                 -F caption="🌳 Sawaj Studio Structure" \
-                 "https://api.telegram.org/bot$TG_TOKEN/sendDocument" \
-              || true
-          fi
+          👤 Actor: ${{ github.actor }}
+          🕐 $(date '+%H:%M:%S UTC')" || true
 
+      # ═══════════════════════════════════════════════════════════
+      # ⑥ SUMMARY
+      # ═══════════════════════════════════════════════════════════
       - name: 📊 Summary
         if: always()
         run: |
           {
-            echo "# 🏗️ Structure Built"
+            echo "# 📁 Folder File Generator"
             echo ""
             echo "| Metric | Count |"
             echo "|--------|-------|"
             echo "| Folders | $(find Sawaj_studio/ -type d 2>/dev/null | wc -l) |"
             echo "| Files | $(find Sawaj_studio/ -type f 2>/dev/null | wc -l) |"
+            echo "| Python | $(find Sawaj_studio/ -name '*.py' 2>/dev/null | wc -l) |"
           } >> $GITHUB_STEP_SUMMARY
