@@ -24,11 +24,6 @@ jobs:
       - name: ▶️ Run 1send_code.py (A_core)
         run: python "_temp_builder/1send_code.py"
 
-      - name: 🧹 Delete Builder Folder
-        run: |
-          rm -rf _temp_builder
-          echo "✅ Builder folder deleted"
-
       - name: 📤 Commit Changes
         run: |
           git config user.name "SawajBot"
