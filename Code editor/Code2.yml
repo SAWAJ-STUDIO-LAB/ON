@@ -1,0 +1,44 @@
+"""
+Code2 — Short Generator code transfer.
+"""
+import os
+
+BASE = "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator"
+
+# Short mein zyada ter same code hai. Sirf alag modules:
+FILES = {
+    "A_core/__init__.py": '"""A_core package."""\n',
+    "B_graphics/__init__.py": '"""B_graphics package."""\n',
+    "C_content/__init__.py": '"""C_content package."""\n',
+    "D_video/__init__.py": '"""D_video package."""\n',
+    "E_audio/__init__.py": '"""E_audio package."""\n',
+    "F_drive/__init__.py": '"""F_drive package."""\n',
+    "G_entry/__init__.py": '"""G_entry package."""\n',
+    "H_tests/__init__.py": '"""H_tests package."""\n',
+    "__init__.py": '"""Short generator package."""\n',
+
+    "A_core/A1_env_loader.py": '"""A1_env_loader.py"""\nimport os\n\n\ndef get_env(name, default=""):\n    return os.environ.get(name, default).strip()\n',
+    "A_core/A6_print_logger.py": '"""A6_print_logger.py"""\nfrom datetime import datetime\n\n\ndef log(msg, level="INFO"):\n    ts = datetime.now().strftime("%H:%M:%S")\n    print(f"[{ts}] [{level}] {msg}", flush=True)\n',
+    "A_core/A26_sanitize.py": '"""A26_sanitize.py"""\nimport re\n\n\ndef sanitize(t):\n    if not t:\n        return ""\n    t = re.sub(r\'[\\u200b-\\u200f\\ufeff\\u202a-\\u202e]\', \'\', str(t))\n    return t.replace(\'"\', \'\').replace("\'", \'\').replace("\\n", " ").strip()\n',
+
+    "B_graphics/B2_font_load.py": '"""B2_font_load.py"""\nimport os\nfrom PIL import ImageFont\n\n\ndef load(size, script="latin", bold=True):\n    path = os.path.expanduser(f"~/.fonts/NotoSans-Bold.ttf")\n    try:\n        return ImageFont.truetype(path, size)\n    except Exception:\n        return ImageFont.load_default()\n',
+
+    "C_content/C9_meaning_fallback.py": '"""C9_meaning_fallback.py"""\n\n\ndef get():\n    return "इस हदीस में नीयत की अहमियत बताई गई है।"\n',
+
+    "D_video/D17_ease_crossfade.py": '"""D17_ease_crossfade.py"""\n\n\ndef crossfade(t, start, duration):\n    if t < start:\n        return 0.0\n    if t > start + duration:\n        return 1.0\n    return (t - start) / duration\n',
+}
+
+
+def main():
+    total = 0
+    for rel_path, content in FILES.items():
+        full = os.path.join(BASE, rel_path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(content)
+        total += 1
+    print(f"🎉 Short: {total} files written!")
+
+
+if __name__ == "__main__":
+    main()
