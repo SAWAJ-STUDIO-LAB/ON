@@ -1,0 +1,467 @@
+name: 📁🟢Folder file creator
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 🔨 Build All Folder Structures (Production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🛠️ Setup — Verify Base Path
+        run: |
+          set -e
+          echo "════════════════════════════════════════"
+          echo "🏗️  PRODUCTION FOLDER CREATOR STARTED"
+          echo "════════════════════════════════════════"
+          mkdir -p sawajstudiobot
+          echo "✅ Base directory ready"
+
+      # ══════════════════════════════════════════════════════
+      # 📖 STORY GENERATOR
+      # ══════════════════════════════════════════════════════
+      - name: 📖 Build Story Generator
+        run: |
+          set -e
+          BASE="sawajstudiobot/video_generator/fb_ig_story_video_generator"
+          echo "▶️  Building: Story Generator"
+
+          # ───── Root ─────
+          mkdir -p "$BASE/output/final"
+          mkdir -p "$BASE/output/temp"
+          touch "$BASE/output/final/.gitkeep"
+          touch "$BASE/output/temp/.gitkeep"
+          touch "$BASE/__init__.py"
+
+          # ───── A_core (46 files) ─────
+          mkdir -p "$BASE/A_core"
+          FILES_A="
+            __init__
+            A1_env_loader A2_env_fallback A3_config_class A4_upload_decider A5_platform_checker
+            A6_print_logger A7_log_file_start A8_log_file_end A9_log_step A10_log_api A11_log_error
+            A12_tg_session A13_tg_buffer A14_tg_creds A15_tg_send_raw A16_tg_run_start
+            A17_tg_file_start A18_tg_file_end A19_tg_step A20_tg_api_call A21_tg_file_error
+            A22_tg_header A23_tg_send A24_tg_report A25_tg_summary
+            A26_sanitize A27_ensure_dir
+            A28_http_session A29_http_download A30_cmd_runner A31_cleanup A32_api_tracker
+            A33_secrets_registry A34_secrets_env_check
+            A35_ping_telegram A36_ping_facebook A37_ping_instagram A38_ping_drive
+            A39_ping_openrouter A40_ping_groq A41_ping_pexels
+            A42_secrets_summary A43_secrets_report A44_msg_splitter A45_secrets_verify
+          "
+          for f in $FILES_A; do touch "$BASE/A_core/$f.py"; done
+
+          # ───── B_graphics (44 files) ─────
+          mkdir -p "$BASE/B_graphics"
+          FILES_B="
+            __init__
+            B1_font_paths B2_font_load B3_font_cache B4_font_info
+            B5_text_measure B6_text_wrap B7_text_draw_center B8_text_draw_multi B9_text_draw_at
+            B10_sparkle_draw B11_sparkle_star B12_sparkle_burst
+            B13_progress_main B14_progress_track B15_progress_fill B16_progress_glow B17_progress_markers
+            B18_badge_main B19_badge_fit_font B20_badge_gradient B21_badge_corners
+            B22_word_state B23_word_empty B24_word_alphas B25_word_smooth
+            B26_bullet_lang_row B27_bullet_word_draw B28_bullet_circle B29_bullets_main B30_bullets_sync
+            B31_watermark_main B32_watermark_position B33_watermark_text B34_logo_float
+            B35_arabesque_main
+            B36_rays_draw B37_rays_apply
+            B38_stars_draw
+            B39_ember_draw B40_ember_single
+            B41_vignette_draw B42_vignette_ring B43_vignette_radial
+          "
+          for f in $FILES_B; do touch "$BASE/B_graphics/$f.py"; done
+
+          # ───── C_content (47 files) ─────
+          mkdir -p "$BASE/C_content"
+          FILES_C="
+            __init__
+            C1_hadith_fallback C2_hadith_count C3_hadith_fetch_one C4_hadith_books C5_hadith_main
+            C6_ai_get_key C7_ai_openrouter C8_ai_groq C9_ai_gemini C10_ai_mistral C11_ai_cerebras C12_ai_cohere C13_ai_main
+            C14_translate_deepl C15_translate_main
+            C16_tts_constants C17_tts_elevenlabs C18_tts_edge C19_tts_gtts C20_tts_main
+            C21_music_constants C22_music_freesound C23_music_pixabay C24_music_bensound C25_music_process C26_music_sine C27_music_main
+            C28_bg_scale_filter C29_bg_pexels C30_bg_pixabay C31_bg_process C32_bg_gradient C33_bg_random_hex C34_bg_main
+            C35_logo_make
+            C36_thumb_constants C37_thumb_gradient C38_thumb_borders C39_thumb_label C40_thumb_title
+            C41_thumb_lang C42_thumb_cta C43_thumb_logo C44_thumb_truncate C45_thumb_wrap C46_thumb_main
+          "
+          for f in $FILES_C; do touch "$BASE/C_content/$f.py"; done
+
+          # ───── D_video (30 files) ─────
+          mkdir -p "$BASE/D_video"
+          FILES_D="
+            __init__
+            D1_intro_goldline D2_intro_logo D3_intro_main
+            D4_main_alpha D5_main_badge D6_main_watermark D7_main_bullets D8_main_progress D9_main_sparkles D10_main_bg_layers D11_main_draw
+            D12_outro_cta D13_outro_logo D14_outro_main
+            D15_frames_generate D16_frames_cleanup
+            D17_ease_crossfade D18_ease_inout D19_ease_fadeio D20_ease_linear D21_ease_in D22_ease_out
+            D23_ease_bounce D24_ease_cubic D25_ease_smoothstep D26_ease_scene D27_ease_pulse
+            D28_compose_main D29_compose_verify
+          "
+          for f in $FILES_D; do touch "$BASE/D_video/$f.py"; done
+
+          # ───── E_audio (5 files) ─────
+          mkdir -p "$BASE/E_audio"
+          for f in __init__ E1_duck_mix E2_sfx_whoosh E3_sfx_ding E4_master_voice; do
+            touch "$BASE/E_audio/$f.py"
+          done
+
+          # ───── F_drive (5 files) ─────
+          mkdir -p "$BASE/F_drive"
+          for f in __init__ F1_drive_auth F2_drive_upload F3_drive_public F4_drive_links; do
+            touch "$BASE/F_drive/$f.py"
+          done
+
+          # ───── G_entry (17 files) ─────
+          mkdir -p "$BASE/G_entry"
+          FILES_G="
+            __init__
+            G1_step_init G2_step_secrets G3_step_hadith G4_step_translate G5_step_tts
+            G6_step_music G7_step_background G8_step_logo G9_step_frames G10_step_compose
+            G11_step_thumbnail G12_step_drive G13_step_socials G14_step_cleanup
+            G15_pipeline_run G16_main
+          "
+          for f in $FILES_G; do touch "$BASE/G_entry/$f.py"; done
+
+          # ───── H_tests (6 files) ─────
+          mkdir -p "$BASE/H_tests"
+          for f in __init__ H1_conftest H2_test_config H3_test_utils H4_test_media H5_test_render; do
+            touch "$BASE/H_tests/$f.py"
+          done
+
+          echo "✅ Story Generator built"
+
+      # ══════════════════════════════════════════════════════
+      # 🎬 SHORT GENERATOR
+      # ══════════════════════════════════════════════════════
+      - name: 🎬 Build Short Generator
+        run: |
+          set -e
+          BASE="sawajstudiobot/video_generator/fb_ig_yt_short_video_generator"
+          echo "▶️  Building: Short Generator"
+
+          mkdir -p "$BASE/output/final" "$BASE/output/temp"
+          touch "$BASE/output/final/.gitkeep" "$BASE/output/temp/.gitkeep"
+          touch "$BASE/__init__.py"
+
+          # ───── A_core (33 files) ─────
+          mkdir -p "$BASE/A_core"
+          FILES_A="
+            __init__
+            A1_env_loader A2_env_fallback A3_config_class A4_upload_decider A5_platform_checker
+            A6_print_logger A7_log_file_start A8_log_file_end A9_log_step A10_log_api A11_log_error
+            A12_tg_session A13_tg_buffer A14_tg_creds A15_tg_send_raw A16_tg_run_start
+            A17_tg_file_start A18_tg_file_end A19_tg_step A20_tg_api_call A21_tg_file_error
+            A22_tg_header A23_tg_send A24_tg_report A25_tg_summary
+            A26_sanitize A27_ensure_dir
+            A28_http_session A29_http_download A30_cmd_runner A31_cleanup A32_api_tracker
+          "
+          for f in $FILES_A; do touch "$BASE/A_core/$f.py"; done
+
+          # ───── B_graphics (44 files) ─────
+          mkdir -p "$BASE/B_graphics"
+          FILES_B="
+            __init__
+            B1_font_paths B2_font_load B3_font_cache B4_font_info
+            B5_text_measure B6_text_wrap B7_text_draw_center B8_text_draw_multi B9_text_draw_at
+            B10_sparkle_draw B11_sparkle_star B12_sparkle_burst
+            B13_progress_main B14_progress_track B15_progress_fill B16_progress_glow B17_progress_markers
+            B18_badge_main B19_badge_fit_font B20_badge_gradient B21_badge_corners
+            B22_word_state B23_word_empty B24_word_alphas B25_word_smooth
+            B26_bullet_lang_row B27_bullet_word_draw B28_bullet_circle B29_bullets_main B30_bullets_sync
+            B31_watermark_main B32_watermark_position B33_watermark_text B34_logo_float
+            B35_arabesque_main
+            B36_rays_draw B37_rays_apply
+            B38_stars_draw
+            B39_ember_draw B40_ember_single
+            B41_vignette_draw B42_vignette_ring B43_vignette_radial
+          "
+          for f in $FILES_B; do touch "$BASE/B_graphics/$f.py"; done
+
+          # ───── C_content (49 files) ─────
+          mkdir -p "$BASE/C_content"
+          FILES_C="
+            __init__
+            C1_hadith_fallback C2_hadith_count C3_hadith_fetch_one C4_hadith_books C5_hadith_main
+            C6_ai_get_key C7_ai_openrouter C8_ai_groq C9_ai_gemini C10_ai_mistral C11_ai_cerebras C12_ai_cohere C13_ai_main
+            C14_translate_deepl C15_translate_main
+            C16_tts_constants C17_tts_elevenlabs C18_tts_edge C19_tts_gtts C20_tts_main
+            C21_music_constants C22_music_freesound C23_music_pixabay C24_music_bensound C25_music_process C26_music_sine C27_music_main
+            C28_bg_scale_filter C29_bg_pexels C30_bg_pixabay C31_bg_process C32_bg_gradient C33_bg_random_hex C34_bg_main
+            C35_logo_make
+            C36_thumb_constants C37_thumb_gradient C38_thumb_borders C39_thumb_label C40_thumb_title
+            C41_thumb_lang C42_thumb_cta C43_thumb_logo C44_thumb_truncate C45_thumb_wrap C46_thumb_main
+            C47_meaning_fallback C48_meaning_main
+          "
+          for f in $FILES_C; do touch "$BASE/C_content/$f.py"; done
+
+          # ───── D_video (30 files) ─────
+          mkdir -p "$BASE/D_video"
+          FILES_D="
+            __init__
+            D1_intro_goldline D2_intro_logo D3_intro_main
+            D4_main_alpha D5_main_badge D6_main_watermark D7_main_bullets D8_main_progress D9_main_sparkles D10_main_bg_layers D11_main_draw
+            D12_outro_cta D13_outro_logo D14_outro_main
+            D15_frames_generate D16_frames_cleanup
+            D17_ease_crossfade D18_ease_inout D19_ease_fadeio D20_ease_linear D21_ease_in D22_ease_out
+            D23_ease_bounce D24_ease_cubic D25_ease_smoothstep D26_ease_scene D27_ease_pulse
+            D28_compose_main D29_compose_verify
+          "
+          for f in $FILES_D; do touch "$BASE/D_video/$f.py"; done
+
+          mkdir -p "$BASE/E_audio"
+          for f in __init__ E1_duck_mix E2_sfx_whoosh E3_sfx_ding E4_master_voice; do
+            touch "$BASE/E_audio/$f.py"
+          done
+
+          mkdir -p "$BASE/F_drive"
+          for f in __init__ F1_drive_auth F2_drive_upload F3_drive_public F4_drive_links; do
+            touch "$BASE/F_drive/$f.py"
+          done
+
+          mkdir -p "$BASE/G_entry"
+          FILES_G="
+            __init__
+            G1_step_init G2_step_secrets G3_step_hadith G4_step_translate G5_step_meaning
+            G6_step_tts G7_step_music G8_step_background G9_step_logo G10_step_frames G11_step_compose
+            G12_step_thumbnail G13_step_drive G14_step_socials G15_step_cleanup
+            G16_pipeline_run G17_main
+          "
+          for f in $FILES_G; do touch "$BASE/G_entry/$f.py"; done
+
+          mkdir -p "$BASE/H_tests"
+          for f in __init__ H1_conftest H2_test_config H3_test_utils H4_test_media H5_test_render; do
+            touch "$BASE/H_tests/$f.py"
+          done
+
+          echo "✅ Short Generator built"
+
+      # ══════════════════════════════════════════════════════
+      # 🎥 LONG GENERATOR
+      # ══════════════════════════════════════════════════════
+      - name: 🎥 Build Long Generator
+        run: |
+          set -e
+          BASE="sawajstudiobot/video_generator/fb_yt_long_video_generator"
+          echo "▶️  Building: Long Generator"
+
+          mkdir -p "$BASE/output/final" "$BASE/output/temp"
+          touch "$BASE/output/final/.gitkeep" "$BASE/output/temp/.gitkeep"
+          touch "$BASE/__init__.py"
+
+          mkdir -p "$BASE/A_core"
+          FILES_A="
+            __init__
+            A1_env_loader A2_env_fallback A3_config_class A4_upload_decider A5_platform_checker
+            A6_print_logger A7_log_file_start A8_log_file_end A9_log_step A10_log_api A11_log_error
+            A12_tg_session A13_tg_buffer A14_tg_creds A15_tg_send_raw A16_tg_run_start
+            A17_tg_file_start A18_tg_file_end A19_tg_step A20_tg_api_call A21_tg_file_error
+            A22_tg_header A23_tg_send A24_tg_report A25_tg_summary
+            A26_sanitize A27_ensure_dir
+            A28_http_session A29_http_download A30_cmd_runner A31_cleanup A32_api_tracker
+          "
+          for f in $FILES_A; do touch "$BASE/A_core/$f.py"; done
+
+          mkdir -p "$BASE/B_graphics"
+          FILES_B="
+            __init__
+            B1_font_paths B2_font_load B3_font_cache B4_font_info
+            B5_text_measure B6_text_wrap B7_text_draw_center B8_text_draw_multi B9_text_draw_at
+            B10_sparkle_draw B11_sparkle_star B12_sparkle_burst
+            B13_progress_main B14_progress_track B15_progress_fill B16_progress_glow B17_progress_markers
+            B18_badge_main B19_badge_fit_font B20_badge_gradient B21_badge_corners
+            B22_word_state B23_word_empty B24_word_alphas B25_word_smooth
+            B26_bullet_lang_row B27_bullet_word_draw B28_bullet_circle B29_bullets_main B30_bullets_sync
+            B31_watermark_main B32_watermark_position B33_watermark_text B34_logo_float
+            B35_arabesque_main
+            B36_rays_draw B37_rays_apply
+            B38_stars_draw
+            B39_ember_draw B40_ember_single
+            B41_vignette_draw B42_vignette_ring B43_vignette_radial
+          "
+          for f in $FILES_B; do touch "$BASE/B_graphics/$f.py"; done
+
+          mkdir -p "$BASE/C_content"
+          FILES_C="
+            __init__
+            C1_hadith_fallback C2_hadith_count C3_hadith_fetch_one C4_hadith_books C5_hadith_main
+            C6_ai_get_key C7_ai_openrouter C8_ai_groq C9_ai_gemini C10_ai_mistral C11_ai_cerebras C12_ai_cohere C13_ai_main
+            C14_translate_deepl C15_translate_main
+            C16_tts_constants C17_tts_elevenlabs C18_tts_edge C19_tts_gtts C20_tts_main
+            C21_music_constants C22_music_freesound C23_music_pixabay C24_music_bensound C25_music_process C26_music_sine C27_music_main
+            C28_bg_scale_filter C29_bg_pexels C30_bg_pixabay C31_bg_process C32_bg_gradient C33_bg_random_hex C34_bg_main
+            C35_logo_make
+            C36_thumb_constants C37_thumb_gradient C38_thumb_borders C39_thumb_label C40_thumb_title
+            C41_thumb_lang C42_thumb_cta C43_thumb_logo C44_thumb_truncate C45_thumb_wrap C46_thumb_main
+            C47_meaning_fallback C48_meaning_main
+            C49_bullets_generate C50_bullets_parse C51_bullets_extract_arabic
+            C52_chapters_build C53_chapters_format
+            C54_subs_format C55_subs_create C56_subs_from_text
+          "
+          for f in $FILES_C; do touch "$BASE/C_content/$f.py"; done
+
+          mkdir -p "$BASE/D_video"
+          FILES_D="
+            __init__
+            D1_intro_goldline D2_intro_logo D3_intro_main
+            D4_main_find_section D5_main_arabic D6_main_hindi D7_main_tashreeh D8_main_bullets D9_main_draw
+            D10_outro_cta D11_outro_logo D12_outro_main
+            D13_frames_generate D14_frames_cleanup
+            D15_ease_crossfade D16_ease_inout D17_ease_fadeio
+            D18_compose_main D19_compose_verify
+          "
+          for f in $FILES_D; do touch "$BASE/D_video/$f.py"; done
+
+          mkdir -p "$BASE/E_audio"
+          for f in __init__ E1_duck_mix E2_sfx_whoosh E3_sfx_ding E4_sfx_pad E5_sfx_chime E6_master_voice; do
+            touch "$BASE/E_audio/$f.py"
+          done
+
+          mkdir -p "$BASE/F_drive"
+          for f in __init__ F1_drive_auth F2_drive_upload F3_drive_public F4_drive_links; do
+            touch "$BASE/F_drive/$f.py"
+          done
+
+          mkdir -p "$BASE/G_entry"
+          FILES_G="
+            __init__
+            G1_step_init G2_step_hadith G3_step_translate G4_step_tashreeh G5_step_bullets
+            G6_step_tts_hadith G7_step_tts_tashreeh G8_step_tts_bullets G9_step_tts_concat
+            G10_step_music G11_step_background G12_step_logo G13_step_frames G14_step_compose
+            G15_step_thumbnail G16_step_subtitles G17_step_chapters
+            G18_step_drive G19_step_socials G20_step_cleanup
+            G21_pipeline_run G22_main
+          "
+          for f in $FILES_G; do touch "$BASE/G_entry/$f.py"; done
+
+          mkdir -p "$BASE/H_tests"
+          for f in __init__ H1_conftest H2_test_config H3_test_utils H4_test_media H5_test_render; do
+            touch "$BASE/H_tests/$f.py"
+          done
+
+          echo "✅ Long Generator built"
+
+      # ══════════════════════════════════════════════════════
+      # 📤 UPLOADER
+      # ══════════════════════════════════════════════════════
+      - name: 📤 Build Video Uploader
+        run: |
+          set -e
+          BASE="sawajstudiobot/video_uploader"
+          echo "▶️  Building: Video Uploader"
+
+          touch "$BASE/__init__.py"
+
+          # ───── Facebook ─────
+          mkdir -p "$BASE/facebook"
+          for f in \
+            __init__ \
+            fb_story_start fb_story_upload fb_story_finish fb_story_main \
+            fb_short_upload fb_short_main \
+            fb_long_upload fb_long_main \
+          ; do touch "$BASE/facebook/$f.py"; done
+
+          # ───── Instagram ─────
+          mkdir -p "$BASE/instagram"
+          for f in \
+            __init__ \
+            ig_story_container ig_story_upload ig_story_poll ig_story_publish ig_story_main \
+            ig_short_container ig_short_upload ig_short_poll ig_short_publish ig_short_main \
+          ; do touch "$BASE/instagram/$f.py"; done
+
+          # ───── YouTube ─────
+          mkdir -p "$BASE/youtube"
+          for f in \
+            __init__ \
+            yt_auth \
+            yt_short_upload yt_short_playlist yt_short_main \
+            yt_long_upload yt_long_playlist yt_long_chapters yt_long_main \
+          ; do touch "$BASE/youtube/$f.py"; done
+
+          echo "✅ Uploader built"
+
+      # ══════════════════════════════════════════════════════
+      # 📦 VIDEO REQUIREMENT
+      # ══════════════════════════════════════════════════════
+      - name: 📦 Build Video Requirement
+        run: |
+          set -e
+          BASE="sawajstudiobot/video_requirement"
+          echo "▶️  Building: Video Requirement"
+
+          mkdir -p "$BASE/assets"
+          touch "$BASE/assets/.gitkeep"
+          touch "$BASE/__init__.py"
+
+          echo "✅ Video Requirement built"
+
+      # ══════════════════════════════════════════════════════
+      # 📊 VERIFY & REPORT
+      # ══════════════════════════════════════════════════════
+      - name: 📊 Show Final Structure
+        run: |
+          echo "════════════════════════════════════════"
+          echo "📁 FINAL FOLDER STRUCTURE"
+          echo "════════════════════════════════════════"
+          find sawajstudiobot -type d | sort
+
+          echo ""
+          echo "════════════════════════════════════════"
+          echo "📄 TOTAL FILES"
+          echo "════════════════════════════════════════"
+          find sawajstudiobot -type f | wc -l
+
+          echo ""
+          echo "════════════════════════════════════════"
+          echo "📂 FOLDER-WISE COUNT"
+          echo "════════════════════════════════════════"
+          for dir in \
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator" \
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator" \
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator" \
+            "sawajstudiobot/video_uploader" \
+            "sawajstudiobot/video_requirement" \
+          ; do
+            count=$(find "$dir" -type f 2>/dev/null | wc -l)
+            echo "  $dir"
+            echo "    → $count files"
+          done
+
+      # ══════════════════════════════════════════════════════
+      # 📤 COMMIT & PUSH
+      # ══════════════════════════════════════════════════════
+      - name: 📤 Commit Changes
+        run: |
+          set -e
+          git config user.name "SawajBot"
+          git config user.email "bot@sawajstudio.com"
+          git add .
+          git commit -m "📁 Folder file creator — Production structure built" || echo "ℹ️  No changes"
+          git push
+
+      - name: ✅ Summary
+        run: |
+          echo "## ✅ Folder file creator — Success" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Built Structures" >> $GITHUB_STEP_SUMMARY
+          echo "| Generator | Folder |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 📖 Story | \`fb_ig_story_video_generator\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎬 Short | \`fb_ig_yt_short_video_generator\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎥 Long | \`fb_yt_long_video_generator\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📤 Uploader | \`video_uploader\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📦 Requirement | \`video_requirement\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Status" >> $GITHUB_STEP_SUMMARY
+          echo "- All folders created" >> $GITHUB_STEP_SUMMARY
+          echo "- All files created (empty)" >> $GITHUB_STEP_SUMMARY
+          echo "- Committed & pushed" >> $GITHUB_STEP_SUMMARY
