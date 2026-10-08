@@ -1,4 +1,4 @@
-name: 📤 Send Py Code
+name: 📤 Code Transfer
 
 on:
   workflow_dispatch:
@@ -7,8 +7,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: 🚀 Send Code to All Files
+  transfer:
+    name: 🚀 Transfer Code to All Files
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -21,18 +21,32 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: ▶️ Run 1send_code.py (A_core)
-        run: python "_temp_builder/1send_code.py"
+      - name: ▶️ Code1 (Story)
+        run: python "Code editor/Code1"
+
+      - name: ▶️ Code2 (Short)
+        run: python "Code editor/Code2"
+
+      - name: ▶️ Code3 (Long)
+        run: python "Code editor/Code3"
+
+      - name: ▶️ Code4 (Uploader)
+        run: python "Code editor/Code4"
 
       - name: 📤 Commit Changes
         run: |
           git config user.name "SawajBot"
           git config user.email "bot@sawajstudio.com"
           git add .
-          git commit -m "🤖 A_core code injected" || echo "No changes"
+          git commit -m "✅ Code transfer complete — Story + Short + Long + Uploader" || echo "No changes"
           git push
 
       - name: ✅ Summary
         run: |
-          echo "## ✅ A_core Code Injected" >> $GITHUB_STEP_SUMMARY
-          echo "All A_core files populated successfully." >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Code Transfer Complete" >> $GITHUB_STEP_SUMMARY
+          echo "| Module | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 📖 Story | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎬 Short | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎥 Long | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📤 Uploader | ✅ |" >> $GITHUB_STEP_SUMMARY
