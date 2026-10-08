@@ -24,30 +24,6 @@ jobs:
       - name: ▶️ Run 1send_code.py (A_core)
         run: python "_temp_builder/1send_code.py"
 
-      - name: ▶️ Run 2Send_code.py (B_graphics)
-        run: python "_temp_builder/2Send_code.py"
-
-      - name: ▶️ Run 3Send_code.py (C_content)
-        run: python "_temp_builder/3Send_code.py"
-
-      - name: ▶️ Run 4Send_code.py (D_video)
-        run: python "_temp_builder/4Send_code.py"
-
-      - name: ▶️ Run 5Send_code.py (E_audio + F_drive)
-        run: python "_temp_builder/5Send_code.py"
-
-      - name: ▶️ Run 6Send_code.py (G_entry)
-        run: python "_temp_builder/6Send_code.py"
-
-      - name: ▶️ Run 7Send_code.py (H_tests)
-        run: python "_temp_builder/7Send_code.py"
-
-      - name: ▶️ Run 8Send_code.py (video_uploader)
-        run: python "_temp_builder/8Send_code.py"
-
-      - name: ▶️ Run 9Send_code.py (video_requirement)
-        run: python "_temp_builder/9Send_code.py"
-
       - name: 🧹 Delete Builder Folder
         run: |
           rm -rf _temp_builder
@@ -58,11 +34,10 @@ jobs:
           git config user.name "SawajBot"
           git config user.email "bot@sawajstudio.com"
           git add .
-          git commit -m "🤖 Code injected into all files" || echo "No changes"
+          git commit -m "🤖 A_core code injected" || echo "No changes"
           git push
 
       - name: ✅ Summary
         run: |
-          echo "## ✅ Code Injection Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "All files have been populated with their code." >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ A_core Code Injected" >> $GITHUB_STEP_SUMMARY
+          echo "All A_core files populated successfully." >> $GITHUB_STEP_SUMMARY
