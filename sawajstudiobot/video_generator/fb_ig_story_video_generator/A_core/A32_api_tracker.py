@@ -1,13 +1,7 @@
-"""
-A32_api_tracker.py
-Sirf API status dict.
-"""
+"""A32_api_tracker.py — Sirf tracker."""
 
 
 def create_tracker():
-    """Return empty API status dict."""
-    return {
-        "AI": {}, "TTS": {}, "Music": {}, "Background": {},
-        "Translation": {}, "Hadith": {}, "Drive": {},
-        "Facebook": {}, "Instagram": {}, "YouTube": {},
-    }
+    return {"AI": {}, "TTS": {}, "Music": {}, "Background": {},
+            "Translation": {}, "Hadith": {}, "Drive": {},
+            "Facebook": {}, "Instagram": {}, "YouTube": {}}

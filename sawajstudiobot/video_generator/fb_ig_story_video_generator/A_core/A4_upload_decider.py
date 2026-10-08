@@ -1,12 +1,8 @@
-"""
-A4_upload_decider.py
-Sirf upload decisions.
-"""
+"""A4_upload_decider.py — Sirf upload decisions."""
 from A_core.A3_config_class import Config
 
 
 def decide(cfg=None):
-    """Return which platforms to upload to."""
     if cfg is None:
         cfg = Config()
     is_scheduled = cfg.EVENT_NAME == "schedule"

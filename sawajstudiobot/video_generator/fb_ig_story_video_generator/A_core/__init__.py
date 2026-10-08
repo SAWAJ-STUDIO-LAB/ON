@@ -1,3 +1,1 @@
-"""
-A_core package — Story generator core modules.
-"""
+"""A_core package."""

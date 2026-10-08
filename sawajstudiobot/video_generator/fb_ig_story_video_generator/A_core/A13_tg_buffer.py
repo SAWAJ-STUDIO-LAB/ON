@@ -1,7 +1,4 @@
-"""
-A13_tg_buffer.py
-Sirf log buffer + counters.
-"""
+"""A13_tg_buffer.py — Sirf buffer."""
 import time
 from datetime import datetime
 
@@ -13,12 +10,10 @@ RUN_HEADER = ["📖 STORY VIDEO RUN"]
 
 
 def now():
-    """Current time HH:MM:SS."""
     return datetime.now().strftime("%H:%M:%S")
 
 
 def reset():
-    """Reset all buffers."""
     LOG_BUFFER.clear()
     FILE_TIMERS.clear()
     STEP_COUNTER.update({"total": 0, "success": 0, "failed": 0})

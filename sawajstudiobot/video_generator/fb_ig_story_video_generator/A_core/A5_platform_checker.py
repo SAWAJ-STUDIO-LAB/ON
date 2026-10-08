@@ -1,12 +1,8 @@
-"""
-A5_platform_checker.py
-Sirf available platforms check.
-"""
+"""A5_platform_checker.py — Sirf platforms check."""
 from A_core.A3_config_class import Config
 
 
 def available_platforms(cfg=None):
-    """Return platforms with valid credentials."""
     if cfg is None:
         cfg = Config()
     platforms = []

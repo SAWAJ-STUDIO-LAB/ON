@@ -1,12 +1,8 @@
-"""
-A34_secrets_env_check.py
-Sirf env var check.
-"""
+"""A34_secrets_env_check.py — Sirf env check."""
 import os
 
 
 def check_env(*names):
-    """Check multiple env var names, return first found."""
     for name in names:
         val = os.environ.get(name, "").strip()
         if val and val not in ("your_token_here", "undefined"):

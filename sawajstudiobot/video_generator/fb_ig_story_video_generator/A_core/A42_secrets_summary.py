@@ -1,18 +1,10 @@
-"""
-A42_secrets_summary.py
-Sirf secrets summary banani.
-"""
+"""A42_secrets_summary.py — Sirf summary."""
 
 
 def build(secrets_report, api_report):
-    """Build summary dict."""
-    total_secrets = 0
-    working_secrets = 0
-    for cat in secrets_report.values():
-        total_secrets += cat["total"]
-        working_secrets += cat["set_count"]
-
-    checked = working = failed = skipped = 0
+    total = sum(c["total"] for c in secrets_report.values())
+    working = sum(c["set_count"] for c in secrets_report.values())
+    checked = working_api = failed = skipped = 0
     for api in api_report.values():
         st = api.get("status", "")
         if st == "skipped":
@@ -20,17 +12,11 @@ def build(secrets_report, api_report):
         else:
             checked += 1
             if st == "working":
-                working += 1
+                working_api += 1
             else:
                 failed += 1
-
-    return {
-        "total_secrets": total_secrets,
-        "working_secrets": working_secrets,
-        "missing_secrets": total_secrets - working_secrets,
-        "checked_apis": checked,
-        "working_apis": working,
-        "failed_apis": failed,
-        "skipped_apis": skipped,
-        "health_pct": int(100 * working / max(checked, 1)),
-    }
+    return {"total_secrets": total, "working_secrets": working,
+            "missing_secrets": total - working, "checked_apis": checked,
+            "working_apis": working_api, "failed_apis": failed,
+            "skipped_apis": skipped,
+            "health_pct": int(100 * working_api / max(checked, 1))}
