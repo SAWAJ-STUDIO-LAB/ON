@@ -364,7 +364,6 @@ def send_report(data):
 
     bar = "█" * score + "░" * (10 - score)
 
-    # AI list
     ai_lines = []
     for r in ai_responses:
         icon = "🏆" if r["ai"] == ai else "✅"
@@ -413,19 +412,16 @@ def main():
         f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nWorking...",
         silent=True)
 
-    # Collect
     files = collect()
     print(f"📁 Files: {len(files)}")
     if not files:
         tg_send("⚠️ No files found.")
         return
 
-    # Combine
     path = combine(files)
     with open(path, "r", encoding="utf-8") as f:
         combined = f.read()
 
-    # AI
     print("🤖 Calling 8 AI...")
     responses = ai_all(combined)
 
@@ -438,19 +434,11 @@ def main():
             "❌ All 8 AI failed.")
         return
 
-    # Best
     best = pick_best(responses)
-
-    # Backup
     backup_path = backup()
-
-    # Apply
     modified, created, deleted = apply(best["code"])
-
-    # Rate
     score = rate_bot(len(files), modified + created)
 
-    # Report
     send_report({
         "files": len(files),
         "modified": modified,
