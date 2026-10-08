@@ -1,6 +1,6 @@
 """
-👑 KING — Bot Update Upgrade
-8 AI se poochhta, best pick karta, khud upgrade karta, Telegram pe report.
+👑 KING — Bot Update Upgrade (FULL POWER)
+8 AI + Create + Delete + Modify + World #1
 """
 import os
 import re
@@ -44,7 +44,7 @@ def tg_send(msg, silent=False):
 
 
 # ═══════════════════════════════════════════════
-# STEP 1: COLLECT ALL FILES
+# STEP 1: COLLECT
 # ═══════════════════════════════════════════════
 def collect():
     """Collect all .py files."""
@@ -82,15 +82,26 @@ def combine(files):
 # ═══════════════════════════════════════════════
 # STEP 3: AI CALLS (8 AI)
 # ═══════════════════════════════════════════════
-PROMPT = """You are a senior Python engineer. Upgrade this bot code.
+PROMPT = """You are a senior Python engineer. Upgrade this bot code to be WORLD #1.
 
 RULES:
 1. Make code BETTER, cleaner, faster, well-documented
-2. Fix bugs, add error handling
+2. Fix bugs, add error handling, add fallbacks
 3. Remove any copyright text
-4. KEEP SAME FORMAT: ═══ FILE: path ═══  code  ═══ END ═══
-5. Return ONLY the upgraded code. No explanations.
-6. Do not skip any file
+4. KEEP SAME FORMAT for existing files:
+   ═══ FILE: path ═══
+   code
+   ═══ END ═══
+5. To CREATE a new file:
+   ═══ NEW FILE: path ═══
+   code
+   ═══ END ═══
+6. To DELETE a file:
+   ═══ DELETE: path ═══
+7. You CAN modify any file (just return it upgraded)
+8. Return ONLY the code. No explanations.
+9. Do NOT skip any file
+10. Goal: Production-ready, copyright-free, WORLD #1 bot
 
 CODE:
 """
@@ -241,12 +252,14 @@ def ai_all(code):
 # STEP 4: PICK BEST
 # ═══════════════════════════════════════════════
 def pick_best(responses):
-    """Pick longest (most complete)."""
+    """Pick best response (length + file count)."""
     if not responses:
         return None
-    # Score = length + file count bonus
+
     def score(r):
-        return len(r["code"]) + r["code"].count("═══ FILE:") * 1000
+        files = r["code"].count("═══ FILE:") + r["code"].count("═══ NEW FILE:")
+        return len(r["code"]) + files * 1000
+
     best = max(responses, key=score)
     print(f"🏆 Best: {best['ai']}")
     return best
@@ -270,17 +283,32 @@ def backup():
 
 
 # ═══════════════════════════════════════════════
-# STEP 6: SPLIT & APPLY
+# STEP 6: APPLY (Modify + Create + Delete)
 # ═══════════════════════════════════════════════
 def apply(text):
-    """Split combined upgraded text back into files."""
-    pattern = r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══"
-    matches = re.findall(pattern, text, re.DOTALL)
-    if not matches:
-        print("❌ No files found in AI response")
-        return 0
-    count = 0
-    for rel, code in matches:
+    """Apply upgrades: modify, create, delete."""
+    modified = 0
+    created = 0
+    deleted = 0
+
+    # ─── DELETE ───
+    delete_pattern = r"═══ DELETE: (.+?) ═══"
+    for match in re.findall(delete_pattern, text):
+        rel = match.strip()
+        if not rel or ".." in rel:
+            continue
+        full = os.path.join(BOT_ROOT, rel)
+        if os.path.exists(full):
+            try:
+                os.remove(full)
+                deleted += 1
+                print(f"  🗑️ Deleted: {rel}")
+            except Exception:
+                pass
+
+    # ─── NEW FILES ───
+    new_pattern = r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══"
+    for rel, code in re.findall(new_pattern, text, re.DOTALL):
         rel = rel.strip()
         if not rel or ".." in rel:
             continue
@@ -288,19 +316,33 @@ def apply(text):
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, "w", encoding="utf-8") as f:
             f.write(code.strip() + "\n")
-        count += 1
-    print(f"✅ Applied {count} files")
-    return count
+        created += 1
+        print(f"  📁 Created: {rel}")
+
+    # ─── MODIFY ───
+    mod_pattern = r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══"
+    for rel, code in re.findall(mod_pattern, text, re.DOTALL):
+        rel = rel.strip()
+        if not rel or ".." in rel:
+            continue
+        full = os.path.join(BOT_ROOT, rel)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8") as f:
+            f.write(code.strip() + "\n")
+        modified += 1
+
+    print(f"✅ Modified: {modified}, Created: {created}, Deleted: {deleted}")
+    return modified, created, deleted
 
 
 # ═══════════════════════════════════════════════
-# STEP 7: RATE BOT
+# STEP 7: RATE
 # ═══════════════════════════════════════════════
-def rate_bot(files, applied):
+def rate_bot(files, total_changes):
     """Rate 1-10."""
-    if applied == 0:
+    if total_changes == 0:
         return 3
-    ratio = applied / max(files, 1)
+    ratio = total_changes / max(files, 1)
     score = int(4 + ratio * 6)
     return min(10, max(1, score))
 
@@ -309,13 +351,15 @@ def rate_bot(files, applied):
 # STEP 8: REPORT
 # ═══════════════════════════════════════════════
 def send_report(data):
-    """Send full report to Telegram."""
+    """Send full report."""
+    ts = data["time"]
     files = data["files"]
-    applied = data["applied"]
+    modified = data["modified"]
+    created = data["created"]
+    deleted = data["deleted"]
     ai = data["ai"]
     backup_path = data["backup"] or "N/A"
     score = data["score"]
-    ts = data["time"]
     ai_responses = data.get("ai_responses", [])
 
     bar = "█" * score + "░" * (10 - score)
@@ -334,7 +378,11 @@ def send_report(data):
         "\n"
         "📁 <b>SCAN:</b>\n"
         f"   • Files scanned: <b>{files}</b>\n"
-        f"   • Files upgraded: <b>{applied}</b>\n"
+        "\n"
+        "🔧 <b>ACTIONS:</b>\n"
+        f"   ✏️ Modified: <b>{modified}</b>\n"
+        f"   📁 Created: <b>{created}</b>\n"
+        f"   🗑️ Deleted: <b>{deleted}</b>\n"
         "\n"
         "🤖 <b>AI RESPONSES (8):</b>\n"
         f"{ai_text}\n"
@@ -346,7 +394,7 @@ def send_report(data):
         f"   {bar} <b>{score}/10</b>\n"
         "\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "👑 <b>King is at your service</b>"
+        "👑 <b>World #1 in progress</b>"
     )
     tg_send(msg)
 
@@ -397,15 +445,17 @@ def main():
     backup_path = backup()
 
     # Apply
-    applied = apply(best["code"])
+    modified, created, deleted = apply(best["code"])
 
     # Rate
-    score = rate_bot(len(files), applied)
+    score = rate_bot(len(files), modified + created)
 
     # Report
     send_report({
         "files": len(files),
-        "applied": applied,
+        "modified": modified,
+        "created": created,
+        "deleted": deleted,
         "ai": best["ai"],
         "backup": backup_path,
         "score": score,
@@ -414,7 +464,7 @@ def main():
     })
 
     print("═" * 50)
-    print(f"👑 DONE: {applied} files upgraded by {best['ai']}")
+    print(f"👑 DONE: {modified} modified, {created} created, {deleted} deleted")
     print("═" * 50)
 
 
