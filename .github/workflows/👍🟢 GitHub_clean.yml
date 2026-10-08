@@ -5,7 +5,7 @@
 # ⚡ TRIGGER:   Manual only
 # ============================================================
 
-name: "🔥🧹clean_github.yml"
+name: "🟢🔥🧹clean_github.yml"
 
 on:
   workflow_dispatch:
