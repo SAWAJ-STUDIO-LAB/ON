@@ -1,6 +1,6 @@
 """
-👑 KING — Original, Live, Working System
-+ Full Change Report on Telegram
+👑 KING — Fixed Version
+3 Working AI (OpenRouter + Groq + Gemini) + Strong IGNORE
 """
 import os
 import re
@@ -8,7 +8,6 @@ import ast
 import json
 import time
 import shutil
-import subprocess
 import requests
 from datetime import datetime
 
@@ -20,22 +19,25 @@ WORK = "bot update upgrade/_work"
 BACKUP = "bot update upgrade/_backups"
 LOG_DIR = "bot update upgrade/_logs"
 
+# Strong IGNORE — backup folders ko skip karo
 IGNORE = {
     "__pycache__", ".git", ".github", "output",
     "_work", "_backups", "_logs", "venv", "node_modules",
     "bot update upgrade", "Code editor", "_temp_builder",
     "htmlcov", ".pytest_cache", ".mypy_cache",
+    "2026-", "2025-", "2024-",  # date-based backup folders
+    "backup", "old_", "_old",
 }
 
 CODE_EXT = {".py"}
-CONFIG_EXT = {".json", ".yml", ".yaml", ".toml", ".txt", ".md", ".cfg", ".ini"}
-IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico"}
-
 TIMEOUT = 300
 MAX_RETRIES = 3
-MAX_ROUNDS = 5
-MAX_CHUNK_KB = 400
-MIN_CONSENSUS = 6
+MAX_ROUNDS = 3
+MAX_CHUNK_KB = 300
+MIN_CONSENSUS = 2   # 3 AI mein se 2 chahiye
+
+# Sirf working AI
+ALL_AIS = ["OpenRouter", "Groq", "Gemini"]
 
 
 # ═══════════════════════════════════════════════
@@ -63,8 +65,7 @@ def tg_send(msg, silent=False):
 # DEEP SCAN
 # ═══════════════════════════════════════════════
 def deep_scan():
-    result = {"code": [], "config": [], "images": [],
-              "folders": [], "empty_files": [], "total_size_kb": 0}
+    result = {"code": [], "folders": [], "empty_files": [], "total_size_kb": 0}
     for root, dirs, fnames in os.walk(BOT_ROOT):
         dirs[:] = [d for d in dirs if d not in IGNORE
                    and not any(ig in os.path.join(root, d) for ig in IGNORE)]
@@ -85,19 +86,15 @@ def deep_scan():
                 pass
             if ext in CODE_EXT:
                 result["code"].append(rel)
-            elif ext in CONFIG_EXT:
-                result["config"].append(rel)
-            elif ext in IMAGE_EXT:
-                result["images"].append(rel)
             if size == 0:
                 result["empty_files"].append(rel)
-    for k in ("code", "config", "images", "folders", "empty_files"):
+    for k in ("code", "folders", "empty_files"):
         result[k] = sorted(result[k])
     return result
 
 
 # ═══════════════════════════════════════════════
-# AI CALLS
+# AI CALLS — 3 WORKING AI
 # ═══════════════════════════════════════════════
 def _post(url, headers, payload, timeout=TIMEOUT):
     for attempt in range(1, MAX_RETRIES + 1):
@@ -108,15 +105,18 @@ def _post(url, headers, payload, timeout=TIMEOUT):
             if r.status_code in (429, 500, 502, 503, 504):
                 time.sleep(attempt * 5)
                 continue
+            print(f"        ⚠️ HTTP {r.status_code}")
             return None
         except requests.exceptions.Timeout:
             time.sleep(5)
-        except Exception:
+        except Exception as e:
+            print(f"        ❌ {str(e)[:60]}")
             time.sleep(3)
     return None
 
 
 def call_one_ai(ai_name, prompt, max_tokens=8000):
+    """Call one specific AI."""
     if ai_name == "OpenRouter":
         key = os.environ.get("OPENROUTER_API_KEY", "").strip()
         if not key:
@@ -132,83 +132,38 @@ def call_one_ai(ai_name, prompt, max_tokens=8000):
         key = os.environ.get("GROQ_API_KEY", "").strip()
         if not key:
             return None
-        d = _post("https://api.groq.com/openai/v1/chat/completions",
-                  {"Authorization": f"Bearer {key}"},
-                  {"model": "llama-3.3-70b-versatile",
-                   "messages": [{"role": "user", "content": prompt}],
-                   "max_tokens": max_tokens, "temperature": 0.3})
-        return d["choices"][0]["message"]["content"] if d else None
+        # Naya model name
+        for model in ["llama-3.1-70b-versatile",
+                      "llama-3.1-8b-instant",
+                      "llama3-70b-8192"]:
+            d = _post("https://api.groq.com/openai/v1/chat/completions",
+                      {"Authorization": f"Bearer {key}"},
+                      {"model": model,
+                       "messages": [{"role": "user", "content": prompt}],
+                       "max_tokens": max_tokens, "temperature": 0.3})
+            if d:
+                return d["choices"][0]["message"]["content"]
+        return None
 
     if ai_name == "Gemini":
         key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not key:
             return None
-        d = _post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}",
-            {},
-            {"contents": [{"parts": [{"text": prompt}]}],
-             "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.3}})
-        return d["candidates"][0]["content"]["parts"][0]["text"] if d else None
-
-    if ai_name == "Mistral":
-        key = os.environ.get("MISTRAL_API_KEY", "").strip()
-        if not key:
-            return None
-        d = _post("https://api.mistral.ai/v1/chat/completions",
-                  {"Authorization": f"Bearer {key}"},
-                  {"model": "mistral-small-latest",
-                   "messages": [{"role": "user", "content": prompt}],
-                   "max_tokens": max_tokens, "temperature": 0.3})
-        return d["choices"][0]["message"]["content"] if d else None
-
-    if ai_name == "Cerebras":
-        key = os.environ.get("CEREBRAS_API_KEY", "").strip()
-        if not key:
-            return None
-        d = _post("https://api.cerebras.ai/v1/chat/completions",
-                  {"Authorization": f"Bearer {key}"},
-                  {"model": "llama3.1-8b",
-                   "messages": [{"role": "user", "content": prompt}],
-                   "max_tokens": max_tokens, "temperature": 0.3})
-        return d["choices"][0]["message"]["content"] if d else None
-
-    if ai_name == "Cohere":
-        key = os.environ.get("COHERE_API_KEY", "").strip()
-        if not key:
-            return None
-        d = _post("https://api.cohere.com/v1/chat",
-                  {"Authorization": f"Bearer {key}"},
-                  {"model": "command-r-plus", "message": prompt})
-        return d["text"] if d else None
-
-    if ai_name == "NVIDIA":
-        key = os.environ.get("NVIDIA_API_KEY", "").strip()
-        if not key:
-            return None
-        d = _post("https://integrate.api.nvidia.com/v1/chat/completions",
-                  {"Authorization": f"Bearer {key}"},
-                  {"model": "meta/llama-3.1-70b-instruct",
-                   "messages": [{"role": "user", "content": prompt}],
-                   "max_tokens": max_tokens, "temperature": 0.3})
-        return d["choices"][0]["message"]["content"] if d else None
-
-    if ai_name == "HuggingFace":
-        key = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
-        if not key:
-            return None
-        d = _post(
-            "https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-70B-Instruct/v1/chat/completions",
-            {"Authorization": f"Bearer {key}"},
-            {"model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
-             "messages": [{"role": "user", "content": prompt}],
-             "max_tokens": min(max_tokens, 8000), "temperature": 0.3})
-        return d["choices"][0]["message"]["content"] if d else None
+        # Naya model name
+        for model in ["gemini-1.5-flash-latest",
+                      "gemini-1.5-flash",
+                      "gemini-pro"]:
+            d = _post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+                {},
+                {"contents": [{"parts": [{"text": prompt}]}],
+                 "generationConfig": {"maxOutputTokens": max_tokens,
+                                      "temperature": 0.3}})
+            if d:
+                return d["candidates"][0]["content"]["parts"][0]["text"]
+        return None
 
     return None
-
-
-ALL_AIS = ["OpenRouter", "Groq", "Gemini", "Mistral",
-           "Cerebras", "Cohere", "NVIDIA", "HuggingFace"]
 
 
 # ═══════════════════════════════════════════════
@@ -224,12 +179,7 @@ CODE:
 
 Reply ONLY:
 VERDICT: YES
-REASON: <one line>
-
-OR
-
-VERDICT: NO
-REASON: <one line>
+REASON: one line
 """
 
 
@@ -237,36 +187,30 @@ def get_consensus(task, code):
     prompt = VERIFY_PROMPT.format(
         task=task.get("task", ""),
         target=task.get("target", "ALL"),
-        code=code[:80000])
-    votes = {}
+        code=code[:60000])
     yes = no = 0
     for ai in ALL_AIS:
         print(f"      🗳️ {ai}...")
         text = call_one_ai(ai, prompt, max_tokens=200)
         if not text:
-            votes[ai] = "ABSTAIN"
             continue
         upper = text.upper()
         if "VERDICT: YES" in upper or "VERDICT:YES" in upper:
-            votes[ai] = "YES"
             yes += 1
         elif "VERDICT: NO" in upper or "VERDICT:NO" in upper:
-            votes[ai] = "NO"
             no += 1
-        else:
-            votes[ai] = "ABSTAIN"
-    return yes, no, votes
+    return yes, no
 
 
 # ═══════════════════════════════════════════════
 # FIND TASKS
 # ═══════════════════════════════════════════════
-FIND_TASKS_PROMPT = """List up to 5 tasks that NEED upgrading in this bot.
+FIND_TASKS_PROMPT = """List up to 3 tasks that NEED upgrading in this bot.
 
 Format (one per line):
-TASK: <what>
-TARGET: <file or "ALL">
-PRIORITY: <1-10>
+TASK: what to do
+TARGET: file path or "ALL"
+PRIORITY: 1-10
 
 If nothing needs upgrading: TASK: DONE
 
@@ -305,8 +249,8 @@ def find_tasks(code):
         if text and "TASK:" in text:
             tasks = parse_tasks(text)
             if tasks:
-                return tasks, ai
-    return [], None
+                return tasks
+    return []
 
 
 # ═══════════════════════════════════════════════
@@ -320,7 +264,7 @@ TARGET: {target}
 RULES:
 1. Return ONLY upgraded files
 2. FORMAT: ═══ FILE: path ═══  code  ═══ END ═══
-3. NEVER delete — only modify or create new
+3. NEVER delete — only modify or create
 4. New file: ═══ NEW FILE: path ═══  code  ═══ END ═══
 5. NO explanations
 
@@ -341,6 +285,9 @@ def get_best_upgrade(task, code):
         if text and "═══ FILE:" in text:
             fcount = text.count("═══ FILE:")
             responses.append({"ai": ai, "code": text, "files": fcount})
+            print(f"         ✅ {fcount} files")
+        else:
+            print(f"         ⚠️ invalid")
     if not responses:
         return None
     return max(responses, key=lambda r: r["files"] * 10000 + len(r["code"]))
@@ -398,18 +345,11 @@ def backup():
 
 
 # ═══════════════════════════════════════════════
-# APPLY WITH FULL TRACKING
+# APPLY with TRACKING
 # ═══════════════════════════════════════════════
 def apply_with_tracking(text):
-    """Apply + return detailed changes."""
-    changes = {
-        "modified": [],   # list of file paths
-        "created": [],    # list of file paths
-        "deleted": [],    # list of file paths
-        "size_diff": {},  # file: (before, after)
-    }
+    changes = {"modified": [], "created": [], "deleted": []}
 
-    # NEW FILES
     for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══",
                                 text, re.DOTALL):
         rel = rel.strip()
@@ -420,27 +360,17 @@ def apply_with_tracking(text):
         with open(full, "w", encoding="utf-8") as f:
             f.write(code.strip() + "\n")
         changes["created"].append(rel)
-        changes["size_diff"][rel] = (0, os.path.getsize(full))
-        print(f"        📁 Created: {rel}")
 
-    # MODIFY
     for rel, code in re.findall(r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══",
                                 text, re.DOTALL):
         rel = rel.strip()
         if not rel or ".." in rel:
             continue
         full = os.path.join(BOT_ROOT, rel)
-        before = 0
-        try:
-            before = os.path.getsize(full)
-        except Exception:
-            pass
         os.makedirs(os.path.dirname(full), exist_ok=True)
         with open(full, "w", encoding="utf-8") as f:
             f.write(code.strip() + "\n")
-        after = os.path.getsize(full)
         changes["modified"].append(rel)
-        changes["size_diff"][rel] = (before, after)
 
     return changes
 
@@ -459,10 +389,9 @@ def rate_bot(files, changes, syntax_failed):
 
 
 # ═══════════════════════════════════════════════
-# DETAILED REPORT
+# REPORT
 # ═══════════════════════════════════════════════
-def send_detailed_report(data):
-    """Send full detailed report to Telegram."""
+def send_report(data):
     ts = data["time"]
     files = data["files"]
     score = data["score"]
@@ -470,49 +399,33 @@ def send_detailed_report(data):
     rounds = data["rounds"]
     tasks_total = data["tasks_total"]
     tasks_approved = data["tasks_approved"]
-    tasks_rejected = data["tasks_rejected"]
-    all_changes = data["all_changes"]
+    modified = data["modified"]
+    created = data["created"]
     syntax_failed = data["syntax_failed"]
-
-    # Merge all changes
-    modified = []
-    created = []
-    deleted = []
-    for c in all_changes:
-        modified.extend(c.get("modified", []))
-        created.extend(c.get("created", []))
-        deleted.extend(c.get("deleted", []))
-
-    modified = sorted(set(modified))
-    created = sorted(set(created))
-    deleted = sorted(set(deleted))
 
     bar = "█" * score + "░" * (10 - score)
 
-    # ═══ MESSAGE 1: Header + Summary ═══
-    msg1 = (
-        "👑 <b>KING REPORT — FULL DETAILS</b>\n"
+    msg = (
+        "👑 <b>KING REPORT — FIXED</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 <code>{ts}</code>\n"
         "\n"
         "📁 <b>SCAN:</b>\n"
         f"   • Files: <b>{files}</b>\n"
         "\n"
-        "🗳️ <b>CONSENSUS VOTING:</b>\n"
+        "🗳️ <b>CONSENSUS (3 AI):</b>\n"
         f"   • Tasks found: <b>{tasks_total}</b>\n"
         f"   • ✅ Approved: <b>{tasks_approved}</b>\n"
-        f"   • ❌ Rejected: <b>{tasks_rejected}</b>\n"
-        f"   • Threshold: <b>6/8 YES</b>\n"
         "\n"
         f"🔁 <b>ROUNDS:</b> <b>{rounds}</b>\n"
         "\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "📊 <b>SUMMARY:</b>\n"
+        "🔧 <b>ACTIONS:</b>\n"
         f"   ✏️ Modified: <b>{len(modified)}</b>\n"
         f"   📁 Created: <b>{len(created)}</b>\n"
-        f"   🗑️ Deleted: <b>{len(deleted)}</b>\n"
-        f"   ✅ Syntax fail: <b>{len(syntax_failed)}</b>\n"
-        f"   💾 Backup: <code>{backup_path}</code>\n"
+        f"   🗑️ Deleted: <b>0</b>\n"
+        "\n"
+        f"✅ Syntax: {len(syntax_failed)} failed\n"
+        f"💾 Backup: <code>{backup_path}</code>\n"
         "\n"
         "📈 <b>SCORE:</b>\n"
         f"   {bar} <b>{score}/10</b>\n"
@@ -520,70 +433,30 @@ def send_detailed_report(data):
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "👑 <b>World #1 in progress</b>"
     )
-    tg_send(msg1)
+    tg_send(msg)
 
-    # ═══ MESSAGE 2: Created files ═══
-    if created:
-        msg2 = "📁 <b>FILES CREATED:</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
-        for i, f in enumerate(created[:40], 1):
-            msg2 += f"{i}. <code>{f}</code>\n"
-        if len(created) > 40:
-            msg2 += f"\n... +{len(created) - 40} more\n"
-        tg_send(msg2)
-
-    # ═══ MESSAGE 3: Modified files ═══
+    # Modified list
     if modified:
-        msg3 = "✏️ <b>FILES MODIFIED:</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
-        for i, f in enumerate(modified[:40], 1):
-            msg3 += f"{i}. <code>{f}</code>\n"
-        if len(modified) > 40:
-            msg3 += f"\n... +{len(modified) - 40} more\n"
-        tg_send(msg3)
+        m = "✏️ <b>MODIFIED:</b>\n"
+        for f in modified[:30]:
+            m += f"• <code>{f}</code>\n"
+        if len(modified) > 30:
+            m += f"\n+{len(modified) - 30} more"
+        tg_send(m)
 
-    # ═══ MESSAGE 4: Deleted files ═══
-    if deleted:
-        msg4 = "🗑️ <b>FILES DELETED:</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
-        for i, f in enumerate(deleted[:40], 1):
-            msg4 += f"{i}. <code>{f}</code>\n"
-        tg_send(msg4)
-    else:
-        tg_send("🗑️ <b>FILES DELETED:</b> None (never delete)")
+    # Created list
+    if created:
+        c = "📁 <b>CREATED:</b>\n"
+        for f in created[:30]:
+            c += f"• <code>{f}</code>\n"
+        tg_send(c)
 
-    # ═══ MESSAGE 5: Syntax failures ═══
+    # Syntax failures
     if syntax_failed:
-        msg5 = "⚠️ <b>SYNTAX FAILURES:</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
-        for i, s in enumerate(syntax_failed[:20], 1):
-            msg5 += f"{i}. <code>{s['file']}</code>\n   {s['error'][:80]}\n"
-        tg_send(msg5)
-
-    # ═══ MESSAGE 6: Change log (diff size) ═══
-    size_diff = {}
-    for c in all_changes:
-        for f, (b, a) in c.get("size_diff", {}).items():
-            if f not in size_diff:
-                size_diff[f] = [0, 0]
-            size_diff[f][0] += b
-            size_diff[f][1] += a
-
-    if size_diff:
-        msg6 = "📊 <b>CHANGE LOG (size before → after):</b>\n━━━━━━━━━━━━━━━━━━━━━\n"
-        items = sorted(size_diff.items(),
-                       key=lambda x: abs(x[1][1] - x[1][0]), reverse=True)
-        for i, (f, (b, a)) in enumerate(items[:25], 1):
-            diff = a - b
-            arrow = "📈" if diff > 0 else ("📉" if diff < 0 else "➖")
-            msg6 += f"{i}. {arrow} <code>{f[:40]}</code>\n"
-            msg6 += f"   {b//1024}KB → {a//1024}KB ({diff:+d}B)\n"
-        tg_send(msg6)
-
-    # ═══ MESSAGE 7: Final ═══
-    tg_send(
-        f"✅ <b>KING WORK COMPLETE</b>\n"
-        f"📅 {ts}\n"
-        f"📁 {len(modified)} modified, {len(created)} created\n"
-        f"📈 Score: <b>{score}/10</b>\n"
-        f"👑 <b>World #1 in progress</b>"
-    )
+        s = "⚠️ <b>SYNTAX FAILURES:</b>\n"
+        for x in syntax_failed[:15]:
+            s += f"• <code>{x['file']}</code>\n"
+        tg_send(s)
 
 
 # ═══════════════════════════════════════════════
@@ -593,10 +466,10 @@ def main():
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     print("═" * 60)
-    print("👑 KING — ORIGINAL + LIVE + DETAIL REPORT")
+    print("👑 KING — FIXED VERSION")
     print("═" * 60)
 
-    tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nWorking...", silent=True)
+    tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nFixed version...", silent=True)
 
     os.makedirs(WORK, exist_ok=True)
     os.makedirs(LOG_DIR, exist_ok=True)
@@ -612,27 +485,25 @@ def main():
     backup_path = backup()
     print(f"💾 Backup: {backup_path}")
 
-    total_modified = 0
-    total_created = 0
+    total_modified = []
+    total_created = []
     total_tasks = 0
     total_approved = 0
-    total_rejected = 0
     round_details = []
-    all_changes = []
 
     for round_n in range(1, MAX_ROUNDS + 1):
         print(f"\n{'═' * 50}")
         print(f"🔁 ROUND {round_n}/{MAX_ROUNDS}")
         print(f"{'═' * 50}")
 
-        # Find tasks
         chunks = chunk_by_size(files)
+        print(f"  📦 Chunks: {len(chunks)}")
+
         all_tasks = []
         for ci, chunk in enumerate(chunks, 1):
             combined = combine_files(chunk, f"find_r{round_n}_c{ci}")
-            tasks, ai_used = find_tasks(combined)
+            tasks = find_tasks(combined)
             if tasks:
-                print(f"    📋 {len(tasks)} tasks (by {ai_used})")
                 all_tasks.extend(tasks)
 
         if not all_tasks:
@@ -640,55 +511,43 @@ def main():
             break
 
         total_tasks += len(all_tasks)
-
-        # Consensus
         approved_tasks = []
+
         for ti, task in enumerate(all_tasks, 1):
             print(f"\n  🗳️ Task {ti}/{len(all_tasks)}: {task['task'][:50]}")
             combined = combine_files(files, f"verify_r{round_n}_t{ti}")
-            yes, no, votes = get_consensus(task, combined)
+            yes, no = get_consensus(task, combined)
             print(f"      Votes: ✅{yes}  ❌{no}")
+
             if yes >= MIN_CONSENSUS:
                 approved_tasks.append(task)
                 total_approved += 1
                 print(f"      ✅ APPROVED")
             else:
-                total_rejected += 1
                 print(f"      ❌ REJECTED")
 
         if not approved_tasks:
             print(f"\n  ⏹️ No approvals — STOP")
-            round_details.append({
-                "n": round_n, "found": len(all_tasks),
-                "approved": 0, "rejected": len(all_tasks),
-                "modified": 0, "created": 0,
-            })
             break
 
-        # Upgrade
         round_modified = 0
         round_created = 0
 
         for ti, task in enumerate(approved_tasks, 1):
-            print(f"\n  🔧 Upgrade {ti}/{len(approved_tasks)}: {task['task'][:50]}")
+            print(f"\n  🔧 Upgrade {ti}/{len(approved_tasks)}")
             combined = combine_files(files, f"upgrade_r{round_n}_t{ti}")
             best = get_best_upgrade(task, combined)
             if not best:
                 continue
             print(f"      🏆 {best['ai']} ({best['files']} files)")
-
             changes = apply_with_tracking(best["code"])
-            all_changes.append(changes)
+            total_modified.extend(changes["modified"])
+            total_created.extend(changes["created"])
             round_modified += len(changes["modified"])
             round_created += len(changes["created"])
 
-        total_modified += round_modified
-        total_created += round_created
-
         round_details.append({
-            "n": round_n, "found": len(all_tasks),
-            "approved": len(approved_tasks),
-            "rejected": len(all_tasks) - len(approved_tasks),
+            "n": round_n, "tasks": len(approved_tasks),
             "modified": round_modified, "created": round_created,
         })
 
@@ -709,35 +568,37 @@ def main():
         except Exception:
             pass
 
-    score = rate_bot(len(files), total_modified + total_created,
+    total_modified = sorted(set(total_modified))
+    total_created = sorted(set(total_created))
+
+    score = rate_bot(len(files),
+                     len(total_modified) + len(total_created),
                      len(syntax_failed))
 
-    # Report
-    send_detailed_report({
+    send_report({
         "time": ts, "files": len(files),
-        "modified": total_modified, "created": total_created,
         "rounds": len(round_details),
         "tasks_total": total_tasks,
         "tasks_approved": total_approved,
-        "tasks_rejected": total_rejected,
+        "modified": total_modified,
+        "created": total_created,
         "score": score, "backup": backup_path,
         "syntax_failed": syntax_failed,
-        "round_details": round_details,
-        "all_changes": all_changes,
     })
 
-    # Log
     log_file = f"{LOG_DIR}/run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(log_file, "w", encoding="utf-8") as f:
         json.dump({
             "time": ts, "files": len(files),
-            "modified": total_modified, "created": total_created,
-            "score": score, "round_details": round_details,
+            "modified": len(total_modified),
+            "created": len(total_created),
+            "score": score,
+            "rounds": round_details,
             "syntax_failed": syntax_failed,
         }, f, indent=2)
 
     print("\n" + "═" * 60)
-    print(f"👑 DONE: {total_modified}M {total_created}C — Score {score}/10")
+    print(f"👑 DONE: {len(total_modified)}M {len(total_created)}C — Score {score}/10")
     print("═" * 60)
 
 
