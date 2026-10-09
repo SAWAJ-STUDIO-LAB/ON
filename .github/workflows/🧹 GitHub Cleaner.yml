@@ -1,42 +1,20 @@
-name: 🧹 GitHub Cleaner
+name: 🧹 GitHub Cleaner (Fully Automatic)
 
 on:
   workflow_dispatch:
-    inputs:
-      delete_old_runs:
-        description: "Delete old workflow runs? (true/false)"
-        required: true
-        default: "true"
-      keep_last_runs:
-        description: "How many latest runs to keep per workflow?"
-        required: true
-        default: "5"
-      clear_cache:
-        description: "Clear GitHub Actions cache? (true/false)"
-        required: true
-        default: "true"
-      clear_artifacts:
-        description: "Delete old artifacts? (true/false)"
-        required: true
-        default: "true"
 
 permissions:
   actions: write
-  contents: write
-  checks: write
+  contents: read
+  deployments: write
 
 jobs:
   cleaner:
-    name: 🧹 Cleaning GitHub
+    name: 🧹 Auto Clean
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
@@ -45,28 +23,25 @@ jobs:
       - name: 📦 Install
         run: pip install requests
 
-      - name: 🧹 Run Cleaner
+      - name: 🧹 Run Automatic Cleaner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DELETE_OLD_RUNS: ${{ github.event.inputs.delete_old_runs }}
-          KEEP_LAST: ${{ github.event.inputs.keep_last_runs }}
-          CLEAR_CACHE: ${{ github.event.inputs.clear_cache }}
-          CLEAR_ARTIFACTS: ${{ github.event.inputs.clear_artifacts }}
         run: |
           cat > /tmp/cleaner.py << 'END'
           import os
           import time
           import requests
           from datetime import datetime
+          from collections import defaultdict
 
-          TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
-          REPO = os.environ.get("GITHUB_REPOSITORY")  # owner/repo
-          DELETE_RUNS = os.environ.get("DELETE_OLD_RUNS", "true").lower() == "true"
-          KEEP_LAST = int(os.environ.get("KEEP_LAST", "5"))
-          CLEAR_CACHE = os.environ.get("CLEAR_CACHE", "true").lower() == "true"
-          CLEAR_ARTIFACTS = os.environ.get("CLEAR_ARTIFACTS", "true").lower() == "true"
+          TOKEN = os.environ["GITHUB_TOKEN"]
+          REPO = os.environ["GITHUB_REPOSITORY"]
+          KEEP_LAST = 3          # har workflow ke 3 latest finished runs rakhega
+          CLEAR_CACHE = True
+          CLEAR_ARTIFACTS = True
+          CLEAR_DEPLOYMENTS = True
 
           HEADERS = {
               "Authorization": f"Bearer {TOKEN}",
@@ -77,36 +52,33 @@ jobs:
           def tg(msg):
               token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
               chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-              if not token or not chat:
-                  return
-              try:
-                  requests.post(
-                      f"https://api.telegram.org/bot{token}/sendMessage",
-                      json={"chat_id": chat, "text": msg[:4000], "parse_mode": "HTML"},
-                      timeout=15
-                  )
-              except:
-                  pass
+              if token and chat:
+                  try:
+                      requests.post(
+                          f"https://api.telegram.org/bot{token}/sendMessage",
+                          json={"chat_id": chat, "text": msg[:4000], "parse_mode": "HTML"},
+                          timeout=15
+                      )
+                  except:
+                      pass
 
-          def api_get(url):
+          def get(url):
               r = requests.get(url, headers=HEADERS, timeout=30)
               if r.status_code == 200:
                   return r.json()
-              print(f"GET failed {r.status_code}: {url}")
               return None
 
-          def api_delete(url):
+          def delete(url):
               r = requests.delete(url, headers=HEADERS, timeout=30)
               return r.status_code in (204, 200)
 
-          def clean_workflow_runs():
-              print("\n🧹 Cleaning old workflow runs...")
+          def clean_finished_runs():
+              print("\n🧹 Cleaning finished workflow runs...")
               deleted = 0
               page = 1
 
               while True:
-                  url = f"https://api.github.com/repos/{REPO}/actions/runs?per_page=100&page={page}"
-                  data = api_get(url)
+                  data = get(f"https://api.github.com/repos/{REPO}/actions/runs?per_page=100&page={page}")
                   if not data or not data.get("workflow_runs"):
                       break
 
@@ -114,130 +86,109 @@ jobs:
                   if not runs:
                       break
 
-                  # Group by workflow_id
-                  from collections import defaultdict
                   groups = defaultdict(list)
                   for run in runs:
-                      groups[run["workflow_id"]].append(run)
+                      status = run.get("status", "")
+                      if status in ("in_progress", "queued", "waiting", "requested", "pending"):
+                          print(f"   ⏭️ Skipping RUNNING: {run['name']} #{run['run_number']}")
+                          continue
+                      groups[run["name"]].append(run)
 
-                  for wf_id, wf_runs in groups.items():
-                      # Sort by created_at descending (newest first)
+                  for name, wf_runs in groups.items():
                       wf_runs.sort(key=lambda x: x["created_at"], reverse=True)
-
-                      # Keep latest KEEP_LAST, delete rest
                       to_delete = wf_runs[KEEP_LAST:]
+
                       for run in to_delete:
-                          run_id = run["id"]
-                          del_url = f"https://api.github.com/repos/{REPO}/actions/runs/{run_id}"
-                          if api_delete(del_url):
+                          if delete(f"https://api.github.com/repos/{REPO}/actions/runs/{run['id']}"):
                               deleted += 1
-                              print(f"   Deleted run {run_id} ({run['name']})")
-                          time.sleep(0.3)
+                              print(f"   ✅ Deleted: {run['name']} #{run['run_number']}")
+                          time.sleep(0.35)
 
                   if len(runs) < 100:
                       break
                   page += 1
                   time.sleep(1)
 
-              print(f"✅ Deleted {deleted} old workflow runs")
+              print(f"✅ Finished runs deleted: {deleted}")
               return deleted
 
           def clean_cache():
-              print("\n🧹 Cleaning Actions Cache...")
+              print("\n🧹 Cleaning Cache...")
               deleted = 0
               page = 1
-
               while True:
-                  url = f"https://api.github.com/repos/{REPO}/actions/caches?per_page=100&page={page}"
-                  data = api_get(url)
+                  data = get(f"https://api.github.com/repos/{REPO}/actions/caches?per_page=100&page={page}")
                   if not data or not data.get("actions_caches"):
                       break
-
-                  caches = data["actions_caches"]
-                  if not caches:
-                      break
-
-                  for cache in caches:
-                      cache_id = cache["id"]
-                      del_url = f"https://api.github.com/repos/{REPO}/actions/caches/{cache_id}"
-                      if api_delete(del_url):
+                  for c in data["actions_caches"]:
+                      if delete(f"https://api.github.com/repos/{REPO}/actions/caches/{c['id']}"):
                           deleted += 1
-                          print(f"   Deleted cache {cache_id}")
                       time.sleep(0.2)
-
-                  if len(caches) < 100:
+                  if len(data["actions_caches"]) < 100:
                       break
                   page += 1
-
-              print(f"✅ Deleted {deleted} caches")
+              print(f"✅ Caches deleted: {deleted}")
               return deleted
 
           def clean_artifacts():
               print("\n🧹 Cleaning Artifacts...")
               deleted = 0
               page = 1
-
               while True:
-                  url = f"https://api.github.com/repos/{REPO}/actions/artifacts?per_page=100&page={page}"
-                  data = api_get(url)
+                  data = get(f"https://api.github.com/repos/{REPO}/actions/artifacts?per_page=100&page={page}")
                   if not data or not data.get("artifacts"):
                       break
-
-                  artifacts = data["artifacts"]
-                  if not artifacts:
-                      break
-
-                  for art in artifacts:
-                      art_id = art["id"]
-                      del_url = f"https://api.github.com/repos/{REPO}/actions/artifacts/{art_id}"
-                      if api_delete(del_url):
+                  for a in data["artifacts"]:
+                      if delete(f"https://api.github.com/repos/{REPO}/actions/artifacts/{a['id']}"):
                           deleted += 1
-                          print(f"   Deleted artifact {art_id}")
                       time.sleep(0.2)
-
-                  if len(artifacts) < 100:
+                  if len(data["artifacts"]) < 100:
                       break
                   page += 1
+              print(f"✅ Artifacts deleted: {deleted}")
+              return deleted
 
-              print(f"✅ Deleted {deleted} artifacts")
+          def clean_deployments():
+              print("\n🧹 Cleaning Deployments...")
+              deleted = 0
+              page = 1
+              while True:
+                  data = get(f"https://api.github.com/repos/{REPO}/deployments?per_page=100&page={page}")
+                  if not data or not isinstance(data, list) or not data:
+                      break
+                  for d in data:
+                      if delete(f"https://api.github.com/repos/{REPO}/deployments/{d['id']}"):
+                          deleted += 1
+                      time.sleep(0.3)
+                  if len(data) < 100:
+                      break
+                  page += 1
+              print(f"✅ Deployments deleted: {deleted}")
               return deleted
 
           def main():
               ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              print("═" * 50)
-              print("🧹 GITHUB CLEANER STARTED")
-              print("═" * 50)
+              print("═" * 60)
+              print("🧹 FULLY AUTOMATIC SAFE CLEANER")
+              print("═" * 60)
 
-              tg(f"🧹 <b>GitHub Cleaner Started</b>\n🕐 {ts}")
+              tg(f"🧹 <b>Auto Cleaner Started</b>\n🕐 {ts}")
 
-              total_deleted = 0
-
-              if DELETE_RUNS:
-                  total_deleted += clean_workflow_runs()
-              else:
-                  print("⏭️ Skipping workflow runs cleanup")
-
-              if CLEAR_CACHE:
-                  total_deleted += clean_cache()
-              else:
-                  print("⏭️ Skipping cache cleanup")
-
-              if CLEAR_ARTIFACTS:
-                  total_deleted += clean_artifacts()
-              else:
-                  print("⏭️ Skipping artifacts cleanup")
+              total = 0
+              total += clean_finished_runs()
+              total += clean_cache()
+              total += clean_artifacts()
+              total += clean_deployments()
 
               msg = (
-                  f"🧹 <b>GitHub Cleaner Finished</b>\n"
+                  f"🧹 <b>Auto Cleaner Finished</b>\n"
                   f"🕐 {ts}\n\n"
-                  f"✅ Total items cleaned: <b>{total_deleted}</b>\n"
-                  f"📌 Keep last runs: {KEEP_LAST}\n"
-                  f"📌 Code & Developer files are safe"
+                  f"✅ Total cleaned: <b>{total}</b>\n\n"
+                  f"📌 Running workflows → Safe\n"
+                  f"📌 Code / Files / Folders → Safe"
               )
               tg(msg)
-              print("\n" + "═" * 50)
-              print(f"🧹 DONE — Cleaned {total_deleted} items")
-              print("═" * 50)
+              print(f"\n🧹 DONE — Cleaned {total} items")
 
           if __name__ == "__main__":
               main()
@@ -247,8 +198,6 @@ jobs:
           rm -f /tmp/cleaner.py
 
       - name: ✅ Summary
-        if: always()
         run: |
-          echo "## 🧹 GitHub Cleaner Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Old runs, cache and artifacts cleaned." >> $GITHUB_STEP_SUMMARY
-          echo "Your code and Developer workflow are safe." >> $GITHUB_STEP_SUMMARY
+          echo "## 🧹 Automatic Cleaner Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Everything cleaned automatically. No code was touched." >> $GITHUB_STEP_SUMMARY
