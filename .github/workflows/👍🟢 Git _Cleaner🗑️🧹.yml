@@ -1,4 +1,4 @@
-Name: 👍🟢Git_Cleaner🧹
+name: 👍🟢Git_Cleaner🧹
 
 on:
   workflow_dispatch:
