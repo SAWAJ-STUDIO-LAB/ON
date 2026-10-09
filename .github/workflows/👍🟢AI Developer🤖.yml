@@ -1,4 +1,4 @@
-name: Sawaj AI Developer
+name: 👍🟢Sawaj AI Developer
 
 on:
   workflow_dispatch:
@@ -46,14 +46,7 @@ jobs:
         run: |
           cat > /tmp/ai_dev.py << 'ENDOFPYTHON'
           #!/usr/bin/env python3
-          """Sawaj AI Developer v5 — FULL AUTO, NO OPTIONS.
-
-          - Ek hi manual run -> poora folder upgrade
-          - Kuch delete NAHI hota
-          - Sirf safe improvements
-          - Resume support
-          - Telegram report
-          """
+          """Sawaj AI Developer v7 — Pro Report + Zero Delete + Fast"""
           from __future__ import annotations
 
           import ast
@@ -79,10 +72,10 @@ jobs:
               yaml = None
 
 
-          # ==========================================================================
-          # CONFIG — NO USER OPTIONS
-          # ==========================================================================
-          def env_str(name: str, default: str = "") -> str:
+          # ══════════════════════════════════════════════════════════════════════
+          # CONFIG
+          # ══════════════════════════════════════════════════════════════════════
+          def env_str(name, default=""):
               return os.environ.get(name, default).strip()
 
 
@@ -92,19 +85,18 @@ jobs:
           SELF_NAME_RE = re.compile(r"(?m)^name:\s*Sawaj AI Developer\s*$")
           STATE_PATH = ROOT_FOLDER + "/_logs/ai_developer_state.json"
 
-          # LOCKED SETTINGS — never changed by user
           ALLOW_DELETE = False
-          INCLUDE_WORKFLOWS = True       # workflow bugs bhi fix honge (safe check ke saath)
-          MAX_RUNTIME_MIN = 330          # 5.5 ghante
+          INCLUDE_WORKFLOWS = True
+          MAX_RUNTIME_MIN = 330
           REQUEST_DELAY = 1
           MAX_WORKERS = 4
           VOTE_JUDGES = 3
           MAX_CREATES_PER_FILE = 2
-          MAX_FILE_CHARS = 80000
-          MIN_FILE_CHARS = 40
+          MAX_FILE_CHARS = 120000
+          MIN_FILE_CHARS = 30
           AI_TIMEOUT = 240
 
-          KEYS: Dict[str, str] = {
+          KEYS = {
               "Gemini": env_str("GEMINI_API_KEY"),
               "Groq": env_str("GROQ_API_KEY"),
               "OpenRouter": env_str("OPENROUTER_API_KEY"),
@@ -119,7 +111,7 @@ jobs:
           GEMINI_MAX_OUT = 32768
           COHERE_MODEL = "command-a-03-2025"
 
-          OPENAI_COMPAT: Dict[str, Dict[str, Any]] = {
+          OPENAI_COMPAT = {
               "Groq": {
                   "url": "https://api.groq.com/openai/v1/chat/completions",
                   "model": "llama-3.3-70b-versatile",
@@ -161,6 +153,7 @@ jobs:
           SKIP_DIRS = {
               "__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv",
               ".venv", "node_modules", "_temp_builder", ".pytest_cache", ".mypy_cache",
+              "s_frames", "p_frames", "l_frames", "temp", "final",
           }
           PROCESS_EXTENSIONS = (
               ".py", ".yml", ".yaml", ".json", ".toml", ".cfg", ".md", ".txt", ".ini",
@@ -209,22 +202,22 @@ jobs:
               ),
           ]
 
-          DISABLED: Set[str] = set()
-          COOLDOWN: Dict[str, float] = {}
+          DISABLED = set()
+          COOLDOWN = {}
           STATS = {
               "files_seen": 0, "updated": 0, "created": 0, "deleted": 0, "kept": 0,
               "failed": 0, "rejected_proposals": 0, "resumed_skipped": 0,
           }
-          WINS: Dict[str, int] = {}
-          REPORT: List[Dict[str, Any]] = []
-          JOURNAL: Dict[str, Optional[str]] = {}
+          WINS = {}
+          REPORT = []
+          JOURNAL = {}
 
 
-          def log(msg: str = "") -> None:
+          def log(msg=""):
               print(msg, flush=True)
 
 
-          def redact(text: Any) -> str:
+          def redact(text):
               out = str(text)
               secrets = [v for v in KEYS.values() if v]
               secrets.append(env_str("TELEGRAM_BOT_TOKEN"))
@@ -234,27 +227,40 @@ jobs:
               return out
 
 
-          def sha(text: Optional[str]) -> str:
+          def sha(text):
               return hashlib.sha1((text or "").encode("utf-8")).hexdigest()
 
 
-          # ==========================================================================
-          # Telegram
-          # ==========================================================================
-          def tg(msg: str, silent: bool = False) -> None:
-              token = env_str("TELEGRAM_BOT_TOKEN")
-              chat_id = env_str("TELEGRAM_CHAT_ID")
-              if not token or not chat_id:
-                  return
-              msg = redact(msg)
-              chunks = [msg[i:i + 3800] for i in range(0, len(msg), 3800)][:3]
-              for chunk in chunks:
+          # ══════════════════════════════════════════════════════════════════════
+          # PRO-LEVEL TELEGRAM REPORTER
+          # ══════════════════════════════════════════════════════════════════════
+          class TelegramReporter:
+              def __init__(self):
+                  self.token = env_str("TELEGRAM_BOT_TOKEN")
+                  self.chat_id = env_str("TELEGRAM_CHAT_ID")
+                  self.enabled = bool(self.token and self.chat_id)
+                  self.start_time = time.time()
+
+              def _send(self, msg, silent=False):
+                  if not self.enabled:
+                      return
+                  msg = redact(msg)
+                  if len(msg) > 3800:
+                      chunks = self._split(msg, 3800)
+                      for i, chunk in enumerate(chunks, 1):
+                          header = f"<b>📄 Part {i}/{len(chunks)}</b>\n" if len(chunks) > 1 else ""
+                          self._send_raw(header + chunk, silent)
+                  else:
+                      self._send_raw(msg, silent)
+
+              def _send_raw(self, msg, silent=False):
                   try:
                       requests.post(
-                          "https://api.telegram.org/bot" + token + "/sendMessage",
+                          f"https://api.telegram.org/bot{self.token}/sendMessage",
                           json={
-                              "chat_id": chat_id,
-                              "text": chunk,
+                              "chat_id": self.chat_id,
+                              "text": msg,
+                              "parse_mode": "HTML",
                               "disable_web_page_preview": True,
                               "disable_notification": silent,
                           },
@@ -263,14 +269,221 @@ jobs:
                   except requests.RequestException:
                       pass
 
+              def _split(self, msg, limit):
+                  chunks = []
+                  current = ""
+                  for line in msg.split("\n"):
+                      if len(current) + len(line) + 1 > limit:
+                          chunks.append(current)
+                          current = line
+                      else:
+                          current += ("\n" if current else "") + line
+                  if current:
+                      chunks.append(current)
+                  return chunks
 
-          # ==========================================================================
-          # AI Providers
-          # ==========================================================================
+              def _fmt_time(self, seconds):
+                  m = int(seconds // 60)
+                  s = int(seconds % 60)
+                  if m >= 60:
+                      h = m // 60
+                      m = m % 60
+                      return f"{h}h {m}m {s}s"
+                  return f"{m}m {s}s"
+
+              def send_start(self, files_count, active_ais, max_minutes):
+                  msg = (
+                      f"🚀 <b>SAWAJ AI DEVELOPER — STARTED</b>\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      f"🕐 <b>Time:</b> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                      f"📁 <b>Root:</b> <code>{ROOT_FOLDER}/</code>\n"
+                      f"🤖 <b>Active AIs:</b> {len(active_ais)}/{len(PROVIDERS)}\n"
+                      f"   <i>{', '.join(active_ais)}</i>\n"
+                      f"📊 <b>Files to Process:</b> {files_count}\n"
+                      f"⏱️  <b>Max Runtime:</b> {max_minutes} min\n"
+                      f"🛡️  <b>Delete:</b> DISABLED\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  )
+                  self._send(msg, silent=True)
+
+              def send_progress(self, current, total, recent_results):
+                  pct = int((current / total) * 100) if total else 0
+                  elapsed = time.time() - self.start_time
+                  eta = (elapsed / current) * (total - current) if current > 0 else 0
+
+                  lines = [
+                      f"📊 <b>PROGRESS: {current}/{total}</b> ({pct}%)",
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━",
+                  ]
+                  for entry in recent_results:
+                      icon = {
+                          "updated": "✅", "created": "🆕", "kept": "⏭️",
+                          "failed": "❌", "deleted": "🗑️",
+                      }.get(entry["result"], "•")
+                      name = os.path.basename(entry["file"])
+                      winner = entry.get("winner", "")
+                      result = entry["result"].upper()
+                      name_display = name[:28].ljust(28, ".")
+                      lines.append(f"{icon} <code>{name_display}</code> {winner} <b>({result})</b>")
+
+                  lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━")
+                  lines.append(f"🕐 <b>Elapsed:</b> {self._fmt_time(elapsed)}")
+                  lines.append(f"⏳ <b>ETA:</b> {self._fmt_time(eta)}")
+                  self._send("\n".join(lines), silent=True)
+
+              def send_final_report(self, stats, wins, report_list, skipped, reverted, elapsed):
+                  updated = [r for r in report_list if r["result"] == "updated"]
+                  created = [r for r in report_list if r["result"] == "created"]
+                  failed = [r for r in report_list if r["result"] == "failed"]
+                  blocked = [r for r in report_list if r.get("rejected")]
+
+                  # ─── MAIN SUMMARY ───
+                  msg = (
+                      f"🎉 <b>SAWAJ AI DEVELOPER — COMPLETE</b>\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                      f"<b>📊 SUMMARY</b>\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      f"📁 Files Reviewed:     <b>{stats['files_seen']}</b>\n"
+                      f"✅ Updated:            <b>{stats['updated']}</b>\n"
+                      f"🆕 New Files Created:  <b>{stats['created']}</b>\n"
+                      f"⏭️  Kept As Is:         <b>{stats['kept']}</b>\n"
+                      f"❌ Failed:             <b>{stats['failed']}</b>\n"
+                      f"🛡️  Unsafe Blocked:     <b>{stats['rejected_proposals']}</b>\n"
+                      f"🔄 Reverted:           <b>{len(reverted)}</b>\n"
+                      f"\n"
+                      f"⏱️  <b>Total Time:</b> {self._fmt_time(elapsed)}\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  )
+                  self._send(msg)
+
+                  # ─── WINS BY AI ───
+                  if wins:
+                      wins_msg = (
+                          f"🏆 <b>VOTES WON BY AI</b>\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      medals = ["🥇", "🥈", "🥉"]
+                      sorted_wins = sorted(wins.items(), key=lambda x: -x[1])
+                      for i, (ai, count) in enumerate(sorted_wins):
+                          medal = medals[i] if i < 3 else "  "
+                          ai_pad = ai.ljust(15, ".")
+                          wins_msg += f"{medal} <code>{ai_pad}</code> <b>{count} wins</b>\n"
+                      self._send(wins_msg)
+
+                  # ─── UPDATED FILES ───
+                  if updated:
+                      upd_msg = (
+                          f"✅ <b>UPDATED FILES</b> ({len(updated)})\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      for r in updated[:15]:
+                          winner = r.get("winner", "?")
+                          upd_msg += f"<code>{r['file']}</code>\n   └─ 🏆 {winner}\n"
+                      if len(updated) > 15:
+                          upd_msg += f"\n<i>... and {len(updated) - 15} more</i>"
+                      self._send(upd_msg)
+
+                  # ─── NEW FILES ───
+                  if created:
+                      new_msg = (
+                          f"🆕 <b>NEW FILES</b> ({len(created)})\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      for r in created[:10]:
+                          new_msg += f"• <code>{r['file']}</code>\n"
+                      self._send(new_msg)
+
+                  # ─── FAILED FILES ───
+                  if failed:
+                      fail_msg = (
+                          f"❌ <b>FAILED FILES</b> ({len(failed)})\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      for r in failed[:10]:
+                          reasons = r.get("rejected", {})
+                          reason_text = "unknown"
+                          if reasons:
+                              reason_text = list(reasons.values())[0][:60]
+                          fail_msg += f"<code>{r['file']}</code>\n   └─ ⚠️ {reason_text}\n"
+                      self._send(fail_msg)
+
+                  # ─── BLOCKED PROPOSALS ───
+                  if blocked:
+                      blk_msg = (
+                          f"🛡️  <b>BLOCKED PROPOSALS</b> ({len(blocked)})\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      for r in blocked[:10]:
+                          reasons = r.get("rejected", {})
+                          if reasons:
+                              for ai, reason in list(reasons.items())[:1]:
+                                  blk_msg += f"<code>{r['file']}</code>\n   └─ 🚫 {reason[:60]}\n"
+                      self._send(blk_msg)
+
+                  # ─── REVERTED ───
+                  if reverted:
+                      rev_msg = (
+                          f"🔄 <b>REVERTED FILES</b> ({len(reverted)})\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      for f in reverted[:10]:
+                          rev_msg += f"• <code>{f}</code>\n"
+                      self._send(rev_msg)
+
+                  # ─── SKIPPED ───
+                  if any(skipped.values()):
+                      skip_msg = (
+                          f"📁 <b>SKIPPED FILES</b>\n"
+                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      )
+                      if skipped.get("sensitive"):
+                          skip_msg += f"🔐 <b>Sensitive:</b> {len(skipped['sensitive'])}\n"
+                          for f in skipped["sensitive"][:5]:
+                              skip_msg += f"   • <code>{os.path.basename(f)}</code>\n"
+                      if skipped.get("too_large"):
+                          skip_msg += f"📦 <b>Too Large:</b> {len(skipped['too_large'])}\n"
+                          for f in skipped["too_large"][:5]:
+                              skip_msg += f"   • <code>{os.path.basename(f)}</code>\n"
+                      self._send(skip_msg)
+
+                  # ─── NEXT STEPS ───
+                  final = (
+                      f"🎯 <b>NEXT STEPS</b>\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      f"✅ Backup created\n"
+                      f"💾 Full report: <code>sawaj_ai_report.json</code>\n"
+                      f"🔗 Check GitHub Actions\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      f"<i>SawajStudioBot • Auto-Upgrade System</i>"
+                  )
+                  self._send(final)
+
+              def send_alert(self, alert_type, message):
+                  icons = {"critical": "🚨", "warning": "⚠️", "info": "ℹ️"}
+                  icon = icons.get(alert_type, "ℹ️")
+                  msg = (
+                      f"{icon} <b>ALERT: {alert_type.upper()}</b>\n"
+                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                      f"{message}\n"
+                      f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
+                  )
+                  self._send(msg)
+
+
+          REPORTER = TelegramReporter()
+
+
+          def tg(msg, silent=False):
+              REPORTER._send(msg, silent)
+
+
+          # ══════════════════════════════════════════════════════════════════════
+          # AI PROVIDERS
+          # ══════════════════════════════════════════════════════════════════════
           SYSTEM_PROMPT = (
-              "You are a meticulous senior Python engineer. You ONLY improve code. "
-              "NEVER delete functions, classes, constants or imports. "
-              "Always return the complete file. Never truncate."
+              "You are a meticulous senior Python engineer for SawajStudioBot. "
+              "You ONLY improve code. NEVER delete functions, classes, constants, imports. "
+              "Always return the COMPLETE file. Never truncate."
           )
 
 
@@ -290,7 +503,7 @@ jobs:
               return None, "HTTP %d: %s" % (r.status_code, redact(r.text[:150])), retry
 
 
-          def call_gemini(prompt: str):
+          def call_gemini(prompt):
               last_err = "NO_MODELS"
               for model in GEMINI_MODELS:
                   url = (
@@ -319,7 +532,7 @@ jobs:
               return None, last_err, False
 
 
-          def call_openai_compat(name: str, prompt: str):
+          def call_openai_compat(name, prompt):
               cfg = OPENAI_COMPAT[name]
               headers = {"Authorization": "Bearer " + KEYS[name]}
               headers.update(cfg.get("headers", {}))
@@ -346,7 +559,7 @@ jobs:
               return None, err, retry
 
 
-          def call_cohere(prompt: str):
+          def call_cohere(prompt):
               data, err, retry = http_post(
                   "https://api.cohere.com/v2/chat",
                   {"Authorization": "Bearer " + KEYS["Cohere"], "Content-Type": "application/json"},
@@ -372,7 +585,7 @@ jobs:
               return None, err, retry
 
 
-          PROVIDERS: Dict[str, Dict[str, Any]] = {
+          PROVIDERS = {
               "Gemini": {"fn": call_gemini, "max_out": GEMINI_MAX_OUT},
               "Cohere": {"fn": call_cohere, "max_out": 4000},
           }
@@ -383,7 +596,7 @@ jobs:
               }
 
 
-          def call_provider(name: str, prompt: str):
+          def call_provider(name, prompt):
               fn = PROVIDERS[name]["fn"]
               last = ""
               for attempt, delay in enumerate((0, 8, 20), 1):
@@ -399,7 +612,7 @@ jobs:
                   log("    FAIL %s (try %d) - %s" % (name, attempt, last))
                   if last.startswith(("HTTP 401", "HTTP 403", "HTTP 404")):
                       DISABLED.add(name)
-                      log("    %s disabled for this run" % name)
+                      log("    %s disabled" % name)
                       break
                   if not retry:
                       break
@@ -408,7 +621,7 @@ jobs:
               return None, last
 
 
-          def active_providers() -> List[str]:
+          def active_providers():
               now = time.time()
               return [
                   n for n in PROVIDERS
@@ -416,19 +629,19 @@ jobs:
               ]
 
 
-          # ==========================================================================
-          # Python analysis
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # AST ANALYSIS
+          # ══════════════════════════════════════════════════════════════════════
           @functools.lru_cache(maxsize=2048)
-          def _parse_cached(code: str) -> Optional[ast.AST]:
+          def _parse_cached(code):
               try:
                   return ast.parse(code)
               except (SyntaxError, ValueError):
                   return None
 
 
-          def defined_names(code: str) -> Set[str]:
-              names: Set[str] = set()
+          def defined_names(code):
+              names = set()
               tree = _parse_cached(code)
               if tree is None:
                   return names
@@ -447,7 +660,7 @@ jobs:
               return names
 
 
-          def serious_flakes(code: str) -> int:
+          def serious_flakes(code):
               try:
                   from pyflakes.checker import Checker
                   tree = _parse_cached(code)
@@ -462,7 +675,7 @@ jobs:
 
 
           @functools.lru_cache(maxsize=2048)
-          def import_records(code: str):
+          def import_records(code):
               tree = _parse_cached(code)
               if tree is None:
                   return ()
@@ -477,11 +690,11 @@ jobs:
 
 
           @functools.lru_cache(maxsize=2048)
-          def bindings_of(code: str):
+          def bindings_of(code):
               tree = _parse_cached(code)
               if tree is None:
                   return None
-              names: Set[str] = set()
+              names = set()
 
               def add_targets(node):
                   if node is None:
@@ -529,11 +742,11 @@ jobs:
               return frozenset(names)
 
 
-          # ==========================================================================
-          # File tree + imports
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # FILE TREE
+          # ══════════════════════════════════════════════════════════════════════
           class Tree:
-              def __init__(self, paths: Set[str]):
+              def __init__(self, paths):
                   self.files = set(paths)
                   self.dirs = set()
                   for p in self.files:
@@ -562,7 +775,7 @@ jobs:
                   return None
 
 
-          def ancestor_dirs(rel: str):
+          def ancestor_dirs(rel):
               out = []
               d = os.path.dirname(rel)
               while True:
@@ -678,9 +891,9 @@ jobs:
               return sorted(after - before)
 
 
-          # ==========================================================================
-          # Validation
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # VALIDATION
+          # ══════════════════════════════════════════════════════════════════════
           def workflow_signature(data):
               if not isinstance(data, dict):
                   return None
@@ -708,14 +921,14 @@ jobs:
               if not isinstance(new_data, dict) or "jobs" not in new_data:
                   return False, "not a workflow"
               if "on" not in new_data and True not in new_data:
-                  return False, "workflow has no trigger"
+                  return False, "no trigger"
               try:
                   old_data = yaml.safe_load(old)
               except Exception:
                   old_data = None
               if old_data is not None:
                   if workflow_signature(old_data) != workflow_signature(new_data):
-                      return False, "workflow steps/triggers/run content changed"
+                      return False, "workflow steps/triggers/run changed"
                   if not set(SECRETS_REF_RE.findall(new)) <= set(SECRETS_REF_RE.findall(old)):
                       return False, "new secret reference"
               for job in (new_data.get("jobs") or {}).values():
@@ -740,9 +953,9 @@ jobs:
               if not new or not new.strip():
                   return False, "empty output"
               if PLACEHOLDER_RE.search(new) and not PLACEHOLDER_RE.search(old):
-                  return False, "placeholder / lazy output"
+                  return False, "placeholder / lazy"
               if len(old) > 500 and len(new) > 4 * len(old):
-                  return False, "output grew more than 4x"
+                  return False, "output grew > 4x"
               if rel.endswith(".py"):
                   if _parse_cached(new) is None:
                       return False, "syntax error"
@@ -756,7 +969,7 @@ jobs:
                       if missing:
                           return False, "removed imports: %d" % len(missing)
                       if len(old) > 400 and len(new) < 0.5 * len(old):
-                          return False, "output far shorter than original"
+                          return False, "output far shorter"
                   if serious_flakes(new) > serious_flakes(old):
                       return False, "introduces undefined names"
                   return True, ""
@@ -781,13 +994,13 @@ jobs:
                   except tomllib.TOMLDecodeError:
                       return False, "invalid TOML"
               if len(old) > 200 and len(new) < 0.6 * len(old):
-                  return False, "output far shorter than original"
+                  return False, "output far shorter"
               return True, ""
 
 
-          # ==========================================================================
-          # Scanning
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # SCANNING
+          # ══════════════════════════════════════════════════════════════════════
           def is_skipped(path):
               parts = [p for p in path.replace("\\", "/").split("/") if p]
               if any(p in SKIP_DIRS for p in parts):
@@ -847,7 +1060,22 @@ jobs:
               return files, all_paths, skipped
 
 
-          def project_index(files, focus, limit=8000):
+          def build_project_tree(paths):
+              """Build a beautiful tree view for AI."""
+              if not paths:
+                  return "(empty)"
+              sorted_paths = sorted(paths)
+              lines = ["📂 REPOSITORY STRUCTURE:", "=" * 60]
+              for p in sorted_paths:
+                  depth = p.count("/")
+                  indent = "  " * depth
+                  name = p.split("/")[-1]
+                  icon = "📄" if name.endswith(".py") else "📋"
+                  lines.append(f"{indent}{icon} {name}")
+              return "\n".join(lines)[:20000]
+
+
+          def project_index(files, focus, limit=15000):
               def common(a, b):
                   n = 0
                   for x, y in zip(a.split("/"), b.split("/")):
@@ -855,38 +1083,41 @@ jobs:
                           break
                       n += 1
                   return n
-              lines = []
+              lines = ["📚 PUBLIC API INDEX:", "=" * 60]
               for path in sorted((p for p in files if p.endswith(".py")),
                                  key=lambda p: (-common(p, focus), p)):
                   tree = _parse_cached(files[path])
                   if tree is None:
-                      lines.append(path + ": (syntax error)")
+                      lines.append(f"{path}: (syntax error)")
                       continue
                   items = []
                   for node in tree.body:
                       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                          items.append("def %s" % node.name)
+                          items.append(f"def {node.name}()")
                       elif isinstance(node, ast.ClassDef):
-                          items.append("class %s" % node.name)
+                          items.append(f"class {node.name}")
                       elif isinstance(node, ast.Assign):
                           for t in node.targets:
                               if isinstance(t, ast.Name) and t.id.isupper():
                                   items.append(t.id)
-                  lines.append("%s: %s" % (path, "; ".join(items[:15])))
+                  if items:
+                      lines.append(f"{path}:")
+                      for item in items[:20]:
+                          lines.append(f"    • {item}")
               return "\n".join(lines)[:limit]
 
 
-          # ==========================================================================
-          # Prompts
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # PROMPTS
+          # ══════════════════════════════════════════════════════════════════════
           def build_analysis_prompt(rel, code, files, tree, idx, total):
-              listing = "\n".join(
-                  sorted(p for p in tree.files if p.endswith((".py", ".yml", ".yaml", ".toml", ".md", ".txt")))
-              )[:4000]
+              tree_str = build_project_tree(tree.files) if True else ""
+              api_str = project_index(files, rel) if True else ""
+
               p = [
-                  "You are the LEAD AI ARCHITECT for SawajStudioBot — a video generation and upload pipeline.",
+                  "You are the LEAD AI ARCHITECT for SawajStudioBot — an automated Islamic video generation pipeline.",
                   "",
-                  ">>> FULL SAFE UPGRADE <<<",
+                  ">>> SAFE UPGRADE MODE <<<",
                   "STRICT RULES:",
                   "1. NEVER delete any function, class, constant or import.",
                   "2. NEVER remove any file.",
@@ -897,22 +1128,17 @@ jobs:
                   "7. Return the COMPLETE file, no placeholders, no '...'.",
                   "8. No markdown fences.",
                   "",
-                  "YOUR JOB:",
-                  "- Fix bugs, add try/except, add logging, add type hints, add docstrings",
-                  "- Improve clarity, add constants, add validation",
-                  "- Make production-grade, ready to run 24/7",
+                  "=== PROJECT TREE ===",
+                  tree_str,
                   "",
-                  "=== PROJECT FILES ===",
-                  listing,
-                  "",
-                  "=== PUBLIC API (other files depend on these) ===",
-                  project_index(files, rel),
+                  "=== PUBLIC API ===",
+                  api_str,
                   "",
                   "=== RESPONSE FORMAT ===",
                   "=== REPORT ===",
                   "- short Hindi bullet points, max 8 lines",
                   "=== END REPORT ===",
-                  "=== FILE: %s ===" % rel,
+                  f"=== FILE: {rel} ===",
                   "(complete upgraded code)",
                   "=== END FILE ===",
                   "Optional extra files:",
@@ -925,7 +1151,7 @@ jobs:
                   "=== END REPORT ===",
                   "NO_CHANGES",
                   "",
-                  "=== FILE %d/%d: %s ===" % (idx, total, rel),
+                  f"=== FILE {idx}/{total}: {rel} ===",
                   code,
                   "=== END OF INPUT FILE ===",
               ]
@@ -994,9 +1220,9 @@ jobs:
               return res
 
 
-          # ==========================================================================
-          # Proposal evaluation
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # PROPOSAL EVALUATION
+          # ══════════════════════════════════════════════════════════════════════
           def normalize_path(p):
               p = p.strip().strip("`'\"").replace("\\", "/")
               while p.startswith("./"):
@@ -1078,9 +1304,9 @@ jobs:
               return changes, "; ".join(notes)
 
 
-          # ==========================================================================
-          # Voting
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # VOTING
+          # ══════════════════════════════════════════════════════════════════════
           def diff_text(old, new, limit=4000):
               if new is None:
                   return "(no change)"
@@ -1172,9 +1398,9 @@ jobs:
               return sorted(leaders, key=size)[0], tally
 
 
-          # ==========================================================================
-          # File pipeline
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # FILE PIPELINE
+          # ══════════════════════════════════════════════════════════════════════
           def write_file(rel, code, contents, tree):
               if rel not in JOURNAL:
                   JOURNAL[rel] = contents.get(rel)
@@ -1269,9 +1495,9 @@ jobs:
               return entry
 
 
-          # ==========================================================================
-          # State, verify, report
-          # ==========================================================================
+          # ══════════════════════════════════════════════════════════════════════
+          # STATE, VERIFY, REPORT
+          # ══════════════════════════════════════════════════════════════════════
           def load_state():
               try:
                   with open(STATE_PATH, "r", encoding="utf-8") as fh:
@@ -1357,16 +1583,19 @@ jobs:
                   pass
 
 
+          # ══════════════════════════════════════════════════════════════════════
+          # MAIN
+          # ══════════════════════════════════════════════════════════════════════
           def main():
               t0 = time.time()
               log("=" * 60)
-              log("SAWAJ AI DEVELOPER v5 — FULL AUTO (no options)")
+              log("SAWAJ AI DEVELOPER v7 — Pro Report")
               log("=" * 60)
               for name in PROVIDERS:
                   log("  %s: %s" % (name, "SET" if KEYS.get(name) else "MISSING"))
               if not active_providers():
                   log("No API keys configured.")
-                  tg("Sawaj AI Developer: no API keys configured")
+                  REPORTER.send_alert("critical", "❌ No API keys configured!")
                   return 1
 
               contents, all_paths, skipped = scan_all()
@@ -1381,7 +1610,7 @@ jobs:
                       log("  skipped %s: %s" % (kind, ", ".join(lst[:10])))
               if not contents:
                   log("NO FILES FOUND")
-                  tg("Sawaj AI Developer: no files found in %s/" % ROOT_FOLDER)
+                  REPORTER.send_alert("warning", f"❌ No files found in {ROOT_FOLDER}/")
                   return 0
 
               state = load_state()
@@ -1396,8 +1625,8 @@ jobs:
               todo = [p for p in order if not (resumed and done.get(p) == sha(contents[p]))]
               STATS["resumed_skipped"] = len(order) - len(todo)
               total = len(todo)
-              tg("Sawaj AI Developer started\nFiles: %d%s\nWorkers: %d | Judges: %d" % (
-                  total, " (resuming)" if resumed else "", MAX_WORKERS, VOTE_JUDGES), silent=True)
+
+              REPORTER.send_start(total, active_providers(), MAX_RUNTIME_MIN)
 
               digest = []
               stopped_early = False
@@ -1424,16 +1653,15 @@ jobs:
                       elif res == "kept":
                           STATS["kept"] += 1
                       done[rel] = sha(contents.get(rel))
-                  emoji = {"updated": "UPDATED", "created": "NEW", "kept": "ok", "failed": "FAILED"}.get(res, res)
-                  digest.append("%s %s (%s)" % (emoji, os.path.basename(rel), entry.get("winner", "")))
+                  digest.append(entry)
                   if len(digest) >= 15:
-                      tg("Progress %d/%d\n%s" % (i, total, "\n".join(digest)), silent=True)
+                      REPORTER.send_progress(i, total, digest)
                       digest = []
                       save_state(state)
                   time.sleep(REQUEST_DELAY)
 
               if digest:
-                  tg("Progress\n" + "\n".join(digest), silent=True)
+                  REPORTER.send_progress(len(todo), total, digest)
 
               reverted = final_verify()
               new_errors = set()
@@ -1448,28 +1676,22 @@ jobs:
               save_state(state)
 
               elapsed = time.time() - t0
-              mins, secs = int(elapsed // 60), int(elapsed % 60)
               write_reports(elapsed, reverted, skipped)
 
-              wins = ", ".join("%s %d" % kv for kv in sorted(WINS.items(), key=lambda x: -x[1])) or "-"
-              msg = (
-                  "Sawaj AI Developer finished\n\n"
-                  "Files reviewed: %d\nUpdated: %d\nNew files: %d\n"
-                  "Kept as is: %d\nFailed: %d\nUnsafe blocked: %d\nReverted: %d\n"
-                  "Votes won: %s\nTime: %dm %ds\n%s"
-              ) % (
-                  STATS["files_seen"], STATS["updated"], STATS["created"],
-                  STATS["kept"], STATS["failed"], STATS["rejected_proposals"], len(reverted),
-                  wins, mins, secs,
-                  "STOPPED EARLY - run again to continue" if stopped_early else "All files done",
+              REPORTER.send_final_report(
+                  stats=STATS,
+                  wins=WINS,
+                  report_list=REPORT,
+                  skipped=skipped,
+                  reverted=reverted,
+                  elapsed=elapsed,
               )
+
               if broken_now:
-                  msg += "\n\nNEW import problems:\n" + "\n".join(broken_now[:5])
-              if skipped["sensitive"]:
-                  msg += "\n\nSecret files (never sent to AI):\n" + "\n".join(skipped["sensitive"][:6])
-              log("")
-              log(msg)
-              tg(msg)
+                  REPORTER.send_alert("warning",
+                      f"⚠️ {len(broken_now)} new import problems:\n" +
+                      "\n".join(f"• {e}" for e in broken_now[:5]))
+
               return 0
 
 
@@ -1520,7 +1742,7 @@ jobs:
           if [ -e .github/workflows ]; then git add -A -- .github/workflows; fi
 
           if ! git diff --cached --quiet; then
-            git commit -m "Sawaj AI Developer: full upgrade - $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git commit -m "Sawaj AI Developer: Pro upgrade - $(date -u '+%Y-%m-%d %H:%M UTC')"
             push_with_retry || { echo "Push failed"; exit 1; }
           else
             echo "No changes to commit"
