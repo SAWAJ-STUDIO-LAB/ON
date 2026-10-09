@@ -11,12 +11,12 @@ permissions:
 
 jobs:
   developer:
-    name: 👑 Personal Developer Working
+    name: 👑 Fast Developer
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: 📥 Checkout Code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -26,12 +26,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📦 Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+      - name: 📦 Install
+        run: pip install requests
 
-      - name: 👑 Run SawajStudioBot Master Developer
+      - name: 👑 Run Fast Developer
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -44,439 +42,219 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
         run: |
-          cat > /tmp/developer.py << 'ENDOFSCRIPT'
-          import os
-          import re
-          import ast
-          import json
-          import time
-          import shutil
-          import requests
+          cat << 'EOFPY' > /tmp/dev.py
+          import os, re, ast, json, time, requests
           from datetime import datetime
+          from concurrent.futures import ThreadPoolExecutor, as_completed
 
           BOT_ROOT = "sawajstudiobot"
-          WORK = "bot update upgrade/_work"
-          BACKUP = "bot update upgrade/_backups"
-          LOG_DIR = "bot update upgrade/_logs"
-          PROGRESS_FILE = "bot update upgrade/_king_progress.json"
-          ROOT_SKIP = "bot update upgrade"
-          TEXT_EXT = {".py", ".txt", ".md", ".json", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".env", ".example"}
-          TIMEOUT = 180
-          MAX_TOKENS = 8000
+          PROGRESS = "bot update upgrade/_king_progress.json"
+          SKIP = ("__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv", "node_modules",
+                  "bot update upgrade", "Code editor", "_temp_builder")
+          TIMEOUT = 45
+          WORKERS = 8
+          AIS = ["Groq", "Gemini", "OpenRouter", "Mistral", "Cerebras", "Cohere", "NVIDIA", "HuggingFace"]
 
-          ALL_AIS = [
-              "Groq", "Gemini", "OpenRouter", "Mistral",
-              "Cerebras", "Cohere", "NVIDIA", "HuggingFace"
-          ]
-
-          PRIORITY_KEYWORDS = [
-              "config", "logger", "telegram", "entry", "main", "run",
-              "generator", "uploader", "core", "A1_", "A2_", "A3_",
-              "G_entry", "video_generator", "video_uploader"
-          ]
-
-          def tg_send(msg, silent=False):
-              token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-              chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-              if not token or not chat:
-                  return False
+          def tg(msg, silent=True):
+              t = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+              c = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+              if not t or not c: return
               try:
-                  r = requests.post(
-                      f"https://api.telegram.org/bot{token}/sendMessage",
-                      json={"chat_id": chat, "text": msg[:4000],
-                            "parse_mode": "HTML",
-                            "disable_web_page_preview": True,
-                            "disable_notification": silent},
-                      timeout=15)
-                  return r.status_code == 200
-              except Exception:
-                  return False
+                  requests.post(f"https://api.telegram.org/bot{t}/sendMessage",
+                                json={"chat_id": c, "text": msg[:4000], "parse_mode": "HTML",
+                                      "disable_web_page_preview": True, "disable_notification": silent},
+                                timeout=10)
+              except: pass
 
-          def is_skipped(full_path):
-              parts = full_path.replace("\\", "/").split("/")
-              for p in parts:
-                  if p in ("__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv", "node_modules"):
-                      return True
-              if ROOT_SKIP in full_path or "Code editor" in full_path or "_temp_builder" in full_path:
-                  return True
+          def skip(path):
+              p = path.replace("\\", "/")
+              for s in SKIP:
+                  if s in p: return True
               return False
 
-          def scan_all():
+          def scan():
               files = []
-              folders = set()
-              if not os.path.exists(BOT_ROOT):
-                  os.makedirs(BOT_ROOT, exist_ok=True)
               for root, dirs, fnames in os.walk(BOT_ROOT):
-                  dirs[:] = [d for d in dirs if not is_skipped(os.path.join(root, d))]
-                  rel_dir = os.path.relpath(root, BOT_ROOT)
-                  if rel_dir != ".":
-                      folders.add(rel_dir)
+                  dirs[:] = [d for d in dirs if not skip(os.path.join(root, d))]
                   for fn in fnames:
                       full = os.path.join(root, fn)
-                      if is_skipped(full):
-                          continue
-                      ext = os.path.splitext(fn)[1].lower()
-                      if ext in TEXT_EXT or fn.startswith(".env"):
-                          rel = os.path.relpath(full, BOT_ROOT)
-                          files.append(rel)
-              return sorted(files), sorted(folders)
+                      if skip(full): continue
+                      if fn.endswith(".py"):
+                          files.append(os.path.relpath(full, BOT_ROOT))
+              return sorted(files)
 
-          def load_progress():
-              if os.path.exists(PROGRESS_FILE):
+          def load_prog():
+              if os.path.exists(PROGRESS):
                   try:
-                      with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
-                          return json.load(f)
-                  except:
-                      pass
-              return {"upgraded": {}, "last_run": None, "total_upgrades": 0}
+                      with open(PROGRESS) as f: return json.load(f)
+                  except: pass
+              return {"upgraded": {}}
 
-          def save_progress(data):
-              os.makedirs(os.path.dirname(PROGRESS_FILE), exist_ok=True)
-              with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-                  json.dump(data, f, indent=2)
+          def save_prog(d):
+              os.makedirs(os.path.dirname(PROGRESS), exist_ok=True)
+              with open(PROGRESS, "w") as f: json.dump(d, f, indent=2)
 
-          def smart_sort_files(files, progress):
-              upgraded_dict = progress.get("upgraded", {})
-              def key_func(f):
-                  f_lower = f.lower()
-                  prio = 999
-                  for i, kw in enumerate(PRIORITY_KEYWORDS):
-                      if kw in f_lower:
-                          prio = i
-                          break
-                  last_time = upgraded_dict.get(f, {}).get("time", "1970-01-01 00:00:00")
-                  return (last_time, prio, f)
-              return sorted(files, key=key_func)
-
-          def build_structure_text(folders, files):
-              lines = ["═══ FULL PROJECT STRUCTURE ═══"]
-              for f in folders:
-                  lines.append(f"{f}/")
-              lines.append("")
-              lines.append("═══ ALL FILES ═══")
-              for f in files:
-                  lines.append(f)
-              lines.append("═══ END STRUCTURE ═══")
-              return "\n".join(lines)
-
-          def _post(url, headers, payload, timeout=TIMEOUT, retries=2):
-              for attempt in range(1, retries + 1):
-                  try:
-                      r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-                      if r.status_code == 200:
-                          return r.json()
-                      if r.status_code in (429, 500, 502, 503, 504):
-                          time.sleep(attempt * 3)
-                          continue
-                      return None
-                  except Exception:
-                      time.sleep(2)
+          def post(url, headers, payload, timeout=TIMEOUT):
+              try:
+                  r = requests.post(url, headers=headers, json=payload, timeout=timeout)
+                  if r.status_code == 200: return r.json()
+              except: pass
               return None
 
-          def call_ai(ai_name, prompt, max_tokens=MAX_TOKENS):
-              if ai_name == "Groq":
-                  key = os.environ.get("GROQ_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
-                      d = _post("https://api.groq.com/openai/v1/chat/completions",
-                                {"Authorization": f"Bearer {key}"},
-                                {"model": model, "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
+          def call_ai(ai, prompt):
+              try:
+                  if ai == "Groq":
+                      k = os.environ.get("GROQ_API_KEY", "").strip()
+                      if not k: return None
+                      for m in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+                          d = post("https://api.groq.com/openai/v1/chat/completions",
+                                   {"Authorization": f"Bearer {k}"},
+                                   {"model": m, "messages": [{"role": "user", "content": prompt}],
+                                    "max_tokens": 8000, "temperature": 0.2})
+                          if d and "choices" in d: return d["choices"][0]["message"]["content"]
+                  elif ai == "Gemini":
+                      k = os.environ.get("GEMINI_API_KEY", "").strip()
+                      if not k: return None
+                      for m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+                          d = post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={k}",
+                                   {}, {"contents": [{"parts": [{"text": prompt}]}],
+                                        "generationConfig": {"maxOutputTokens": 8000, "temperature": 0.2}})
+                          if d and "candidates" in d:
+                              try: return d["candidates"][0]["content"]["parts"][0]["text"]
+                              except: pass
+                  elif ai == "OpenRouter":
+                      k = os.environ.get("OPENROUTER_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://openrouter.ai/api/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "openai/gpt-4o-mini",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  return None
-
-              if ai_name == "Gemini":
-                  key = os.environ.get("GEMINI_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
-                      d = _post(
-                          f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
-                          {}, {"contents": [{"parts": [{"text": prompt}]}],
-                               "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.2}})
-                      if d and "candidates" in d:
-                          try: return d["candidates"][0]["content"]["parts"][0]["text"]
-                          except: pass
-                  return None
-
-              if ai_name == "OpenRouter":
-                  key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-                  if not key: return None
-                  d = _post("https://openrouter.ai/api/v1/chat/completions",
-                            {"Authorization": f"Bearer {key}"},
-                            {"model": "openai/gpt-4o-mini",
-                             "messages": [{"role": "user", "content": prompt}],
-                             "max_tokens": max_tokens, "temperature": 0.2})
-                  return d["choices"][0]["message"]["content"] if d and "choices" in d else None
-
-              if ai_name == "Mistral":
-                  key = os.environ.get("MISTRAL_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["mistral-small-latest", "open-mistral-7b"]:
-                      d = _post("https://api.mistral.ai/v1/chat/completions",
-                                {"Authorization": f"Bearer {key}"},
-                                {"model": model, "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
+                  elif ai == "Mistral":
+                      k = os.environ.get("MISTRAL_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.mistral.ai/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "mistral-small-latest",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  return None
-
-              if ai_name == "Cerebras":
-                  key = os.environ.get("CEREBRAS_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["llama-3.3-70b", "llama3.1-70b"]:
-                      d = _post("https://api.cerebras.ai/v1/chat/completions",
-                                {"Authorization": f"Bearer {key}"},
-                                {"model": model, "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
+                  elif ai == "Cerebras":
+                      k = os.environ.get("CEREBRAS_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.cerebras.ai/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "llama-3.3-70b",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  return None
-
-              if ai_name == "Cohere":
-                  key = os.environ.get("COHERE_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["command-r-plus-08-2024", "command-r-plus"]:
-                      d = _post("https://api.cohere.com/v1/chat",
-                                {"Authorization": f"Bearer {key}"},
-                                {"model": model, "message": prompt})
-                      if d and "text" in d: return d.get("text")
-                  return None
-
-              if ai_name == "NVIDIA":
-                  key = os.environ.get("NVIDIA_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["meta/llama-3.3-70b-instruct", "meta/llama-3.1-70b-instruct"]:
-                      d = _post("https://integrate.api.nvidia.com/v1/chat/completions",
-                                {"Authorization": f"Bearer {key}"},
-                                {"model": model, "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
+                  elif ai == "Cohere":
+                      k = os.environ.get("COHERE_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.cohere.com/v1/chat",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "command-r-plus-08-2024", "message": prompt})
+                      if d and "text" in d: return d["text"]
+                  elif ai == "NVIDIA":
+                      k = os.environ.get("NVIDIA_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://integrate.api.nvidia.com/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "meta/llama-3.3-70b-instruct",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  return None
-
-              if ai_name == "HuggingFace":
-                  key = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
-                  if not key: return None
-                  for model in ["meta-llama/Meta-Llama-3.1-8B-Instruct", "mistralai/Mistral-7B-Instruct-v0.3"]:
-                      d = _post(
-                          f"https://api-inference.huggingface.co/models/{model}/v1/chat/completions",
-                          {"Authorization": f"Bearer {key}"},
-                          {"model": model, "messages": [{"role": "user", "content": prompt}],
-                           "max_tokens": 4000, "temperature": 0.2})
+                  elif ai == "HuggingFace":
+                      k = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 4000, "temperature": 0.2})
                       if d and "choices" in d:
                           try: return d["choices"][0]["message"]["content"]
                           except: pass
-                  return None
+              except: pass
               return None
 
-          def make_prompt(structure, filepath, code):
-              return f"""You are the SOLE MASTER DEVELOPER of SawajStudioBot.
-
-          Your absolute goal is to upgrade this Islamic Video Generation & Automation Studio to WORLD #1 quality.
-
-          PROJECT ARCHITECTURE:
-          {structure}
-
-          CURRENT TARGET FILE TO UPGRADE:
-          ═══ FILE: {filepath} ═══
-          {code}
-          ═══ END ═══
-
-          STRICT MANDATES:
-          1. Upgrade the code cleanly. Add deep error handling, logging, type hints, performance optimization, and robust fail-safes.
-          2. NEVER delete existing functionality or core logic.
-          3. Return output using exact tags:
-             ═══ FILE: {filepath} ═══
-             <upgraded full code>
-             ═══ END ═══
-          4. If new helper module is required:
-             ═══ NEW FILE: path/to/new_file.py ═══
-             <code>
-             ═══ END ═══
-          5. NO markdown commentary outside tags. Pure code tags only.
-
-          Upgrade this file now:"""
-
-          def clean_response(text):
-              text = re.sub(r"^```python\s*", "", text, flags=re.MULTILINE)
-              text = re.sub(r"^```\s*", "", text, flags=re.MULTILINE)
-              return text
-
-          def apply_response(text):
-              text = clean_response(text)
-              modified, new_files = 0, 0
-              changed_files = []
-
-              for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\s*\n(.*?)\n═══ END ═══", text, re.DOTALL):
-                  rel = rel.strip()
-                  if not rel or ".." in rel: continue
-                  full = os.path.join(BOT_ROOT, rel)
-                  os.makedirs(os.path.dirname(full) or ".", exist_ok=True)
-                  with open(full, "w", encoding="utf-8") as f:
-                      f.write(code.rstrip() + "\n")
-                  new_files += 1
-                  changed_files.append(f"NEW: {rel}")
-
-              for rel, code in re.findall(r"═══ FILE: (.+?) ═══\s*\n(.*?)\n═══ END ═══", text, re.DOTALL):
-                  rel = rel.strip()
-                  if not rel or ".." in rel: continue
-                  full = os.path.join(BOT_ROOT, rel)
-                  os.makedirs(os.path.dirname(full) or ".", exist_ok=True)
-                  with open(full, "w", encoding="utf-8") as f:
-                      f.write(code.rstrip() + "\n")
-                  modified += 1
-                  changed_files.append(rel)
-
-              return modified, new_files, changed_files
-
-          def backup():
-              ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-              dest = f"{BACKUP}/{ts}"
-              os.makedirs(dest, exist_ok=True)
+          def upgrade(rel, idx, total):
+              full = os.path.join(BOT_ROOT, rel)
               try:
-                  shutil.copytree(BOT_ROOT, f"{dest}/sawajstudiobot")
-                  return dest
-              except Exception:
-                  return None
+                  with open(full, "r", encoding="utf-8") as f: code = f.read()
+              except: return False, rel, None
 
-          def check_syntax(filepath):
-              if not filepath.endswith(".py"):
-                  return True
-              full = os.path.join(BOT_ROOT, filepath)
-              try:
-                  with open(full, "r", encoding="utf-8") as f:
-                      ast.parse(f.read())
-                  return True
-              except SyntaxError:
-                  return False
-              except Exception:
-                  return True
+              prompt = f"""You are the MASTER AI DEVELOPER of SawajStudioBot.
+          Upgrade this file: add error handling, logging, docstrings, fix bugs, remove copyright text.
+          Never remove core logic.
+          Keep format: ═══ FILE: {rel} ═══  <code>  ═══ END ═══
+          Return ONLY the code.
+
+          FILE: {rel}
+          CODE:
+          {code}"""
+
+              start = (idx - 1) % len(AIS)
+              for ai in AIS[start:] + AIS[:start]:
+                  res = call_ai(ai, prompt)
+                  if res and "═══ FILE:" in res:
+                      m = re.search(r"═══ FILE: .+? ═══\s*\n(.*?)\n═══ END ═══", res, re.DOTALL)
+                      if m:
+                          new_code = m.group(1).strip()
+                          try:
+                              ast.parse(new_code)
+                              with open(full, "w", encoding="utf-8") as f:
+                                  f.write(new_code + "\n")
+                              tg(f"⚡ <b>[{idx}/{total}]</b> ✅ <code>{rel}</code>\n🤖 {ai}")
+                              return True, rel, ai
+                          except: pass
+              tg(f"⚠️ <b>[{idx}/{total}]</b> ❌ <code>{rel}</code>", silent=True)
+              return False, rel, None
 
           def main():
-              ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              print("═" * 60)
-              print("👑 SAWAJSTUDIOBOT MASTER AI DEVELOPER")
-              print("═" * 60)
-
-              tg_send(
-                  f"👑 <b>MASTER DEVELOPER RUN STARTED</b>\n"
-                  f"🕐 {ts}\n"
-                  f"🎯 Mission: Non-Stop Studio Upgrade to World #1\n"
-                  f"⚡ Strategy: Round-Robin AI Allocation & Deep Verification",
-                  silent=True
-              )
-
-              os.makedirs(WORK, exist_ok=True)
-              os.makedirs(LOG_DIR, exist_ok=True)
-
-              files, folders = scan_all()
+              files = scan()
               if not files:
-                  tg_send("⚠️ No files found in sawajstudiobot directory!")
+                  tg("⚠️ No files in sawajstudiobot")
                   return
 
-              backup_path = backup()
-              progress = load_progress()
-              files = smart_sort_files(files, progress)
-              structure = build_structure_text(folders, files)
-
+              prog = load_prog()
+              files = sorted(files, key=lambda f: prog["upgraded"].get(f, {}).get("time", "0"))
               total = len(files)
-              success, failed, new_created = 0, 0, 0
+              tg(f"👑 <b>FAST RUN</b> — {total} files, {WORKERS} workers, 8 AI")
 
-              for idx, rel in enumerate(files, 1):
-                  print(f"\n[{idx}/{total}] → Processing: {rel}")
-                  full = os.path.join(BOT_ROOT, rel)
-                  try:
-                      with open(full, "r", encoding="utf-8") as f:
-                          code = f.read()
-                  except Exception as e:
-                      print(f"   ❌ File read error: {e}")
-                      failed += 1
-                      continue
-
-                  prompt = make_prompt(structure, rel, code)
-                  upgraded = False
-
-                  # Round-Robin AI Assignment: Every file gets assigned a primary AI
-                  primary_ai_idx = (idx - 1) % len(ALL_AIS)
-                  ordered_ais = ALL_AIS[primary_ai_idx:] + ALL_AIS[:primary_ai_idx]
-
-                  for ai in ordered_ais:
-                      print(f"   🤖 Trying AI Provider: {ai}...")
+              ok, fail = 0, 0
+              with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+                  futures = {ex.submit(upgrade, f, i, total): f for i, f in enumerate(files, 1)}
+                  for fut in as_completed(futures):
                       try:
-                          res = call_ai(ai, prompt)
-                          if res and ("═══ FILE:" in res or "═══ NEW FILE:" in res):
-                              modified, newf, changed = apply_response(res)
-                              if modified > 0 or newf > 0:
-                                  if check_syntax(rel):
-                                      success += 1
-                                      new_created += newf
-                                      upgraded = True
-
-                                      progress["upgraded"][rel] = {
-                                          "time": ts,
-                                          "ai": ai,
-                                          "new_files": newf
-                                      }
-                                      progress["total_upgrades"] = progress.get("total_upgrades", 0) + 1
-                                      progress["last_run"] = ts
-                                      save_progress(progress)
-
-                                      print(f"   ✅ Upgraded by {ai} | Created {newf} helper file(s)")
-                                      tg_send(
-                                          f"✅ <b>[{idx}/{total}] FILE UPGRADED</b>\n"
-                                          f"📄 <code>{rel}</code>\n"
-                                          f"🤖 AI: <b>{ai}</b>\n"
-                                          f"🆕 New Helper Files: {newf}"
-                                      )
-                                      break
-                                  else:
-                                      print(f"   ⚠️ Syntax error from {ai}, trying fallback AI...")
-                          else:
-                              print(f"   ⚠️ Invalid format from {ai}")
-                      except Exception as e:
-                          print(f"   ❌ {ai} exception: {str(e)[:70]}")
-
-                  if not upgraded:
-                      failed += 1
-                      print(f"   ❌ Upgrade failed for {rel}")
-                      tg_send(f"❌ <b>[{idx}/{total}] Upgrade Failed</b>\n<code>{rel}</code>")
-
-                  time.sleep(1)
-
-              final_report = (
-                  "👑 <b>MASTER DEVELOPER RUN COMPLETE</b>\n"
-                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  f"📅 Timestamp: {ts}\n"
-                  f"📁 Processed Files: <b>{total}</b>\n"
-                  f"✅ Upgraded: <b>{success}</b>\n"
-                  f"❌ Failed: <b>{failed}</b>\n"
-                  f"🆕 New Files Generated: <b>{new_created}</b>\n"
-                  f"💾 Backup Path: <code>{backup_path or 'N/A'}</code>\n"
-                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  "🔄 Continuous Execution: Triggering Next Cycle..."
-              )
-              tg_send(final_report)
-              print("\n═" * 60)
-              print(f"👑 FINISHED CYCLE | Success: {success} | Failed: {failed} | New: {new_created}")
-              print("═" * 60)
+                          status, rel, ai = fut.result()
+                          if status:
+                              ok += 1
+                              prog["upgraded"][rel] = {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ai": ai}
+                              if ok % 10 == 0:
+                                  save_prog(prog)
+                          else: fail += 1
+                      except: fail += 1
+              save_prog(prog)
+              tg(f"🏁 <b>DONE</b> — ✅ {ok} upgraded, ⏳ {fail} pending")
 
           if __name__ == "__main__":
               main()
-          ENDOFSCRIPT
+          EOFPY
+          python /tmp/dev.py
 
-          python /tmp/developer.py
-          rm -f /tmp/developer.py
-
-      - name: 📤 Commit & Push Upgraded Code
+      - name: 📤 Commit
         if: always()
         run: |
-          git config user.name "SawajStudioBot Developer"
-          git config user.email "developer@sawajstudio.com"
+          git config user.name "SawajBot Dev"
+          git config user.email "dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Personal Master Developer Upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
+          git commit -m "👑 Fast upgrade — $(date -u '+%H:%M UTC')" || echo "No changes"
           git push || echo "Push failed"
 
-      - name: 🔄 Non-Stop Continuous Self-Trigger (Endless Upgrade Loop)
+      - name: 🔄 Self-Trigger
         if: always()
         env:
           GH_TOKEN: ${{ secrets.TOKEN_GITHUB || github.token }}
-        run: |
-          echo "🚀 Re-triggering Developer Workflow for continuous 24/7 upgrades..."
-          gh workflow run "👑 SawajStudioBot Developer" || echo "Self-trigger failed"
+        run: gh workflow run "👑 SawajStudioBot Developer" || echo "Trigger skip"
