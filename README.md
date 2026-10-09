@@ -1,1 +1,2 @@
-# SAWAJ Studio Lab
+# Project ON
+Automated video generation workflow repository.
