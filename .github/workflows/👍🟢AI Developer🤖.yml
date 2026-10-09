@@ -1,16 +1,41 @@
-name: 👍🟢AI Developer🤖.yml
+name: Sawaj AI Developer
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: AI runs and is validated, nothing is written or pushed"
+        type: boolean
+        default: false
+      target_folders:
+        description: "Only folders containing these comma-separated names (blank = all)"
+        type: string
+        default: ""
+      include_workflows:
+        description: "Also review other files in .github/workflows"
+        type: boolean
+        default: true
+      allow_delete:
+        description: "Allow AI to delete or split files that nothing else uses"
+        type: boolean
+        default: true
+      max_batches:
+        description: "Stop after N batches (0 = no limit)"
+        type: string
+        default: "0"
 
 permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: sawaj-ai-developer
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 1440
+    timeout-minutes: 360
 
     steps:
       - name: Checkout
@@ -25,714 +50,1318 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: pip install requests pyyaml
+        run: pip install --quiet requests pyyaml pyflakes
 
       - name: Create Backup
         run: |
           BACKUP="backup-$(date +%Y%m%d-%H%M%S)"
-          git checkout -b "$BACKUP"
-          git push origin "$BACKUP" || true
-          git checkout main
+          git push origin "HEAD:refs/heads/$BACKUP" || true
+          git ls-remote --heads origin 'backup-*' | awk '{print $2}' | sed 's#refs/heads/##' | sort | head -n -10 | xargs -r -I{} git push origin --delete {} || true
 
       - name: Write AI Developer Script
         run: |
           cat > /tmp/ai_dev.py << 'ENDOFPYTHON'
-import os
-import re
-import ast
-import json
-import time
-import requests
-from datetime import datetime
-
-ROOT_FOLDER = "sawajstudiobot"
-WORKFLOW_FOLDER = ".github/workflows"
-SELF_FILENAME = "sawaj_ai_developer.yml"
-
-SKIP_DIRS = (
-    "__pycache__", ".git", "output", "_work", "_backups",
-    "_logs", "venv", "node_modules", "_temp_builder",
-    ".pytest_cache",
-)
-
-PROCESS_EXTENSIONS = (
-    ".py", ".yml", ".yaml", ".json", ".toml",
-    ".cfg", ".md", ".txt", ".ini",
-)
-
-AI_GROUPS = [
-    ["Gemini", "Groq", "OpenRouter", "Mistral"],
-    ["Cerebras", "NVIDIA", "Cohere", "HuggingFace"],
-]
-
-AI_TIMEOUT = 300
-MAX_OUTPUT_TOKENS = 16384
-
-KEYS = {
-    "Gemini":      os.environ.get("GEMINI_API_KEY", "").strip(),
-    "Groq":        os.environ.get("GROQ_API_KEY", "").strip(),
-    "OpenRouter":  os.environ.get("OPENROUTER_API_KEY", "").strip(),
-    "Mistral":     os.environ.get("MISTRAL_API_KEY", "").strip(),
-    "Cerebras":    os.environ.get("CEREBRAS_API_KEY", "").strip(),
-    "NVIDIA":      os.environ.get("NVIDIA_API_KEY", "").strip(),
-    "Cohere":      os.environ.get("COHERE_API_KEY", "").strip(),
-    "HuggingFace": os.environ.get("HUGGINGFACE_API_KEY", "").strip(),
-}
-
-
-def tg(msg, silent=False):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    if not token or not chat_id:
-        return
-    chunks = [msg[i:i+3800] for i in range(0, len(msg), 3800)]
-    for chunk in chunks:
-        try:
-            requests.post(
-                "https://api.telegram.org/bot" + token + "/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": chunk,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": True,
-                    "disable_notification": silent,
-                },
-                timeout=15)
-        except Exception:
-            pass
-
-
-def http_post(url, headers, payload, timeout=AI_TIMEOUT):
-    try:
-        r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-        if r.status_code == 200:
-            return r.json(), ""
-        err = "HTTP " + str(r.status_code) + ": " + r.text[:150]
-        return None, err
-    except requests.Timeout:
-        return None, "TIMEOUT"
-    except Exception as e:
-        return None, str(e)[:100]
-
-
-def call_gemini(prompt):
-    k = KEYS["Gemini"]
-    if not k:
-        return None, "NO_KEY"
-    models = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro"]
-    for m in models:
-        url = "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + k
-        d, err = http_post(url,
-            {"Content-Type": "application/json"},
-            {"contents": [{"parts": [{"text": prompt}]}],
-             "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS, "temperature": 0.3}})
-        if d and "candidates" in d:
-            try:
-                text = d["candidates"][0]["content"]["parts"][0]["text"]
-                if text and len(text) > 50:
-                    return text, "OK"
-            except Exception:
-                pass
-        print("      gemini/" + m + " -> " + str(err))
-    return None, "ALL_MODELS_FAILED"
-
-
-def call_groq(prompt):
-    k = KEYS["Groq"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post("https://api.groq.com/openai/v1/chat/completions",
-        {"Authorization": "Bearer " + k},
-        {"model": "llama-3.3-70b-versatile",
-         "messages": [{"role": "user", "content": prompt}],
-         "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
-         "temperature": 0.3})
-    if d and "choices" in d:
-        return d["choices"][0]["message"]["content"], "OK"
-    return None, err
-
-
-def call_openrouter(prompt):
-    k = KEYS["OpenRouter"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post("https://openrouter.ai/api/v1/chat/completions",
-        {"Authorization": "Bearer " + k,
-         "HTTP-Referer": "https://github.com/SAWAJ-STUDIO-LAB",
-         "X-Title": "SawajAIDev"},
-        {"model": "openai/gpt-4o-mini",
-         "messages": [{"role": "user", "content": prompt}],
-         "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
-         "temperature": 0.3})
-    if d and "choices" in d:
-        return d["choices"][0]["message"]["content"], "OK"
-    return None, err
-
-
-def call_mistral(prompt):
-    k = KEYS["Mistral"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post("https://api.mistral.ai/v1/chat/completions",
-        {"Authorization": "Bearer " + k},
-        {"model": "mistral-small-latest",
-         "messages": [{"role": "user", "content": prompt}],
-         "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
-         "temperature": 0.3})
-    if d and "choices" in d:
-        return d["choices"][0]["message"]["content"], "OK"
-    return None, err
-
-
-def call_cerebras(prompt):
-    k = KEYS["Cerebras"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post("https://api.cerebras.ai/v1/chat/completions",
-        {"Authorization": "Bearer " + k},
-        {"model": "llama-3.3-70b",
-         "messages": [{"role": "user", "content": prompt}],
-         "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
-         "temperature": 0.3})
-    if d and "choices" in d:
-        return d["choices"][0]["message"]["content"], "OK"
-    return None, err
-
-
-def call_nvidia(prompt):
-    k = KEYS["NVIDIA"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post("https://integrate.api.nvidia.com/v1/chat/completions",
-        {"Authorization": "Bearer " + k},
-        {"model": "meta/llama-3.3-70b-instruct",
-         "messages": [{"role": "user", "content": prompt}],
-         "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
-         "temperature": 0.3})
-    if d and "choices" in d:
-        return d["choices"][0]["message"]["content"], "OK"
-    return None, err
-
-
-def call_cohere(prompt):
-    k = KEYS["Cohere"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post("https://api.cohere.com/v1/chat",
-        {"Authorization": "Bearer " + k,
-         "Content-Type": "application/json"},
-        {"model": "command-r-plus", "message": prompt})
-    if d and "text" in d:
-        return d["text"], "OK"
-    return None, err
-
-
-def call_huggingface(prompt):
-    k = KEYS["HuggingFace"]
-    if not k:
-        return None, "NO_KEY"
-    d, err = http_post(
-        "https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-8B-Instruct/v1/chat/completions",
-        {"Authorization": "Bearer " + k},
-        {"model": "meta-llama/Llama-3.1-8B-Instruct",
-         "messages": [{"role": "user", "content": prompt}],
-         "max_tokens": min(MAX_OUTPUT_TOKENS, 4000),
-         "temperature": 0.3})
-    if d and "choices" in d:
-        return d["choices"][0]["message"]["content"], "OK"
-    return None, err
-
-
-AI_FUNCS = {
-    "Gemini": call_gemini, "Groq": call_groq,
-    "OpenRouter": call_openrouter, "Mistral": call_mistral,
-    "Cerebras": call_cerebras, "NVIDIA": call_nvidia,
-    "Cohere": call_cohere, "HuggingFace": call_huggingface,
-}
-
-
-def call_ai(group, prompt):
-    for ai_name in group:
-        fn = AI_FUNCS.get(ai_name)
-        if not fn:
-            continue
-        print("    Trying " + ai_name + "...")
-        try:
-            res, status = fn(prompt)
-            if res and len(res) > 50:
-                print("    SUCCESS " + ai_name + " (" + str(len(res)) + " chars)")
-                return res, ai_name
-            print("    FAIL " + ai_name + " - " + str(status))
-        except Exception as e:
-            print("    FAIL " + ai_name + " - " + str(e)[:80])
-    return None, None
-
-
-def valid_python(code):
-    try:
-        ast.parse(code)
-        return True
-    except Exception:
-        return False
-
-
-def valid_yaml(code):
-    try:
-        import yaml
-        yaml.safe_load(code)
-        return True
-    except Exception:
-        return False
-
-
-def validate(rel_path, code):
-    if rel_path.endswith(".py"):
-        return valid_python(code)
-    if rel_path.endswith((".yml", ".yaml")):
-        return valid_yaml(code)
-    return True
-
-
-def quality_score(code):
-    if not code or len(code) < 10:
-        return 0
-    s = 0.0
-    s += min(len(code), 20000) / 100
-    s += code.count('"""') * 5
-    s += code.count("try:") * 8
-    s += code.count("except") * 8
-    s += code.count("-> ") * 3
-    s += code.count(": str") * 2
-    s += code.count(": int") * 2
-    s += code.count(": bool") * 2
-    s += code.count(": Dict") * 2
-    s += code.count(": List") * 2
-    s += code.count(": Optional") * 2
-    s += code.count("logging.") * 2
-    s += code.count("class ") * 5
-    s += code.count("def ") * 3
-    s += code.count("import ") * 2
-    s += code.count("if __name__") * 5
-    s += code.count("raise ") * 3
-    s -= code.count("pass\n") * 3
-    s -= code.count("TODO") * 5
-    s -= code.count("FIXME") * 5
-    s -= code.count("# ...") * 10
-    return max(0.0, s)
-
-
-def skip(path):
-    p = path.replace("\\", "/")
-    for s in SKIP_DIRS:
-        if s in p:
-            return True
-    if SELF_FILENAME in p:
-        return True
-    return False
-
-
-def scan_folder(root):
-    files_data = {}
-    tree_lines = ["  " + root + "/"]
-    if not os.path.exists(root):
-        return files_data, "\n".join(tree_lines)
-
-    for dirpath, dirs, fnames in os.walk(root):
-        dirs[:] = [d for d in dirs if not skip(os.path.join(dirpath, d))]
-        rel_dir = os.path.relpath(dirpath, root)
-        depth = 0 if rel_dir == "." else rel_dir.count(os.sep) + 1
-        indent = "  " * (depth + 1)
-        if rel_dir != ".":
-            tree_lines.append(indent + os.path.basename(dirpath) + "/")
-
-        for fn in sorted(fnames):
-            full = os.path.join(dirpath, fn)
-            if skip(full):
-                continue
-            if not fn.endswith(PROCESS_EXTENSIONS):
-                continue
-            rel = os.path.relpath(full, root)
-            try:
-                with open(full, "r", encoding="utf-8") as f:
-                    content = f.read()
-            except Exception:
-                content = ""
-            files_data[rel] = content
-            tree_lines.append(indent + fn)
-
-    return files_data, "\n".join(tree_lines)
-
-
-def scan_all():
-    bot_files, bot_tree = scan_folder(ROOT_FOLDER)
-    wf_files, wf_tree = scan_folder(WORKFLOW_FOLDER)
-
-    all_files = {}
-    for k, v in bot_files.items():
-        all_files[ROOT_FOLDER + "/" + k] = v
-    for k, v in wf_files.items():
-        all_files[WORKFLOW_FOLDER + "/" + k] = v
-
-    tree_view = bot_tree + "\n\n" + wf_tree
-    return all_files, tree_view
-
-
-def get_folder_batches(all_files):
-    folders = {}
-    for path, code in all_files.items():
-        folder = os.path.dirname(path)
-        if folder not in folders:
-            folders[folder] = []
-        folders[folder].append((path, code))
-
-    sorted_folders = sorted(folders.keys())
-    return [(f, folders[f]) for f in sorted_folders]
-
-
-def find_original_path(returned, original_files):
-    returned = returned.strip().lstrip("/")
-    if returned in original_files:
-        return returned
-    for orig in original_files.keys():
-        if orig.endswith(returned) or orig.endswith("/" + returned):
-            return orig
-    for root in [ROOT_FOLDER, WORKFLOW_FOLDER]:
-        test = root + "/" + returned
-        if test in original_files:
-            return test
-    if returned.endswith((".yml", ".yaml")):
-        return WORKFLOW_FOLDER + "/" + returned
-    return ROOT_FOLDER + "/" + returned
-
-
-def safe_write(rel_path, code):
-    if ".." in rel_path or rel_path.startswith("/"):
-        return False
-    if skip(rel_path):
-        return False
-    if not validate(rel_path, code):
-        return False
-    try:
-        dir_name = os.path.dirname(rel_path)
-        if dir_name:
-            os.makedirs(dir_name, exist_ok=True)
-        with open(rel_path, "w", encoding="utf-8") as f:
-            f.write(code.rstrip() + "\n")
-        return True
-    except Exception:
-        return False
-
-
-def update_file(rel_path, new_code, old_code):
-    if quality_score(new_code) <= quality_score(old_code):
-        return "cancelled"
-    if safe_write(rel_path, new_code):
-        return "saved"
-    return "failed"
-
-
-def create_new_file(rel_path, code):
-    return safe_write(rel_path, code)
-
-
-def create_new_folder(rel_path):
-    try:
-        if ".." in rel_path or rel_path.startswith("/"):
-            return False
-        os.makedirs(rel_path, exist_ok=True)
-        gitkeep = os.path.join(rel_path, ".gitkeep")
-        if not os.path.exists(gitkeep):
-            with open(gitkeep, "w") as f:
-                f.write("")
-        return True
-    except Exception:
-        return False
-
-
-def delete_file(rel_path):
-    try:
-        if ".." in rel_path or rel_path.startswith("/"):
-            return False
-        if os.path.exists(rel_path):
-            os.remove(rel_path)
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def bundle(batch):
-    out = ""
-    for path, code in batch:
-        out += "\n=== FILE: " + path + " ===\n"
-        out += code if code.strip() else "# [EMPTY FILE]"
-        out += "\n=== END FILE ===\n"
-    return out
-
-
-def build_prompt(batch, folder_name, tree_view, bnum, btotal):
-    bundled = bundle(batch)
-    parts = []
-    parts.append("You are the LEAD AI ARCHITECT for SawajStudioBot.")
-    parts.append("")
-    parts.append("=== YOUR JOB ===")
-    parts.append("Analyze the folder and its files, find ALL problems, and FIX them.")
-    parts.append("")
-    parts.append("=== PROJECT STRUCTURE ===")
-    parts.append(tree_view[:2000])
-    parts.append("")
-    parts.append("=== CURRENT FOLDER: " + folder_name + "/ ===")
-    parts.append("TOTAL FILES: " + str(len(batch)))
-    parts.append("")
-    parts.append("=== WHAT TO FIX ===")
-    parts.append("1. Bugs and logic errors")
-    parts.append("2. Missing error handling (try-except)")
-    parts.append("3. Missing type hints")
-    parts.append("4. Missing docstrings")
-    parts.append("5. Hardcoded values")
-    parts.append("6. Missing logging")
-    parts.append("7. Incomplete functions")
-    parts.append("8. Wrong API URLs")
-    parts.append("9. Missing imports")
-    parts.append("10. Bad variable names")
-    parts.append("11. Duplicate code")
-    parts.append("12. API failures without fallback")
-    parts.append("13. Security issues")
-    parts.append("14. Performance issues")
-    parts.append("15. Inconsistent style")
-    parts.append("")
-    parts.append("=== ARCHITECTURE RULES ===")
-    parts.append("16. ONE FILE = ONE THING. Split if multiple things.")
-    parts.append("17. Create NEW FOLDER if needed.")
-    parts.append("18. Create NEW FILE if needed.")
-    parts.append("19. Use snake_case for filenames.")
-    parts.append("20. Merge tiny files if meaningless.")
-    parts.append("")
-    parts.append("=== RESPONSE FORMAT ===")
-    parts.append("")
-    parts.append("For UPDATING file:")
-    parts.append("=== FILE: path/to/file.py ===")
-    parts.append("(complete upgraded code)")
-    parts.append("=== END FILE ===")
-    parts.append("")
-    parts.append("For CREATING file:")
-    parts.append("=== CREATE FILE: path/to/new.py ===")
-    parts.append("(complete code)")
-    parts.append("=== END FILE ===")
-    parts.append("")
-    parts.append("For CREATING folder:")
-    parts.append("=== CREATE FOLDER: path/to/folder/ ===")
-    parts.append("=== END FOLDER ===")
-    parts.append("")
-    parts.append("For DELETING:")
-    parts.append("=== DELETE FILE: path ===")
-    parts.append("=== END DELETE ===")
-    parts.append("")
-    parts.append("For SPLITTING:")
-    parts.append("=== SPLIT FILE: path/orig.py ===")
-    parts.append("=== INTO FILE: path/p1.py ===")
-    parts.append("(code)")
-    parts.append("=== END FILE ===")
-    parts.append("=== INTO FILE: path/p2.py ===")
-    parts.append("(code)")
-    parts.append("=== END FILE ===")
-    parts.append("=== END SPLIT ===")
-    parts.append("")
-    parts.append("=== CRITICAL RULES ===")
-    parts.append("1. ZERO DELETION of logic")
-    parts.append("2. ENHANCE - add types, docstrings, error handling")
-    parts.append("3. FIX BUGS")
-    parts.append("4. EMPTY FILES - write full code")
-    parts.append("5. RETURN ALL FILES")
-    parts.append("6. VALID SYNTAX")
-    parts.append("7. NO PLACEHOLDERS")
-    parts.append("8. NO MARKDOWN FENCES")
-    parts.append("")
-    parts.append("=== BATCH " + str(bnum) + "/" + str(btotal) + " ===")
-    parts.append(bundled)
-    parts.append("")
-    parts.append("RETURN ALL " + str(len(batch)) + " FILES NOW.")
-    return "\n".join(parts)
-
-
-def clean_code(code):
-    code = re.sub(r"^```(?:python|yaml|yml|json)?\s*\n", "", code, flags=re.IGNORECASE)
-    code = re.sub(r"\n```\s*$", "", code)
-    return code.strip()
-
-
-def parse_response(text):
-    result = {"updates": [], "creates": [], "folders": [], "deletes": [], "splits": []}
-
-    pattern_upd = r"===\s*FILE:\s*(.+?)\s*===\s*\n(.*?)\n\s*===\s*END FILE\s*==="
-    for path, code in re.findall(pattern_upd, text, re.DOTALL):
-        result["updates"].append((path.strip(), clean_code(code)))
-
-    pattern_create = r"===\s*CREATE FILE:\s*(.+?)\s*===\s*\n(.*?)\n\s*===\s*END FILE\s*==="
-    for path, code in re.findall(pattern_create, text, re.DOTALL):
-        result["creates"].append((path.strip(), clean_code(code)))
-
-    pattern_folder = r"===\s*CREATE FOLDER:\s*(.+?)\s*==="
-    for path in re.findall(pattern_folder, text):
-        result["folders"].append(path.strip())
-
-    pattern_del = r"===\s*DELETE FILE:\s*(.+?)\s*==="
-    for path in re.findall(pattern_del, text):
-        result["deletes"].append(path.strip())
-
-    pattern_split = r"===\s*SPLIT FILE:\s*(.+?)\s*===\s*\n(.*?)\n\s*===\s*END SPLIT\s*==="
-    for orig, body in re.findall(pattern_split, text, re.DOTALL):
-        parts = []
-        sub = r"===\s*INTO FILE:\s*(.+?)\s*===\s*\n(.*?)\n\s*===\s*END FILE\s*==="
-        for p_path, p_code in re.findall(sub, body, re.DOTALL):
-            parts.append((p_path.strip(), clean_code(p_code)))
-        if parts:
-            result["splits"].append((orig.strip(), parts))
-
-    return result
-
-
-def main():
-    print("=" * 60)
-    print("SAWAJ AI DEVELOPER")
-    print("=" * 60)
-
-    print("")
-    print("[CHECK] API Keys:")
-    for name, key in KEYS.items():
-        print("  " + name + ": " + ("SET (" + key[:8] + "...)" if key else "MISSING"))
-
-    print("")
-    print("[CHECK] Telegram:")
-    print("  TOKEN: " + ("SET" if os.environ.get("TELEGRAM_BOT_TOKEN") else "MISSING"))
-    print("  CHAT_ID: " + ("SET" if os.environ.get("TELEGRAM_CHAT_ID") else "MISSING"))
-
-    start = time.time()
-    tg("Sawaj AI Developer Started", silent=True)
-
-    print("")
-    print("[SCAN] Scanning folders...")
-    all_files, tree_view = scan_all()
-    print("  Files: " + str(len(all_files)))
-
-    if not all_files:
-        print("  NO FILES FOUND")
-        return
-
-    folder_batches = get_folder_batches(all_files)
-    total_batches = len(folder_batches)
-    print("  Folders: " + str(total_batches))
-
-    bot_count = sum(1 for k in all_files if k.startswith(ROOT_FOLDER + "/"))
-    wf_count = sum(1 for k in all_files if k.startswith(WORKFLOW_FOLDER + "/"))
-
-    tg("Scan Complete\n\nsawajstudiobot/ - " + str(bot_count) + " files\n.github/workflows/ - " + str(wf_count) + " files\n\nTotal: " + str(len(all_files)) + " files\nTotal Folders: " + str(total_batches))
-
-    stats = {"updated": 0, "cancelled": 0, "invalid": 0, "created_files": 0, "created_folders": 0, "deleted": 0, "splits": 0}
-    ai_used = {}
-    failed_batches = []
-    error_details = []
-
-    print("")
-    print("[PROCESS] Starting " + str(total_batches) + " folders...")
-
-    for bnum, (folder_name, batch) in enumerate(folder_batches, 1):
-        print("")
-        print("[Batch " + str(bnum) + "/" + str(total_batches) + "] " + folder_name + "/")
-        print("  Files: " + str(len(batch)))
-
-        group = AI_GROUPS[(bnum - 1) % len(AI_GROUPS)]
-        print("  AI Group: " + str(group))
-
-        prompt = build_prompt(batch, folder_name, tree_view, bnum, total_batches)
-        print("  Prompt: " + str(len(prompt)) + " chars")
-
-        response, used_ai = call_ai(group, prompt)
-
-        if not response:
-            print("  BATCH FAILED")
-            failed_batches.append(bnum)
-            error_details.append("Batch " + str(bnum) + " (" + folder_name + "): all AIs failed")
-            continue
-
-        ai_used[used_ai] = ai_used.get(used_ai, 0) + 1
-        print("  SUCCESS via " + used_ai)
-
-        ops = parse_response(response)
-        print("  Updates: " + str(len(ops["updates"])) + " | Creates: " + str(len(ops["creates"])))
-
-        for path, code in ops["updates"]:
-            orig = find_original_path(path, all_files)
-            old = all_files.get(orig, "")
-            result = update_file(orig, code, old)
-            if result == "saved":
-                stats["updated"] += 1
-            elif result == "cancelled":
-                stats["cancelled"] += 1
-            elif result == "failed":
-                stats["invalid"] += 1
-
-        for path, code in ops["creates"]:
-            if create_new_file(path, code):
-                stats["created_files"] += 1
-
-        for path in ops["folders"]:
-            if create_new_folder(path):
-                stats["created_folders"] += 1
-
-        for path in ops["deletes"]:
-            if delete_file(path):
-                stats["deleted"] += 1
-
-        for orig, parts in ops["splits"]:
-            for p_path, p_code in parts:
-                if create_new_file(p_path, p_code):
-                    stats["created_files"] += 1
-            if delete_file(orig):
-                stats["deleted"] += 1
-            stats["splits"] += 1
-
-        tg("Batch " + str(bnum) + "/" + str(total_batches) + "\n" + folder_name + "/\nUpdated: " + str(len(ops["updates"])) + " | Created: " + str(len(ops["creates"])) + "\nAI: " + used_ai, silent=True)
-
-    elapsed = time.time() - start
-    mins = int(elapsed // 60)
-    secs = int(elapsed % 60)
-
-    ai_summary = "\n".join("  " + ai + ": " + str(cnt) + " folders" for ai, cnt in sorted(ai_used.items(), key=lambda x: -x[1]))
-    if not ai_summary:
-        ai_summary = "  (NONE - all AIs failed)"
-
-    print("")
-    print("=" * 60)
-    print("DONE in " + str(mins) + "m " + str(secs) + "s")
-    print("=" * 60)
-
-    final_msg = "Sawaj AI Developer Complete\n\n"
-    final_msg += "RESULTS\n"
-    final_msg += "Total Folders: " + str(total_batches) + "\n"
-    final_msg += "Files Updated: " + str(stats["updated"]) + "\n"
-    final_msg += "Cancelled: " + str(stats["cancelled"]) + "\n"
-    final_msg += "Invalid: " + str(stats["invalid"]) + "\n"
-    final_msg += "New Files: " + str(stats["created_files"]) + "\n"
-    final_msg += "New Folders: " + str(stats["created_folders"]) + "\n"
-    final_msg += "Deleted: " + str(stats["deleted"]) + "\n"
-    final_msg += "Splits: " + str(stats["splits"]) + "\n"
-    final_msg += "Failed: " + str(len(failed_batches)) + "\n"
-    final_msg += "Time: " + str(mins) + "m " + str(secs) + "s\n\n"
-    final_msg += "AI USAGE\n" + ai_summary
-
-    if error_details:
-        final_msg += "\n\nERRORS:\n" + "\n".join(error_details[:5])
-
-    tg(final_msg)
-
-
-if __name__ == "__main__":
-    main()
-ENDOFPYTHON
+          #!/usr/bin/env python3
+          """Sawaj AI Developer v2.
+
+          Scans the bot folder (and optionally the workflow folder), asks several AI
+          providers to review and upgrade each batch of files, then applies only the
+          changes that pass strict safety validation:
+
+          * syntax / YAML / JSON / TOML must parse
+          * no function, class or constant may disappear (zero logic deletion)
+          * no new undefined names (pyflakes)
+          * no placeholder / lazy output ("# ... rest of code")
+          * workflow files may not gain triggers, steps, actions or secrets
+          * files that look like they contain secrets are never sent to any AI
+          """
+          from __future__ import annotations
+
+          import ast
+          import functools
+          import json
+          import os
+          import re
+          import sys
+          import time
+          import tomllib
+          from collections import deque
+          from datetime import datetime, timezone
+          from typing import Any, Callable, Deque, Dict, List, Optional, Set, Tuple
+
+          import requests
+
+          try:
+              import yaml
+          except ImportError:  # pragma: no cover
+              yaml = None
+
+
+          # --------------------------------------------------------------------------
+          # Configuration
+          # --------------------------------------------------------------------------
+          def env_str(name: str, default: str = "") -> str:
+              return os.environ.get(name, default).strip()
+
+
+          def env_bool(name: str, default: bool = False) -> bool:
+              val = os.environ.get(name)
+              if val is None or not val.strip():
+                  return default
+              return val.strip().lower() in ("1", "true", "yes", "on")
+
+
+          def env_int(name: str, default: int) -> int:
+              try:
+                  return int(env_str(name) or default)
+              except ValueError:
+                  return default
+
+
+          ROOT_FOLDER = env_str("ROOT_FOLDER", "sawajstudiobot")
+          WORKFLOW_FOLDER = ".github/workflows"
+          SELF_FILENAME = "sawaj_ai_developer.yml"
+          SELF_NAME_RE = re.compile(r"(?m)^name:\s*Sawaj AI Developer\s*$")
+
+          DRY_RUN = env_bool("DRY_RUN", False)
+          ALLOW_DELETE = env_bool("ALLOW_DELETE", True)
+          INCLUDE_WORKFLOWS = env_bool("INCLUDE_WORKFLOWS", True)
+          TARGETS = [t.strip() for t in env_str("TARGET_FOLDERS").split(",") if t.strip()]
+          MAX_BATCHES = env_int("MAX_BATCHES", 0)
+          MAX_RUNTIME_MIN = env_int("MAX_RUNTIME_MIN", 330)
+          REQUEST_DELAY = env_int("REQUEST_DELAY", 3)
+
+          SKIP_DIRS = {
+              "__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv",
+              ".venv", "node_modules", "_temp_builder", ".pytest_cache", ".mypy_cache",
+          }
+          PROCESS_EXTENSIONS = (
+              ".py", ".yml", ".yaml", ".json", ".toml", ".cfg", ".md", ".txt", ".ini",
+          )
+
+          MAX_FILE_CHARS = 70000
+          MAX_BATCH_CHARS = 24000
+          MAX_BATCH_FILES = 8
+          MAX_CREATES_PER_BATCH = 6
+          AI_TIMEOUT = 300
+
+          AI_GROUPS = [
+              ["Gemini", "Groq", "OpenRouter", "Mistral"],
+              ["Cerebras", "NVIDIA", "Cohere", "HuggingFace"],
+          ]
+
+          KEYS: Dict[str, str] = {
+              "Gemini": env_str("GEMINI_API_KEY"),
+              "Groq": env_str("GROQ_API_KEY"),
+              "OpenRouter": env_str("OPENROUTER_API_KEY"),
+              "Mistral": env_str("MISTRAL_API_KEY"),
+              "Cerebras": env_str("CEREBRAS_API_KEY"),
+              "NVIDIA": env_str("NVIDIA_API_KEY"),
+              "Cohere": env_str("COHERE_API_KEY"),
+              "HuggingFace": env_str("HUGGINGFACE_API_KEY"),
+          }
+
+          GEMINI_MODELS = [
+              m.strip()
+              for m in env_str(
+                  "GEMINI_MODELS", "gemini-2.5-flash,gemini-2.5-pro,gemini-2.0-flash"
+              ).split(",")
+              if m.strip()
+          ]
+          GEMINI_MAX_OUT = 32768
+          COHERE_MODEL = env_str("COHERE_MODEL", "command-a-03-2025")
+
+          # OpenAI compatible providers. Models can be overridden via <NAME>_MODEL env.
+          OPENAI_COMPAT: Dict[str, Dict[str, Any]] = {
+              "Groq": {
+                  "url": "https://api.groq.com/openai/v1/chat/completions",
+                  "model": env_str("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                  "max_out": 8000,
+              },
+              "OpenRouter": {
+                  "url": "https://openrouter.ai/api/v1/chat/completions",
+                  "model": env_str("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+                  "max_out": 16000,
+                  "headers": {
+                      "HTTP-Referer": "https://github.com/SAWAJ-STUDIO-LAB",
+                      "X-Title": "SawajAIDev",
+                  },
+              },
+              "Mistral": {
+                  "url": "https://api.mistral.ai/v1/chat/completions",
+                  "model": env_str("MISTRAL_MODEL", "mistral-large-latest"),
+                  "max_out": 16000,
+              },
+              "Cerebras": {
+                  "url": "https://api.cerebras.ai/v1/chat/completions",
+                  "model": env_str("CEREBRAS_MODEL", "llama-3.3-70b"),
+                  "max_out": 8000,
+              },
+              "NVIDIA": {
+                  "url": "https://integrate.api.nvidia.com/v1/chat/completions",
+                  "model": env_str("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct"),
+                  "max_out": 4096,
+              },
+              "HuggingFace": {
+                  "url": "https://router.huggingface.co/v1/chat/completions",
+                  "model": env_str("HUGGINGFACE_MODEL", "meta-llama/Llama-3.3-70B-Instruct"),
+                  "max_out": 4000,
+              },
+          }
+
+          SENSITIVE_NAME_RE = re.compile(
+              r"(^|[_\-.])(token|tokens|secret|secrets|credential|credentials|"
+              r"client_secret|service_account|id_rsa|cookies?)([_\-.]|$)|^\.env",
+              re.IGNORECASE,
+          )
+          SECRET_RES = [
+              re.compile(p)
+              for p in (
+                  r"AIza[0-9A-Za-z_\-]{35}",
+                  r"\bsk-[A-Za-z0-9_\-]{20,}",
+                  r"\bgh[pousr]_[A-Za-z0-9]{30,}",
+                  r"\bxox[abprs]-[A-Za-z0-9\-]{10,}",
+                  r"\b\d{8,10}:[A-Za-z0-9_\-]{35}\b",
+                  r"-----BEGIN (?:RSA |EC |OPENSSH |)?PRIVATE KEY-----",
+                  r"\"(?:refresh_token|client_secret|private_key)\"\s*:\s*\"[^\"]{8,}\"",
+                  r"\bya29\.[0-9A-Za-z_\-]{20,}",
+                  r"\bgsk_[A-Za-z0-9]{20,}",
+                  r"\bnvapi-[A-Za-z0-9_\-]{20,}",
+                  r"\bhf_[A-Za-z0-9]{30,}",
+              )
+          ]
+          PLACEHOLDER_RE = re.compile(
+              r"(?i)(rest of (the )?(code|file)|\.\.\.\s*\(?(unchanged|existing|same)|"
+              r"#\s*\.\.\.|\[\s*empty file\s*\]|existing code here|your code here)"
+          )
+          SERIOUS_FLAKES = {
+              "UndefinedName", "UndefinedLocal", "UndefinedExport", "DuplicateArgument",
+              "ReturnOutsideFunction", "YieldOutsideFunction", "ContinueOutsideLoop",
+              "BreakOutsideLoop", "DefaultExceptNotLast", "TwoStarredExpressions",
+          }
+          SECRETS_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
+          HEREDOC_PY_RE = re.compile(
+              r"cat\s*>\s*(\S+\.py)\s*<<\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?:\n|$)",
+              re.DOTALL,
+          )
+
+          DISABLED: Set[str] = set()
+          COOLDOWN: Dict[str, float] = {}
+          STATS: Dict[str, int] = {
+              "updated": 0, "unchanged": 0, "rejected": 0, "created": 0,
+              "folders": 0, "deleted": 0, "splits": 0, "batches_ok": 0,
+              "batches_failed": 0,
+          }
+          AI_USED: Dict[str, int] = {}
+          REPORT: List[Dict[str, str]] = []
+          JOURNAL: Dict[str, Optional[str]] = {}  # path -> original content (None = new)
+
+
+          def log(msg: str = "") -> None:
+              print(msg, flush=True)
+
+
+          def redact(text: Any) -> str:
+              out = str(text)
+              secrets = [v for v in KEYS.values() if v]
+              secrets.append(env_str("TELEGRAM_BOT_TOKEN"))
+              for secret in secrets:
+                  if secret:
+                      out = out.replace(secret, "***")
+              return out
+
+
+          def note(file: str, action: str, reason: str = "", ai: str = "") -> None:
+              REPORT.append({"file": file, "action": action, "reason": reason, "ai": ai})
+
+
+          # --------------------------------------------------------------------------
+          # Telegram
+          # --------------------------------------------------------------------------
+          def tg(msg: str, silent: bool = False) -> None:
+              token = env_str("TELEGRAM_BOT_TOKEN")
+              chat_id = env_str("TELEGRAM_CHAT_ID")
+              if not token or not chat_id:
+                  return
+              msg = redact(msg)
+              chunks = [msg[i:i + 3800] for i in range(0, len(msg), 3800)][:3]
+              for chunk in chunks:
+                  try:
+                      requests.post(
+                          "https://api.telegram.org/bot" + token + "/sendMessage",
+                          json={
+                              "chat_id": chat_id,
+                              "text": chunk,
+                              "disable_web_page_preview": True,
+                              "disable_notification": silent,
+                          },
+                          timeout=15,
+                      )
+                  except requests.RequestException:
+                      pass
+
+
+          # --------------------------------------------------------------------------
+          # AI providers
+          # --------------------------------------------------------------------------
+          SYSTEM_PROMPT = (
+              "You are a meticulous senior Python engineer. Follow the requested output "
+              "format exactly and never truncate files."
+          )
+
+
+          def http_post(
+              url: str, headers: Dict[str, str], payload: Dict[str, Any],
+              timeout: int = AI_TIMEOUT,
+          ) -> Tuple[Optional[Dict[str, Any]], str, bool]:
+              """POST JSON. Returns (data, error, retryable)."""
+              try:
+                  r = requests.post(url, headers=headers, json=payload, timeout=timeout)
+              except requests.Timeout:
+                  return None, "TIMEOUT", True
+              except requests.RequestException as exc:
+                  return None, "NETWORK: " + type(exc).__name__, True
+              if r.status_code == 200:
+                  try:
+                      return r.json(), "", False
+                  except ValueError:
+                      return None, "BAD_JSON", True
+              retry = r.status_code in (408, 409, 425, 429) or r.status_code >= 500
+              return None, "HTTP %d: %s" % (r.status_code, redact(r.text[:150])), retry
+
+
+          def call_gemini(prompt: str) -> Tuple[Optional[str], str, bool]:
+              last_err = "NO_MODELS"
+              for model in GEMINI_MODELS:
+                  url = (
+                      "https://generativelanguage.googleapis.com/v1beta/models/"
+                      + model + ":generateContent"
+                  )
+                  data, err, _ = http_post(
+                      url,
+                      {"Content-Type": "application/json", "x-goog-api-key": KEYS["Gemini"]},
+                      {
+                          "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+                          "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                          "generationConfig": {
+                              "maxOutputTokens": GEMINI_MAX_OUT,
+                              "temperature": 0.2,
+                          },
+                      },
+                  )
+                  if data:
+                      try:
+                          parts = data["candidates"][0]["content"]["parts"]
+                          text = "".join(p.get("text", "") for p in parts)
+                          if text.strip():
+                              return text, "", False
+                          err = "EMPTY_OR_BLOCKED"
+                      except (KeyError, IndexError, TypeError):
+                          err = "BAD_RESPONSE_SHAPE"
+                  last_err = model + ": " + err
+                  log("      gemini/" + last_err)
+              return None, last_err, False
+
+
+          def call_openai_compat(name: str, prompt: str) -> Tuple[Optional[str], str, bool]:
+              cfg = OPENAI_COMPAT[name]
+              headers = {"Authorization": "Bearer " + KEYS[name]}
+              headers.update(cfg.get("headers", {}))
+              data, err, retry = http_post(
+                  cfg["url"],
+                  headers,
+                  {
+                      "model": cfg["model"],
+                      "messages": [
+                          {"role": "system", "content": SYSTEM_PROMPT},
+                          {"role": "user", "content": prompt},
+                      ],
+                      "max_tokens": cfg["max_out"],
+                      "temperature": 0.2,
+                  },
+              )
+              if data:
+                  try:
+                      text = data["choices"][0]["message"]["content"]
+                      if text and text.strip():
+                          return text, "", False
+                  except (KeyError, IndexError, TypeError):
+                      pass
+                  return None, "BAD_RESPONSE_SHAPE", False
+              return None, err, retry
+
+
+          def call_cohere(prompt: str) -> Tuple[Optional[str], str, bool]:
+              data, err, retry = http_post(
+                  "https://api.cohere.com/v2/chat",
+                  {"Authorization": "Bearer " + KEYS["Cohere"], "Content-Type": "application/json"},
+                  {
+                      "model": COHERE_MODEL,
+                      "messages": [
+                          {"role": "system", "content": SYSTEM_PROMPT},
+                          {"role": "user", "content": prompt},
+                      ],
+                      "max_tokens": 4000,
+                      "temperature": 0.2,
+                  },
+              )
+              if data:
+                  try:
+                      blocks = data["message"]["content"]
+                      text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                      if text.strip():
+                          return text, "", False
+                  except (KeyError, TypeError, AttributeError):
+                      pass
+                  return None, "BAD_RESPONSE_SHAPE", False
+              return None, err, retry
+
+
+          PROVIDERS: Dict[str, Dict[str, Any]] = {
+              "Gemini": {"fn": call_gemini, "max_out": GEMINI_MAX_OUT},
+              "Cohere": {"fn": call_cohere, "max_out": 4000},
+          }
+          for _name, _cfg in OPENAI_COMPAT.items():
+              PROVIDERS[_name] = {
+                  "fn": functools.partial(call_openai_compat, _name),
+                  "max_out": _cfg["max_out"],
+              }
+
+
+          def call_provider(name: str, prompt: str) -> Tuple[Optional[str], str]:
+              """Call one provider with retry/backoff. Returns (text, status)."""
+              fn: Callable[[str], Tuple[Optional[str], str, bool]] = PROVIDERS[name]["fn"]
+              last = ""
+              for attempt, delay in enumerate((0, 10, 30), 1):
+                  if delay:
+                      time.sleep(delay)
+                  try:
+                      text, err, retry = fn(prompt)
+                  except Exception as exc:  # provider code must never kill the run
+                      text, err, retry = None, type(exc).__name__, False
+                  if text and text.strip():
+                      return text, "OK"
+                  last = redact(err or "EMPTY")
+                  log("    FAIL %s (try %d) - %s" % (name, attempt, last))
+                  if last.startswith(("HTTP 401", "HTTP 403", "HTTP 404")):
+                      DISABLED.add(name)
+                      log("    %s disabled for this run" % name)
+                      break
+                  if not retry:
+                      break
+                  if last.startswith("HTTP 429") and attempt == 3:
+                      COOLDOWN[name] = time.time() + 180
+              return None, last
+
+
+          def provider_order(bnum: int, need_tokens: int) -> Tuple[List[str], List[str]]:
+              group = AI_GROUPS[(bnum - 1) % len(AI_GROUPS)]
+              others = [n for g in AI_GROUPS for n in g if n not in group]
+              now = time.time()
+              ordered = [
+                  n for n in list(group) + others
+                  if KEYS.get(n) and n not in DISABLED and COOLDOWN.get(n, 0) <= now
+              ]
+              fit = [n for n in ordered if PROVIDERS[n]["max_out"] >= need_tokens]
+              return fit, ordered
+
+
+          # --------------------------------------------------------------------------
+          # Validation helpers
+          # --------------------------------------------------------------------------
+          def defined_names(code: str) -> Set[str]:
+              names: Set[str] = set()
+              try:
+                  tree = ast.parse(code)
+              except SyntaxError:
+                  return names
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                      names.add(node.name)
+              for node in tree.body:
+                  targets: List[ast.expr] = []
+                  if isinstance(node, ast.Assign):
+                      targets = list(node.targets)
+                  elif isinstance(node, ast.AnnAssign):
+                      targets = [node.target]
+                  for t in targets:
+                      if isinstance(t, ast.Name) and t.id.isupper():
+                          names.add(t.id)
+              return names
+
+
+          def serious_flakes(code: str) -> int:
+              try:
+                  from pyflakes.checker import Checker
+                  tree = ast.parse(code)
+                  return sum(
+                      1 for m in Checker(tree, "candidate.py").messages
+                      if m.__class__.__name__ in SERIOUS_FLAKES
+                  )
+              except Exception:
+                  return 0
+
+
+          def workflow_signature(data: Any) -> Optional[Dict[str, Any]]:
+              if not isinstance(data, dict):
+                  return None
+              trigger = data.get("on", data.get(True))
+              jobs = data.get("jobs") or {}
+              sig: Dict[str, Any] = {"on": json.dumps(trigger, sort_keys=True, default=str), "jobs": {}}
+              for jname, job in jobs.items():
+                  steps = []
+                  if isinstance(job, dict):
+                      steps = job.get("steps") or []
+                  sig["jobs"][jname] = [
+                      (s.get("name"), str(s.get("uses", "")).split("@")[0])
+                      for s in steps if isinstance(s, dict)
+                  ]
+              return sig
+
+
+          def check_workflow(old: str, new: str) -> Tuple[bool, str]:
+              if yaml is None:
+                  return True, ""
+              try:
+                  new_data = yaml.safe_load(new)
+              except Exception:
+                  return False, "invalid YAML"
+              if not isinstance(new_data, dict) or "jobs" not in new_data:
+                  return False, "not a workflow"
+              if "on" not in new_data and True not in new_data:
+                  return False, "workflow has no trigger"
+              try:
+                  old_data = yaml.safe_load(old)
+              except Exception:
+                  old_data = None
+              if old_data is not None:
+                  if workflow_signature(old_data) != workflow_signature(new_data):
+                      return False, "workflow steps/triggers changed"
+                  if not set(SECRETS_REF_RE.findall(new)) <= set(SECRETS_REF_RE.findall(old)):
+                      return False, "new secret reference"
+              for job in (new_data.get("jobs") or {}).values():
+                  if not isinstance(job, dict):
+                      continue
+                  for step in job.get("steps") or []:
+                      run = step.get("run") if isinstance(step, dict) else None
+                      if not isinstance(run, str):
+                          continue
+                      for m in HEREDOC_PY_RE.finditer(run):
+                          try:
+                              ast.parse(m.group(3))
+                          except SyntaxError as exc:
+                              return False, "embedded python broken (line %s)" % exc.lineno
+              return True, ""
+
+
+          def check_candidate(
+              rel: str, old: str, new: str, extra_defs: Optional[Set[str]] = None
+          ) -> Tuple[bool, str]:
+              """Decide whether AI output for `rel` may replace `old`."""
+              extra_defs = extra_defs or set()
+              if not new or not new.strip():
+                  return False, "empty output"
+              if PLACEHOLDER_RE.search(new) and not PLACEHOLDER_RE.search(old):
+                  return False, "placeholder / lazy output"
+              if len(old) > 500 and len(new) > 3 * len(old):
+                  return False, "output grew more than 3x"
+              if rel.endswith(".py"):
+                  try:
+                      ast.parse(new)
+                  except SyntaxError as exc:
+                      return False, "syntax error line %s" % exc.lineno
+                  if old.strip():
+                      lost = defined_names(old) - defined_names(new) - extra_defs
+                      if lost:
+                          return False, "removed definitions: " + ", ".join(sorted(lost)[:5])
+                      if len(old) > 300 and len(new) < 0.4 * len(old):
+                          return False, "output far shorter than original"
+                  if serious_flakes(new) > serious_flakes(old):
+                      return False, "introduces undefined names"
+                  return True, ""
+              if rel.endswith((".yml", ".yaml")):
+                  if rel.startswith(WORKFLOW_FOLDER + "/"):
+                      ok, why = check_workflow(old, new)
+                      if not ok:
+                          return False, why
+                  elif yaml is not None:
+                      try:
+                          yaml.safe_load(new)
+                      except Exception:
+                          return False, "invalid YAML"
+              elif rel.endswith(".json"):
+                  try:
+                      json.loads(new)
+                  except ValueError:
+                      return False, "invalid JSON"
+              elif rel.endswith(".toml"):
+                  try:
+                      tomllib.loads(new)
+                  except tomllib.TOMLDecodeError:
+                      return False, "invalid TOML"
+              if len(old) > 200 and len(new) < 0.5 * len(old):
+                  return False, "output far shorter than original"
+              return True, ""
+
+
+          # --------------------------------------------------------------------------
+          # Scanning
+          # --------------------------------------------------------------------------
+          def is_skipped(path: str) -> bool:
+              parts = [p for p in path.replace("\\", "/").split("/") if p]
+              if any(p in SKIP_DIRS for p in parts):
+                  return True
+              return bool(parts) and parts[-1] == SELF_FILENAME
+
+
+          def looks_sensitive(rel: str, content: str) -> bool:
+              base = os.path.basename(rel).lower()
+              if not base.endswith(".py") and SENSITIVE_NAME_RE.search(base):
+                  return True
+              return any(p.search(content) for p in SECRET_RES)
+
+
+          def scan_folder(root: str, skipped: Dict[str, List[str]]) -> Dict[str, str]:
+              files: Dict[str, str] = {}
+              if not os.path.isdir(root):
+                  return files
+              for dirpath, dirs, fnames in os.walk(root):
+                  dirs[:] = sorted(
+                      d for d in dirs if not is_skipped(os.path.join(dirpath, d))
+                  )
+                  for fn in sorted(fnames):
+                      full = os.path.join(dirpath, fn)
+                      rel = full.replace(os.sep, "/")
+                      if is_skipped(rel) or not fn.endswith(PROCESS_EXTENSIONS):
+                          continue
+                      try:
+                          with open(full, "r", encoding="utf-8") as fh:
+                              content = fh.read()
+                      except (OSError, UnicodeDecodeError):
+                          skipped["unreadable"].append(rel)
+                          continue
+                      if root == WORKFLOW_FOLDER and (
+                          not fn.endswith((".yml", ".yaml")) or SELF_NAME_RE.search(content)
+                      ):
+                          continue
+                      if len(content) > MAX_FILE_CHARS:
+                          skipped["too_large"].append(rel)
+                          continue
+                      if looks_sensitive(rel, content):
+                          skipped["sensitive"].append(rel)
+                          continue
+                      if fn in ("__init__.py", ".gitkeep") and not content.strip():
+                          continue
+                      files[rel] = content
+              return files
+
+
+          def scan_all() -> Tuple[Dict[str, str], str, Dict[str, List[str]]]:
+              skipped: Dict[str, List[str]] = {"sensitive": [], "too_large": [], "unreadable": []}
+              files = scan_folder(ROOT_FOLDER, skipped)
+              if INCLUDE_WORKFLOWS:
+                  files.update(scan_folder(WORKFLOW_FOLDER, skipped))
+              return files, "\n".join(sorted(files)), skipped
+
+
+          def import_pattern(stem: str) -> "re.Pattern[str]":
+              s = re.escape(stem)
+              return re.compile(
+                  r"(?m)^\s*(?:from\s+[\w.]*\b%s\b[\w.]*\s+import\b"
+                  r"|from\s+[\w.]*\s+import\s+[^\n#]*\b%s\b"
+                  r"|import\s+[^\n#]*\b%s\b)" % (s, s, s)
+              )
+
+
+          def references_to(path: str, files: Dict[str, str]) -> List[str]:
+              stem = os.path.splitext(os.path.basename(path))[0]
+              if stem in ("__init__", ""):
+                  return []
+              pat = import_pattern(stem)
+              needle = os.path.basename(path)
+              return [
+                  other for other, content in files.items()
+                  if other != path and (pat.search(content) or needle in content)
+              ]
+
+
+          def project_index(files: Dict[str, str], limit: int = 6000) -> str:
+              lines: List[str] = []
+              for path in sorted(files):
+                  if not path.endswith(".py"):
+                      continue
+                  try:
+                      tree = ast.parse(files[path])
+                  except SyntaxError:
+                      lines.append(path + ": (syntax error)")
+                      continue
+                  items: List[str] = []
+                  for node in tree.body:
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                          args = ", ".join(a.arg for a in node.args.args)
+                          items.append("def %s(%s)" % (node.name, args))
+                      elif isinstance(node, ast.ClassDef):
+                          methods = [
+                              n.name for n in node.body
+                              if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                          ]
+                          items.append("class %s[%s]" % (node.name, ",".join(methods[:8])))
+                      elif isinstance(node, ast.Assign):
+                          for t in node.targets:
+                              if isinstance(t, ast.Name) and t.id.isupper():
+                                  items.append(t.id)
+                  refs = len(references_to(path, files))
+                  lines.append("%s (used by %d): %s" % (path, refs, "; ".join(items[:25])))
+              return "\n".join(lines)[:limit]
+
+
+          def make_batches(files: Dict[str, str]) -> List[Tuple[str, List[str]]]:
+              folders: Dict[str, List[str]] = {}
+              for path in sorted(files):
+                  folders.setdefault(os.path.dirname(path), []).append(path)
+              batches: List[Tuple[str, List[str]]] = []
+              order = sorted(folders, key=lambda f: (f.startswith(WORKFLOW_FOLDER), f))
+              for folder in order:
+                  if TARGETS and not any(t in folder for t in TARGETS):
+                      continue
+                  cur: List[str] = []
+                  size = 0
+                  for p in folders[folder]:
+                      n = len(files[p]) + 200
+                      if cur and (size + n > MAX_BATCH_CHARS or len(cur) >= MAX_BATCH_FILES):
+                          batches.append((folder, cur))
+                          cur, size = [], 0
+                      cur.append(p)
+                      size += n
+                  if cur:
+                      batches.append((folder, cur))
+              return batches
+
+
+          # --------------------------------------------------------------------------
+          # Prompt and response parsing
+          # --------------------------------------------------------------------------
+          def bundle(batch: List[str], files: Dict[str, str]) -> str:
+              out: List[str] = []
+              for path in batch:
+                  code = files[path]
+                  out.append("=== FILE: " + path + " ===")
+                  out.append(code if code.strip() else "# [EMPTY FILE]")
+                  out.append("=== END FILE ===")
+                  out.append("")
+              return "\n".join(out)
+
+
+          def build_prompt(
+              batch: List[str], folder: str, tree_view: str, index: str,
+              bnum: int, btotal: int, files: Dict[str, str],
+          ) -> str:
+              p: List[str] = [
+                  "You are the LEAD AI ARCHITECT for SawajStudioBot, a Hindi shayari "
+                  "short-video automation pipeline that runs inside GitHub Actions.",
+                  "",
+                  "=== YOUR JOB ===",
+                  "Review every file below, find real problems and FIX them. Upgrade quality "
+                  "without changing behaviour.",
+                  "",
+                  "=== PROJECT FILES ===",
+                  tree_view[:2500],
+                  "",
+                  "=== PUBLIC API OF THE WHOLE PROJECT (other files depend on these names) ===",
+                  index,
+                  "",
+                  "=== WHAT TO FIX ===",
+                  "1. Bugs and logic errors  2. Missing try/except around I/O and network",
+                  "3. Missing type hints  4. Missing docstrings  5. Hardcoded values "
+                  "(move to constants / env)",
+                  "6. Missing logging  7. Incomplete functions  8. Wrong API URLs or "
+                  "deprecated endpoints  9. Missing imports",
+                  "10. Poor local variable names  11. Duplicate code  12. API calls "
+                  "without retry or fallback",
+                  "13. Security issues (never print secrets)  14. Performance issues  "
+                  "15. Inconsistent style",
+                  "",
+                  "=== HARD RULES ===",
+                  "- ZERO DELETION of logic. Never remove or rename any function, class or "
+                  "UPPER_CASE constant; other files import them.",
+                  "- Keep all Hindi / Unicode text, prompts and templates byte-for-byte unless "
+                  "they are clearly buggy.",
+                  "- Return COMPLETE file contents. Never write '...', 'rest of code' or "
+                  "'unchanged' placeholders.",
+                  "- Never add, remove or edit secrets or API keys.",
+                  "- Only split or delete a file if its 'used by' count is 0.",
+                  "- Empty files: implement them only if their purpose is obvious from the "
+                  "name and the project; otherwise leave them out of your answer.",
+                  "- Workflow YAML: fix only real bugs. Do NOT add or remove steps, triggers, "
+                  "actions or secrets.",
+                  "- snake_case file names. No markdown fences.",
+                  "- Return ONLY files you changed. Omit unchanged files. If nothing needs "
+                  "changing reply exactly: NO_CHANGES",
+                  "",
+                  "=== RESPONSE FORMAT ===",
+                  "Update a file:",
+                  "=== FILE: path/to/file.py ===",
+                  "(complete upgraded code)",
+                  "=== END FILE ===",
+                  "",
+                  "Create a file:",
+                  "=== CREATE FILE: path/to/new.py ===",
+                  "(complete code)",
+                  "=== END FILE ===",
+                  "",
+                  "Create a folder:",
+                  "=== CREATE FOLDER: path/to/folder/ ===",
+                  "",
+                  "Delete a file:",
+                  "=== DELETE FILE: path ===",
+                  "",
+                  "Split a file:",
+                  "=== SPLIT FILE: path/orig.py ===",
+                  "=== INTO FILE: path/part1.py ===",
+                  "(code)",
+                  "=== END FILE ===",
+                  "=== INTO FILE: path/part2.py ===",
+                  "(code)",
+                  "=== END FILE ===",
+                  "=== END SPLIT ===",
+                  "",
+                  "=== BATCH %d/%d : folder %s/ (%d files) ===" % (bnum, btotal, folder, len(batch)),
+                  bundle(batch, files),
+              ]
+              return "\n".join(p)
+
+
+          RE_UPDATE = re.compile(r"^===\s*FILE:\s*(.+?)\s*===\s*$")
+          RE_CREATE = re.compile(r"^===\s*CREATE FILE:\s*(.+?)\s*===\s*$")
+          RE_FOLDER = re.compile(r"^===\s*CREATE FOLDER:\s*(.+?)\s*===\s*$")
+          RE_DELETE = re.compile(r"^===\s*DELETE FILE:\s*(.+?)\s*===\s*$")
+          RE_SPLIT = re.compile(r"^===\s*SPLIT FILE:\s*(.+?)\s*===\s*$")
+          RE_INTO = re.compile(r"^===\s*INTO FILE:\s*(.+?)\s*===\s*$")
+          RE_END_FILE = re.compile(r"^===\s*END FILE\s*===\s*$")
+          RE_END_SPLIT = re.compile(r"^===\s*END SPLIT\s*===\s*$")
+
+
+          def clean_code(code: str) -> str:
+              lines = code.replace("\r\n", "\n").split("\n")
+              while lines and not lines[0].strip():
+                  lines.pop(0)
+              while lines and not lines[-1].strip():
+                  lines.pop()
+              if lines and re.match(r"^```[\w+\-]*\s*$", lines[0]):
+                  lines.pop(0)
+              if lines and re.match(r"^```\s*$", lines[-1]):
+                  lines.pop()
+              return "\n".join(lines).strip("\n")
+
+
+          def parse_response(text: str) -> Dict[str, Any]:
+              """Line based parser. Unterminated (truncated) blocks are discarded."""
+              res: Dict[str, Any] = {
+                  "updates": [], "creates": [], "folders": [], "deletes": [],
+                  "splits": [], "truncated": [],
+              }
+              cur: Optional[Dict[str, Any]] = None
+              split: Optional[Dict[str, Any]] = None
+              for raw in text.replace("\r\n", "\n").split("\n"):
+                  line = raw.rstrip()
+                  if cur is not None:
+                      if RE_END_FILE.match(line):
+                          code = clean_code("\n".join(cur["lines"]))
+                          if cur["kind"] == "update":
+                              res["updates"].append((cur["path"], code))
+                          elif cur["kind"] == "create":
+                              res["creates"].append((cur["path"], code))
+                          elif split is not None:
+                              split["parts"].append((cur["path"], code))
+                          cur = None
+                      else:
+                          cur["lines"].append(raw)
+                      continue
+                  m = RE_UPDATE.match(line)
+                  if m:
+                      cur = {"kind": "update", "path": m.group(1), "lines": []}
+                      continue
+                  m = RE_CREATE.match(line)
+                  if m:
+                      cur = {"kind": "create", "path": m.group(1), "lines": []}
+                      continue
+                  m = RE_INTO.match(line)
+                  if m and split is not None:
+                      cur = {"kind": "into", "path": m.group(1), "lines": []}
+                      continue
+                  m = RE_SPLIT.match(line)
+                  if m:
+                      split = {"orig": m.group(1), "parts": []}
+                      continue
+                  if RE_END_SPLIT.match(line) and split is not None:
+                      if split["parts"]:
+                          res["splits"].append((split["orig"], split["parts"]))
+                      split = None
+                      continue
+                  m = RE_FOLDER.match(line)
+                  if m:
+                      res["folders"].append(m.group(1))
+                      continue
+                  m = RE_DELETE.match(line)
+                  if m:
+                      res["deletes"].append(m.group(1))
+              if cur is not None:
+                  res["truncated"].append(cur["path"])
+              return res
+
+
+          def has_ops(ops: Dict[str, Any]) -> bool:
+              return any(ops[k] for k in ("updates", "creates", "folders", "deletes", "splits"))
+
+
+          # --------------------------------------------------------------------------
+          # Applying changes
+          # --------------------------------------------------------------------------
+          def normalize_path(p: str) -> str:
+              p = p.strip().strip("`'\"").replace("\\", "/")
+              while p.startswith("./"):
+                  p = p[2:]
+              return p.lstrip("/")
+
+
+          def resolve_path(p: str, files: Dict[str, str]) -> str:
+              p = normalize_path(p)
+              if p in files:
+                  return p
+              for prefix in (ROOT_FOLDER, WORKFLOW_FOLDER):
+                  if prefix + "/" + p in files:
+                      return prefix + "/" + p
+              matches = [k for k in files if k.endswith("/" + p)]
+              if len(matches) == 1:
+                  return matches[0]
+              if p.startswith((ROOT_FOLDER + "/", WORKFLOW_FOLDER + "/")):
+                  return p
+              if p.endswith((".yml", ".yaml")) and "/" not in p:
+                  return WORKFLOW_FOLDER + "/" + p
+              return ROOT_FOLDER + "/" + p
+
+
+          def allowed_write_path(rel: str, creating: bool = False) -> bool:
+              if not rel or rel.startswith("/") or ".." in rel.split("/"):
+                  return False
+              if is_skipped(rel):
+                  return False
+              in_bot = rel.startswith(ROOT_FOLDER + "/")
+              in_wf = (
+                  INCLUDE_WORKFLOWS
+                  and rel.startswith(WORKFLOW_FOLDER + "/")
+                  and "/" not in rel[len(WORKFLOW_FOLDER) + 1:]
+              )
+              if not (in_bot or in_wf):
+                  return False
+              if in_wf and (creating or not rel.endswith((".yml", ".yaml"))):
+                  return False
+              if not rel.endswith(PROCESS_EXTENSIONS):
+                  return False
+              base = os.path.basename(rel).lower()
+              if not base.endswith(".py") and SENSITIVE_NAME_RE.search(base):
+                  return False
+              real = os.path.realpath(rel)
+              return real.startswith(os.path.realpath(".") + os.sep)
+
+
+          def write_file(rel: str, code: str, files: Dict[str, str]) -> None:
+              if rel not in JOURNAL:
+                  JOURNAL[rel] = files.get(rel)
+              if not DRY_RUN:
+                  os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
+                  with open(rel, "w", encoding="utf-8", newline="\n") as fh:
+                      fh.write(code.rstrip() + "\n")
+              files[rel] = code.rstrip() + "\n"
+
+
+          def remove_file(rel: str, files: Dict[str, str]) -> None:
+              if rel not in JOURNAL:
+                  JOURNAL[rel] = files.get(rel)
+              if not DRY_RUN and os.path.exists(rel):
+                  os.remove(rel)
+              files.pop(rel, None)
+
+
+          def apply_ops(
+              ops: Dict[str, Any], batch: List[str], files: Dict[str, str], ai: str
+          ) -> Dict[str, int]:
+              """Validate and apply one AI response. Returns per-batch counters."""
+              batch_set = set(batch)
+              c = {"updated": 0, "created": 0, "rejected": 0, "deleted": 0}
+              new_defs: Set[str] = set()
+              creates: List[Tuple[str, str]] = []
+              updates: List[Tuple[str, str]] = []
+
+              for path, code in ops["updates"]:
+                  rel = resolve_path(path, files)
+                  if rel in files:
+                      updates.append((rel, code))
+                  else:
+                      creates.append((rel, code))
+              for path, code in ops["creates"]:
+                  rel = resolve_path(path, files)
+                  (updates if rel in files else creates).append((rel, code))
+
+              # --- new files first so moved definitions can be credited to updates
+              made = 0
+              for rel, code in creates:
+                  if made >= MAX_CREATES_PER_BATCH:
+                      note(rel, "rejected", "too many new files in one batch", ai)
+                      c["rejected"] += 1
+                      continue
+                  if not allowed_write_path(rel, creating=True) or os.path.exists(rel):
+                      note(rel, "rejected", "new file path not allowed / exists", ai)
+                      c["rejected"] += 1
+                      continue
+                  ok, why = check_candidate(rel, "", code)
+                  if not ok:
+                      note(rel, "rejected", why, ai)
+                      c["rejected"] += 1
+                      continue
+                  write_file(rel, code, files)
+                  new_defs |= defined_names(code) if rel.endswith(".py") else set()
+                  note(rel, "created", "", ai)
+                  c["created"] += 1
+                  made += 1
+
+              # --- splits
+              for orig_path, parts in ops["splits"]:
+                  orig = resolve_path(orig_path, files)
+                  if orig not in batch_set or not ALLOW_DELETE or len(parts) < 2:
+                      note(orig, "rejected", "split not allowed", ai)
+                      c["rejected"] += 1
+                      continue
+                  if references_to(orig, files):
+                      note(orig, "rejected", "split of a file that other files use", ai)
+                      c["rejected"] += 1
+                      continue
+                  resolved = [(resolve_path(p, files), code) for p, code in parts]
+                  union: Set[str] = set()
+                  ok_all = True
+                  for rel, code in resolved:
+                      old = files.get(rel, "") if rel == orig else ""
+                      if not allowed_write_path(rel, creating=(rel != orig)) or (
+                          rel != orig and os.path.exists(rel)
+                      ):
+                          ok_all = False
+                          break
+                      good, why = check_candidate(rel, old, code, defined_names(files[orig]))
+                      if not good:
+                          ok_all = False
+                          break
+                      union |= defined_names(code)
+                  if not ok_all or (defined_names(files[orig]) - union):
+                      note(orig, "rejected", "split failed validation", ai)
+                      c["rejected"] += 1
+                      continue
+                  for rel, code in resolved:
+                      write_file(rel, code, files)
+                  if orig not in [r for r, _ in resolved]:
+                      remove_file(orig, files)
+                  STATS["splits"] += 1
+                  note(orig, "split", "%d parts" % len(resolved), ai)
+                  c["created"] += len(resolved)
+
+              # --- updates
+              for rel, code in updates:
+                  if rel not in batch_set:
+                      note(rel, "rejected", "not part of this batch", ai)
+                      c["rejected"] += 1
+                      continue
+                  old = files[rel]
+                  if code.strip() == old.strip():
+                      STATS["unchanged"] += 1
+                      continue
+                  if not allowed_write_path(rel):
+                      note(rel, "rejected", "path not writable", ai)
+                      c["rejected"] += 1
+                      continue
+                  ok, why = check_candidate(rel, old, code, new_defs)
+                  if not ok:
+                      note(rel, "rejected", why, ai)
+                      c["rejected"] += 1
+                      log("    REJECTED %s - %s" % (rel, why))
+                      continue
+                  write_file(rel, code, files)
+                  note(rel, "updated", "%+d chars" % (len(code) - len(old)), ai)
+                  c["updated"] += 1
+
+              # --- folders
+              for folder in ops["folders"][:3]:
+                  rel = normalize_path(folder).rstrip("/")
+                  if (
+                      rel.startswith(ROOT_FOLDER + "/")
+                      and re.fullmatch(r"[A-Za-z0-9_\-/]+", rel)
+                      and ".." not in rel.split("/")
+                      and not is_skipped(rel)
+                  ):
+                      keep = rel + "/.gitkeep"
+                      if not os.path.exists(keep) and not DRY_RUN:
+                          os.makedirs(rel, exist_ok=True)
+                          with open(keep, "w", encoding="utf-8") as fh:
+                              fh.write("")
+                          JOURNAL.setdefault(keep, None)
+                      STATS["folders"] += 1
+
+              # --- deletes
+              for path in ops["deletes"]:
+                  rel = resolve_path(path, files)
+                  if not ALLOW_DELETE or rel not in batch_set or rel.startswith(WORKFLOW_FOLDER):
+                      note(rel, "rejected", "delete not allowed", ai)
+                      c["rejected"] += 1
+                      continue
+                  if references_to(rel, files):
+                      note(rel, "rejected", "delete of a file that other files use", ai)
+                      c["rejected"] += 1
+                      continue
+                  remove_file(rel, files)
+                  note(rel, "deleted", "", ai)
+                  c["deleted"] += 1
+              return c
+
+
+          def final_verify(files: Dict[str, str]) -> List[str]:
+              """Re-read every touched file from disk and roll back anything broken."""
+              if DRY_RUN:
+                  return []
+              reverted: List[str] = []
+              for rel, original in sorted(JOURNAL.items()):
+                  exists = os.path.exists(rel)
+                  if not exists:
+                      continue
+                  try:
+                      with open(rel, "r", encoding="utf-8") as fh:
+                          text = fh.read()
+                      if rel.endswith(".py"):
+                          compile(text, rel, "exec")
+                      elif rel.endswith((".yml", ".yaml")) and yaml is not None:
+                          yaml.safe_load(text)
+                      elif rel.endswith(".json"):
+                          json.loads(text)
+                      continue
+                  except Exception:
+                      pass
+                  if original is None:
+                      os.remove(rel)
+                  else:
+                      with open(rel, "w", encoding="utf-8", newline="\n") as fh:
+                          fh.write(original)
+                  reverted.append(rel)
+                  note(rel, "reverted", "failed final verification")
+              return reverted
+
+
+          # --------------------------------------------------------------------------
+          # Batch execution
+          # --------------------------------------------------------------------------
+          def run_batch(
+              bnum: int, btotal: int, folder: str, batch: List[str],
+              files: Dict[str, str], tree_view: str,
+          ) -> Tuple[Optional[Dict[str, Any]], Optional[str], bool]:
+              """Returns (ops, ai_name, needs_split)."""
+              chars = sum(len(files[p]) for p in batch)
+              need = int(chars / 3.0) + 1500
+              fit, ordered = provider_order(bnum, need)
+              if not ordered and any(KEYS.values()):
+                  waits = [t - time.time() for t in COOLDOWN.values() if t > time.time()]
+                  if waits and min(waits) <= 300:
+                      log("  all providers cooling down, waiting %ds" % int(min(waits) + 1))
+                      time.sleep(min(waits) + 1)
+                      fit, ordered = provider_order(bnum, need)
+              if not fit:
+                  if len(batch) > 1:
+                      return None, None, True
+                  fit = sorted(ordered, key=lambda n: -PROVIDERS[n]["max_out"])[:3]
+              if not fit:
+                  return None, None, False
+
+              prompt = build_prompt(
+                  batch, folder, tree_view, project_index(files), bnum, btotal, files
+              )
+              log("  Prompt: %d chars | providers: %s" % (len(prompt), ", ".join(fit)))
+              for name in fit:
+                  if name in DISABLED:
+                      continue
+                  log("    Trying %s..." % name)
+                  text, status = call_provider(name, prompt)
+                  if not text:
+                      continue
+                  ops = parse_response(text)
+                  if ops["truncated"]:
+                      log("    truncated blocks: %s" % ", ".join(ops["truncated"][:3]))
+                  if has_ops(ops) or "NO_CHANGES" in text:
+                      log("    SUCCESS %s (%d chars)" % (name, len(text)))
+                      return ops, name, False
+                  log("    FAIL %s - no usable output" % name)
+              return None, None, False
+
+
+          def write_reports(elapsed: float, reverted: List[str], skipped: Dict[str, List[str]]) -> None:
+              try:
+                  with open("/tmp/sawaj_ai_report.json", "w", encoding="utf-8") as fh:
+                      json.dump(
+                          {
+                              "finished": datetime.now(timezone.utc).isoformat(),
+                              "dry_run": DRY_RUN,
+                              "seconds": int(elapsed),
+                              "stats": STATS,
+                              "ai_used": AI_USED,
+                              "skipped": skipped,
+                              "reverted": reverted,
+                              "files": REPORT,
+                          },
+                          fh, indent=2, ensure_ascii=False,
+                      )
+              except OSError:
+                  pass
+              summary = env_str("GITHUB_STEP_SUMMARY")
+              if not summary:
+                  return
+              lines = [
+                  "## Sawaj AI Developer%s" % (" (dry run)" if DRY_RUN else ""),
+                  "",
+                  "| Metric | Count |", "|---|---|",
+              ]
+              lines += ["| %s | %d |" % (k, v) for k, v in STATS.items()]
+              lines += ["", "### Files", "", "| File | Action | Detail | AI |", "|---|---|---|---|"]
+              for r in REPORT[:200]:
+                  lines.append(
+                      "| `%s` | %s | %s | %s |"
+                      % (r["file"], r["action"], r["reason"].replace("|", "/"), r["ai"])
+                  )
+              if any(skipped.values()):
+                  lines += ["", "### Skipped", ""]
+                  for k, v in skipped.items():
+                      if v:
+                          lines.append("- **%s**: %s" % (k, ", ".join("`%s`" % x for x in v[:20])))
+              try:
+                  with open(summary, "a", encoding="utf-8") as fh:
+                      fh.write("\n".join(lines) + "\n")
+              except OSError:
+                  pass
+
+
+          def main() -> int:
+              t0 = time.time()
+              log("=" * 60)
+              log("SAWAJ AI DEVELOPER v2" + ("  [DRY RUN]" if DRY_RUN else ""))
+              log("=" * 60)
+              log("[CHECK] API keys:")
+              for name in PROVIDERS:
+                  log("  %s: %s" % (name, "SET" if KEYS.get(name) else "MISSING"))
+              log("[CHECK] Telegram: %s" % (
+                  "SET" if env_str("TELEGRAM_BOT_TOKEN") and env_str("TELEGRAM_CHAT_ID") else "MISSING"
+              ))
+              log("[CONFIG] dry_run=%s delete=%s workflows=%s targets=%s max_batches=%d" % (
+                  DRY_RUN, ALLOW_DELETE, INCLUDE_WORKFLOWS, TARGETS or "all", MAX_BATCHES
+              ))
+              if not any(KEYS.values()):
+                  log("No API keys configured.")
+                  tg("Sawaj AI Developer: no API keys configured")
+                  return 1
+
+              tg("Sawaj AI Developer started" + (" (dry run)" if DRY_RUN else ""), silent=True)
+              files, tree_view, skipped = scan_all()
+              log("[SCAN] files: %d" % len(files))
+              for kind, lst in skipped.items():
+                  if lst:
+                      log("  skipped %s: %s" % (kind, ", ".join(lst[:10])))
+              if not files:
+                  log("NO FILES FOUND")
+                  tg("Sawaj AI Developer: no files found in %s/" % ROOT_FOLDER)
+                  return 0
+
+              queue: Deque[Tuple[str, List[str], int]] = deque(
+                  (f, b, 0) for f, b in make_batches(files)
+              )
+              total = len(queue)
+              bot_count = sum(1 for k in files if k.startswith(ROOT_FOLDER + "/"))
+              tg("Scan complete\n%s/: %d files\nworkflows: %d files\nbatches: %d\nskipped (sensitive): %d" % (
+                  ROOT_FOLDER, bot_count, len(files) - bot_count, total, len(skipped["sensitive"])
+              ))
+
+              done = 0
+              while queue:
+                  if MAX_BATCHES and done >= MAX_BATCHES:
+                      log("max_batches reached")
+                      break
+                  if time.time() - t0 > MAX_RUNTIME_MIN * 60:
+                      log("runtime guard reached, stopping before the job timeout")
+                      note("-", "stopped", "runtime guard")
+                      break
+                  folder, batch, depth = queue.popleft()
+                  batch = [p for p in batch if p in files]
+                  if not batch:
+                      continue
+                  done += 1
+                  log("")
+                  log("[Batch %d/%d] %s/ (%d files)" % (done, total, folder, len(batch)))
+                  ops, ai, needs_split = run_batch(done, total, folder, batch, files, tree_view)
+                  if needs_split or (ops is None and len(batch) > 1 and depth < 2):
+                      mid = len(batch) // 2
+                      log("  splitting batch into two halves")
+                      queue.appendleft((folder, batch[mid:], depth + 1))
+                      queue.appendleft((folder, batch[:mid], depth + 1))
+                      total += 1
+                      continue
+                  if ops is None or ai is None:
+                      STATS["batches_failed"] += 1
+                      for p in batch:
+                          note(p, "failed", "all AI providers failed")
+                      tg("Batch %d (%s/) FAILED - all AIs failed" % (done, folder), silent=True)
+                      continue
+                  STATS["batches_ok"] += 1
+                  AI_USED[ai] = AI_USED.get(ai, 0) + 1
+                  counters = apply_ops(ops, batch, files, ai)
+                  for k in ("updated", "created", "deleted", "rejected"):
+                      STATS[k] += counters[k]
+                  log("  updated=%(updated)d created=%(created)d deleted=%(deleted)d rejected=%(rejected)d" % counters)
+                  tg("Batch %d/%d %s/\nupdated %d | created %d | rejected %d\nAI: %s" % (
+                      done, total, folder, counters["updated"], counters["created"],
+                      counters["rejected"], ai), silent=True)
+                  time.sleep(REQUEST_DELAY)
+
+              reverted = final_verify(files)
+              elapsed = time.time() - t0
+              mins, secs = int(elapsed // 60), int(elapsed % 60)
+              write_reports(elapsed, reverted, skipped)
+
+              ai_lines = "\n".join(
+                  "  %s: %d batches" % (a, n) for a, n in sorted(AI_USED.items(), key=lambda x: -x[1])
+              ) or "  (none - all AIs failed)"
+              msg = (
+                  "Sawaj AI Developer complete%s\n\n"
+                  "Updated: %d\nCreated: %d\nDeleted: %d\nSplits: %d\nUnchanged: %d\n"
+                  "Rejected by safety checks: %d\nReverted: %d\n"
+                  "Batches ok/failed: %d/%d\nSkipped sensitive files: %d\nTime: %dm %ds\n\nAI USAGE\n%s"
+              ) % (
+                  " (DRY RUN)" if DRY_RUN else "",
+                  STATS["updated"], STATS["created"], STATS["deleted"], STATS["splits"],
+                  STATS["unchanged"], STATS["rejected"], len(reverted),
+                  STATS["batches_ok"], STATS["batches_failed"], len(skipped["sensitive"]),
+                  mins, secs, ai_lines,
+              )
+              if skipped["sensitive"]:
+                  msg += "\n\nFiles with secrets (never sent to AI):\n" + "\n".join(skipped["sensitive"][:8])
+              log("")
+              log(msg)
+              tg(msg)
+              return 1 if STATS["batches_ok"] == 0 and STATS["batches_failed"] > 0 else 0
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          ENDOFPYTHON
 
       - name: Run AI Developer
         env:
+          PYTHONUNBUFFERED: "1"
+          DRY_RUN: ${{ inputs.dry_run }}
+          TARGET_FOLDERS: ${{ inputs.target_folders }}
+          INCLUDE_WORKFLOWS: ${{ inputs.include_workflows }}
+          ALLOW_DELETE: ${{ inputs.allow_delete }}
+          MAX_BATCHES: ${{ inputs.max_batches }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_AI }}
@@ -745,15 +1374,32 @@ ENDOFPYTHON
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
         run: python3 /tmp/ai_dev.py
 
-      - name: Commit and Push
+      - name: Upload report
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sawaj-ai-report
+          path: /tmp/sawaj_ai_report.json
+          if-no-files-found: ignore
+
+      - name: Commit and Push
+        if: always() && !inputs.dry_run
         run: |
           git config user.name "Sawaj AI Developer"
           git config user.email "ai.dev@sawajstudio.com"
-          git add -A
+          for d in sawajstudiobot .github/workflows; do
+            if [ -e "$d" ]; then git add -A -- "$d"; fi
+          done
           if git diff --cached --quiet; then
             echo "No changes"
             exit 0
           fi
-          git commit -m "Sawaj AI Developer: Upgrade - $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "Commit failed"
-          git push origin main || echo "Push failed"
+          git commit -m "Sawaj AI Developer: upgrade - $(date -u '+%Y-%m-%d %H:%M UTC')"
+          for i in 1 2 3; do
+            if git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Push failed"
+          exit 1
