@@ -1,0 +1,185 @@
+{
+  "upgraded": {
+    "__init__.py": {
+      "time": "2026-10-09 06:43:41",
+      "ai": "Cohere"
+    },
+    "video_generator/__init__.py": {
+      "time": "2026-10-09 06:45:51",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A10_log_api.py": {
+      "time": "2026-10-09 06:48:09",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A12_tg_session.py": {
+      "time": "2026-10-09 06:49:07",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A13_tg_buffer.py": {
+      "time": "2026-10-09 06:49:41",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A14_tg_creds.py": {
+      "time": "2026-10-09 06:50:02",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A15_tg_send_raw.py": {
+      "time": "2026-10-09 06:50:32",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A16_tg_run_start.py": {
+      "time": "2026-10-09 06:50:48",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A17_tg_file_start.py": {
+      "time": "2026-10-09 06:51:00",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A18_tg_file_end.py": {
+      "time": "2026-10-09 06:51:27",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A19_tg_step.py": {
+      "time": "2026-10-09 06:51:57",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A20_tg_api_call.py": {
+      "time": "2026-10-09 06:58:45",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A21_tg_file_error.py": {
+      "time": "2026-10-09 06:59:08",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A22_tg_header.py": {
+      "time": "2026-10-09 06:59:23",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A23_tg_send.py": {
+      "time": "2026-10-09 06:59:39",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A24_tg_report.py": {
+      "time": "2026-10-09 07:00:03",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A25_tg_summary.py": {
+      "time": "2026-10-09 07:02:32",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A26_sanitize.py": {
+      "time": "2026-10-09 07:03:43",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A27_ensure_dir.py": {
+      "time": "2026-10-09 07:04:21",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A28_http_session.py": {
+      "time": "2026-10-09 07:04:35",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A29_http_download.py": {
+      "time": "2026-10-09 07:05:37",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A2_env_fallback.py": {
+      "time": "2026-10-09 07:06:20",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A2_logger.py": {
+      "time": "2026-10-09 07:10:08",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A30_cmd_runner.py": {
+      "time": "2026-10-09 07:10:43",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A31_cleanup.py": {
+      "time": "2026-10-09 07:10:59",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A32_api_tracker.py": {
+      "time": "2026-10-09 07:11:11",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A33_secrets_registry.py": {
+      "time": "2026-10-09 07:14:19",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A34_secrets_env_check.py": {
+      "time": "2026-10-09 07:19:45",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A35_ping_telegram.py": {
+      "time": "2026-10-09 07:20:09",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A36_ping_facebook.py": {
+      "time": "2026-10-09 07:20:30",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A37_ping_instagram.py": {
+      "time": "2026-10-09 07:20:53",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A38_ping_drive.py": {
+      "time": "2026-10-09 07:22:25",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A39_ping_openrouter.py": {
+      "time": "2026-10-09 07:22:42",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A40_ping_groq.py": {
+      "time": "2026-10-09 07:30:23",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A41_ping_pexels.py": {
+      "time": "2026-10-09 07:30:45",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A42_secrets_summary.py": {
+      "time": "2026-10-09 07:31:19",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A43_secrets_report.py": {
+      "time": "2026-10-09 07:32:25",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A44_msg_splitter.py": {
+      "time": "2026-10-09 07:33:32",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A45_secrets_verify.py": {
+      "time": "2026-10-09 07:35:42",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A4_upload_decider.py": {
+      "time": "2026-10-09 07:36:33",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A4_utils.py": {
+      "time": "2026-10-09 07:36:58",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A5_base_pipeline.py": {
+      "time": "2026-10-09 07:37:54",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A5_platform_checker.py": {
+      "time": "2026-10-09 07:38:35",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A6_print_logger.py": {
+      "time": "2026-10-09 07:39:27",
+      "ai": "Cohere"
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A7_log_file_start.py": {
+      "time": "2026-10-09 07:44:32",
+      "ai": "Cohere"
+    }
+  },
+  "new_files": []
+}

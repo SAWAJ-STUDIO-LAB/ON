@@ -12,56 +12,71 @@
 ║   ═══════════════                                        ║
 ║                                                          ║
 ║   🎯 Purpose:                                            ║
-║      Text cleaning + common helpers                      ║
+║      Text cleaning and common helper functions           ║
 ║                                                          ║
 ║   📖 Functions:                                          ║
-║      • sanitize()    → Clean text                        ║
-║      • ensure_dir()  → Create folder                     ║
+║      • sanitize()    → Clean and sanitize text           ║
+║      • ensure_dir()  → Ensure directory exists or create ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 """
 
 import os
 import re
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════
-# ① SANITIZE — clean text
+# ① SANITIZE — Text Sanitization and Cleaning
 # ═══════════════════════════════════════════════════════════
 
-def sanitize(t):
+def sanitize(t: str) -> str:
     """
-    Clean text:
-      - Remove invisible unicode (zero-width, bidi)
-      - Remove quotes
-      - Remove newlines
-      - Trim whitespace
+    Sanitize and clean the input text.
+
+    This function removes invisible unicode characters, quotes, newlines,
+    and trims whitespace from the input text.
 
     Args:
-        t: input text
+        t (str): The input text to be sanitized.
 
     Returns:
-        cleaned text
+        str: Cleaned and sanitized text.
     """
     if not t:
         return ""
-    t = re.sub(r'[\u200b-\u200f\ufeff\u202a-\u202e]', '', str(t))
-    return t.replace('"', '').replace("'", '').replace('\n', ' ').strip()
+    try:
+        # Remove invisible unicode characters
+        t = re.sub(r'[\u200b-\u200f\ufeff\u202a-\u202e]', '', str(t))
+        # Remove quotes and newlines, and strip whitespace
+        t = t.replace('"', '').replace("'", '').replace('\n', ' ').strip()
+    except re.error as e:
+        logger.error(f"Regex error: {e}")
+        raise ValueError("Invalid regular expression pattern") from e
+    return t
 
 
 # ═══════════════════════════════════════════════════════════
-# ② ENSURE DIR — create folder if missing
+# ② ENSURE DIR — Directory Creation
 # ═══════════════════════════════════════════════════════════
 
-def ensure_dir(path):
+def ensure_dir(path: str) -> str:
     """
-    Create folder if not exists.
+    Ensure that a directory exists, and create it if it doesn't.
 
     Args:
-        path: folder path
+        path (str): The directory path to check/create.
 
     Returns:
-        path (same)
+        str: The input path, with the directory created if it didn't exist.
     """
-    os.makedirs(path, exist_ok=True)
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as e:
+        logger.error(f"Error creating directory: {e}")
+        raise FileNotFoundError(f"Unable to create directory: {path}") from e
     return path
