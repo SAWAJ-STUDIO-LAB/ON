@@ -1,9 +1,8 @@
-name: 👍🟢Git_Cleaner🧹
+Name: 👍🟢Git_Cleaner🧹
 
 on:
-  workflow_dispatch: # Agar aap kabhi manual run karna chahein (bina kisi prompt ke direct chalega)
+  workflow_dispatch: # Manual run karne ke liye
   
-  # Yeh section dusre workflows ke complete hone par isko automatic trigger karega
   workflow_run:
     workflows: 
       - "KING — One File At A Time (Full Upgrade)"
@@ -11,41 +10,48 @@ on:
       - "Bot Update Upgrade — KING (Single YAML + Telegram File)"
     types:
       - completed
+      - requested
+      - in_progress
 
 jobs:
   clean-history:
     runs-on: ubuntu-latest
     steps:
-      - name: 🚀 Automatically Clean Completed Workflow Runs
+      - name: 🚀 Forcefully Delete All Workflow Runs (Running & Completed)
         env:
           GH_TOKEN: ${{ secrets.TOKEN_GITHUB }}
           REPO: ${{ github.repository }}
         run: |
-          echo "🔍 Dusra workflow complete ho chuka hai. Ab safai shuru ho rahi hai..."
+          echo "🔍 Sabhi status ke workflow runs ki talaash ki ja rahi hai..."
           
-          # Sirf 'completed' (success, failed, cancelled) runs ko hi uthayega.
-          # Running ya Queued workflows ekdum safe rahenge.
-          RUN_IDS=$(gh api "repos/$REPO/actions/runs?status=completed&per_page=100" --paginate --jq '.workflow_runs[].id' || true)
+          # Bina kisi status filter ke sabhi runs utha lo (in_progress, queued, completed sabhi)
+          RUN_IDS=$(gh api "repos/$REPO/actions/runs?per_page=100" --paginate --jq '.workflow_runs[].id' || true)
           
           if [ -z "$RUN_IDS" ]; then
-            echo "✅ Koi completed history nahi mili. Sab clean hai!"
+            echo "✅ Koi bhi run nahi mila. Sab clean hai!"
             exit 0
           fi
           
           TOTAL_RUNS=$(echo "$RUN_IDS" | wc -w)
-          echo "🚨 Total $TOTAL_RUNS completed runs delete hone ja rahe hain."
+          echo "🚨 Total $TOTAL_RUNS runs (chahe chal rahe hon ya khatam ho chuke hon) delete kiye ja rahe hain."
           
           SUCCESS_COUNT=0
           
           for ID in $RUN_IDS; do
             echo "🗑️ Deleting run ID: $ID..."
+            
+            # Agar koi workflow run chal raha hai, toh pehle use cancel karna padta hai taaki API error na de
+            gh api -X POST "repos/$REPO/actions/runs/$ID/cancel" --silent || true
+            
+            # Ab run ko delete kar do
             if gh api -X DELETE "repos/$REPO/actions/runs/$ID" --silent; then
               SUCCESS_COUNT=$((SUCCESS_COUNT+1))
             fi
-            # GitHub API ko safe rakhne ke liye chota sa pause
+            
+            # GitHub API rate limit se bachne ke liye chota sa pause
             sleep 0.2
           done
           
           echo "====================================================="
-          echo "🎉 Successfully $SUCCESS_COUNT runs ki history delete kar di gayi hai!"
+          echo "🎉 Successfully $SUCCESS_COUNT runs ko delete kar diya gaya hai!"
           echo "====================================================="
