@@ -27,9 +27,17 @@
 
 import math
 
+DEFAULT_OPACITY = 25
 
-def draw_god_rays(draw, t, opacity=25):
-    """Draw soft light beams from top center."""
+def draw_god_rays(draw: any, t: float, opacity: int = DEFAULT_OPACITY) -> None:
+    """
+    Draw soft light beams from top center.
+
+    Args:
+        draw (ImageDraw): Pillow ImageDraw instance.
+        t (float): Time in seconds for animation.
+        opacity (int, optional): Opacity of the rays (0-255). Defaults to DEFAULT_OPACITY.
+    """
     cx = 540
     for i in range(5):
         angle = -math.pi / 2 + (i - 2) * 0.15 + 0.02 * math.sin(t)

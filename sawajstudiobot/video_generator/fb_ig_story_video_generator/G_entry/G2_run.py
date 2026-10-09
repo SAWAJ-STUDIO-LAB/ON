@@ -31,14 +31,15 @@
 import os
 import sys
 import traceback
+from typing import NoReturn
 
 
 # ═══════════════════════════════════════════════════════════
 # ① PATH SETUP — add parent dirs to sys.path
 # ═══════════════════════════════════════════════════════════
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
+_HERE: str = os.path.dirname(os.path.abspath(__file__))
+_ROOT: str = os.path.dirname(_HERE)
 sys.path.insert(0, _ROOT)
 
 
@@ -46,8 +47,13 @@ sys.path.insert(0, _ROOT)
 # ② MAIN — main entry function
 # ═══════════════════════════════════════════════════════════
 
-def main():
-    """Main entry point — run story pipeline."""
+def main() -> NoReturn:
+    """
+    Main entry point — run story pipeline.
+
+    This function initializes the story pipeline, runs it, and handles any errors that occur.
+    It also sends reports to Telegram at the start and end of the process.
+    """
 
     # ═══════════ Import telegram helpers ═══════════
     from A_core.A3_telegram import run_start, send_full_report, send_summary
@@ -70,7 +76,7 @@ def main():
 
     except Exception as e:
         # ═══════════ Handle errors ═══════════
-        tb = traceback.format_exc()
+        tb: str = traceback.format_exc()
         log_error("G2_run.py", str(e), tb)
         send_full_report()
         send_summary()

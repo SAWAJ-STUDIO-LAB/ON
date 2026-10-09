@@ -27,10 +27,17 @@
 
 import math
 import random
+from PIL import ImageDraw
 
+def draw_embers(draw: ImageDraw.Draw, t: float, count: int = 15) -> None:
+    """
+    Draw rising orange ember particles.
 
-def draw_embers(draw, t, count=15):
-    """Draw rising orange ember particles."""
+    Args:
+        draw (ImageDraw.Draw): The drawing context.
+        t (float): The current time in seconds.
+        count (int, optional): The number of ember particles to draw. Defaults to 15.
+    """
     rng = random.Random(int(t * 5))
     for _ in range(count):
         x = rng.randint(50, 1030)

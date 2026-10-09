@@ -22,24 +22,25 @@
 """
 
 from PIL import ImageDraw
+from typing import List, Tuple
 
 
 # ═══════════════════════════════════════════════════════════
 # ① WRAP TEXT — split text into lines
 # ═══════════════════════════════════════════════════════════
 
-def wrap_text(draw, text, font, max_width=950):
+def wrap_text(draw: ImageDraw.ImageDraw, text: str, font, max_width: int = 950) -> List[str]:
     """
     Wrap text into lines that fit max_width.
 
     Args:
-        draw:      PIL ImageDraw object
-        text:      text to wrap
-        font:      PIL font object
-        max_width: maximum width per line (default 950)
+        draw (ImageDraw.ImageDraw): PIL ImageDraw object
+        text (str): Text to wrap
+        font: PIL font object
+        max_width (int): Maximum width per line (default 950)
 
     Returns:
-        list of lines
+        List[str]: List of wrapped lines
     """
     if not text:
         return []
@@ -68,17 +69,17 @@ def wrap_text(draw, text, font, max_width=950):
 # ② DRAW CENTERED — draw text at center
 # ═══════════════════════════════════════════════════════════
 
-def draw_centered(draw, text, y, font, fill, shadow=True):
+def draw_centered(draw: ImageDraw.ImageDraw, text: str, y: int, font, fill: Tuple[int, int, int, int], shadow: bool = True) -> None:
     """
-    Draw text centered at given y.
+    Draw text centered at given y position.
 
     Args:
-        draw:   PIL ImageDraw object
-        text:   text to draw
-        y:      vertical position
-        font:   PIL font
-        fill:   text color (RGBA)
-        shadow: True for black shadow
+        draw (ImageDraw.ImageDraw): PIL ImageDraw object
+        text (str): Text to draw
+        y (int): Vertical position
+        font: PIL font object
+        fill (Tuple[int, int, int, int]): Text color (RGBA)
+        shadow (bool): True for black shadow (default True)
     """
     if not text:
         return

@@ -1,12 +1,3 @@
-
-# ╔══════════════════════════════════════════════════════════╗
-# ║  📄 FILE:      B1_fonts.py                               ║
-# ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
-# ║                B_graphics/B1_fonts.py                    ║
-# ║  🎯 PURPOSE:   Font loader for all scripts               ║
-# ║  📖 FOLDER:    B_graphics                                ║
-# ╚══════════════════════════════════════════════════════════╝
-
 """
 ╔══════════════════════════════════════════════════════════╗
 ║   🔤 FONT LOADER MODULE                                  ║
@@ -31,8 +22,8 @@
 """
 
 import os
+from typing import List
 from PIL import ImageFont
-
 
 # ═══════════════════════════════════════════════════════════
 # 🔤 FONT LOADER CLASS
@@ -52,44 +43,44 @@ class FontLoader:
     # ① LOAD — load font by size + script
     # ─────────────────────────────────────────────────────
     @staticmethod
-    def load(size, script="latin", bold=True):
+    def load(size: int, script: str = "latin", bold: bool = True) -> ImageFont.FreeTypeFont:
         """
         Load font for given script.
 
         Args:
-            size:   font size in pixels
-            script: devanagari / arabic / latin
-            bold:   True for bold, False for regular
+            size (int): Font size in pixels.
+            script (str): devanagari / arabic / latin.
+            bold (bool): True for bold, False for regular.
 
         Returns:
-            PIL ImageFont object
+            ImageFont.FreeTypeFont: PIL ImageFont object.
         """
         # ───────── Devanagari (Hindi) ─────────
         if script == "devanagari":
-            paths = [
-                "~/.fonts/NotoSansDevanagari-Bold.ttf" if bold
-                else "~/.fonts/NotoSansDevanagari-Regular.ttf",
+            paths: List[str] = [
+                os.path.expanduser("~/.fonts/NotoSansDevanagari-Bold.ttf") if bold else 
+                os.path.expanduser("~/.fonts/NotoSansDevanagari-Regular.ttf"),
             ]
 
         # ───────── Arabic (Urdu) ─────────
         elif script == "arabic":
-            paths = [
-                "~/.fonts/NotoNaskhArabic-Bold.ttf" if bold
-                else "~/.fonts/NotoNaskhArabic-Regular.ttf",
+            paths: List[str] = [
+                os.path.expanduser("~/.fonts/NotoNaskhArabic-Bold.ttf") if bold else 
+                os.path.expanduser("~/.fonts/NotoNaskhArabic-Regular.ttf"),
             ]
 
         # ───────── Latin (English) ─────────
         else:
-            paths = [
-                "~/.fonts/NotoSans-Bold.ttf" if bold
-                else "~/.fonts/NotoSans-Regular.ttf",
+            paths: List[str] = [
+                os.path.expanduser("~/.fonts/NotoSans-Bold.ttf") if bold else 
+                os.path.expanduser("~/.fonts/NotoSans-Regular.ttf"),
             ]
 
         # ───────── Try each path ─────────
-        for p in paths:
+        for path in paths:
             try:
-                return ImageFont.truetype(os.path.expanduser(p), size)
-            except Exception:
+                return ImageFont.truetype(path, size)
+            except (FileNotFoundError, IOError):
                 continue
 
         # ───────── Fallback ─────────

@@ -27,35 +27,35 @@
 ╚══════════════════════════════════════════════════════════╝
 """
 
+from typing import Tuple
+from PIL import ImageDraw
 from B_graphics.B1_fonts import FontLoader
-
 
 # ═══════════════════════════════════════════════════════════
 # ① COLORS
 # ═══════════════════════════════════════════════════════════
 
-C_HINDI = (240, 130, 200)      # Pink
-C_URDU = (90, 170, 255)        # Blue
-C_ENGLISH = (255, 110, 110)    # Red
-
+C_HINDI: Tuple[int, int, int] = (240, 130, 200)  # Pink
+C_URDU: Tuple[int, int, int] = (90, 170, 255)    # Blue
+C_ENGLISH: Tuple[int, int, int] = (255, 110, 110)  # Red
 
 # ═══════════════════════════════════════════════════════════
 # ② GET CURRENT WORD
 # ═══════════════════════════════════════════════════════════
 
-def _current_word(text, elapsed, total_dur):
+def _current_word(text: str, elapsed: float, total_dur: float) -> str:
     """
     Return current word based on elapsed time.
 
     Auto-calculates speed so all words finish in total_dur.
 
     Args:
-        text:      full text
-        elapsed:   seconds passed
-        total_dur: total duration
+        text (str): Full text
+        elapsed (float): Seconds passed
+        total_dur (float): Total duration
 
     Returns:
-        current single word (str)
+        str: Current single word
     """
     if not text:
         return ""
@@ -74,13 +74,18 @@ def _current_word(text, elapsed, total_dur):
 
     return words[idx]
 
-
 # ═══════════════════════════════════════════════════════════
 # ③ DRAW BULLETS
 # ═══════════════════════════════════════════════════════════
 
-def draw_bullets(draw, hindi, urdu, english, elapsed, voice_dur,
-                 y_start=780, alpha=1.0):
+def draw_bullets(draw: ImageDraw.Draw, 
+                 hindi: str, 
+                 urdu: str, 
+                 english: str, 
+                 elapsed: float, 
+                 voice_dur: float,
+                 y_start: int = 780, 
+                 alpha: float = 1.0) -> None:
     """
     Draw 3-language bullets — ONLY CURRENT WORD per language.
 
@@ -92,14 +97,14 @@ def draw_bullets(draw, hindi, urdu, english, elapsed, voice_dur,
     Each word changes every ~0.4 seconds.
 
     Args:
-        draw:      PIL ImageDraw object
-        hindi:     Hindi text
-        urdu:      Urdu/Arabic text
-        english:   English text
-        elapsed:   seconds passed in main content
-        voice_dur: total voice duration
-        y_start:   starting Y position (default 780)
-        alpha:     opacity (0.0 to 1.0)
+        draw (ImageDraw.Draw): PIL ImageDraw object
+        hindi (str): Hindi text
+        urdu (str): Urdu/Arabic text
+        english (str): English text
+        elapsed (float): Seconds passed in main content
+        voice_dur (float): Total voice duration
+        y_start (int): Starting Y position (default 780)
+        alpha (float): Opacity (0.0 to 1.0)
     """
     # ───────── Load fonts ─────────
     font_hindi = FontLoader.load(72, "devanagari", bold=True)

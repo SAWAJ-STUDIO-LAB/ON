@@ -25,20 +25,21 @@
 ╚══════════════════════════════════════════════════════════╝
 """
 
+from PIL import ImageDraw
 
 # ═══════════════════════════════════════════════════════════
 # 📊 DRAW PROGRESS BAR
 # ═══════════════════════════════════════════════════════════
 
-def draw_progress(draw, current, total, y=1820):
+def draw_progress(draw: ImageDraw.ImageDraw, current: float, total: float, y: int = 1820) -> None:
     """
-    Draw gold progress bar at bottom.
+    Draw gold progress bar at the bottom of the image.
 
     Args:
-        draw:    PIL ImageDraw object
-        current: current time (seconds)
-        total:   total duration (seconds)
-        y:       vertical position (default 1820)
+        draw (ImageDraw.ImageDraw): PIL ImageDraw object to draw on.
+        current (float): Current time in seconds.
+        total (float): Total duration in seconds.
+        y (int, optional): Vertical position of the bar. Defaults to 1820.
     """
     # ───────── Bar dimensions ─────────
     bar_x, bar_w, bar_h = 80, 920, 8

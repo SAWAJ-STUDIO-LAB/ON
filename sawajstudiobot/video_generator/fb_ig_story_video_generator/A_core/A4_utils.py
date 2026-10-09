@@ -23,13 +23,16 @@
 
 import os
 import re
+from A_core.A2_logger import log
 
+# Constants
+_INVISIBLE_UNICODE = re.compile(r'[\u200b-\u200f\ufeff\u202a-\u202e]')
 
 # ═══════════════════════════════════════════════════════════
 # ① SANITIZE — clean text
 # ═══════════════════════════════════════════════════════════
 
-def sanitize(t):
+def sanitize(t: str) -> str:
     """
     Clean text:
       - Remove invisible unicode (zero-width, bidi)
@@ -38,30 +41,30 @@ def sanitize(t):
       - Trim whitespace
 
     Args:
-        t: input text
+        t (str): Input text to be sanitized.
 
     Returns:
-        cleaned text
+        str: Cleaned text.
     """
     if not t:
         return ""
-    t = re.sub(r'[\u200b-\u200f\ufeff\u202a-\u202e]', '', str(t))
+    t = _INVISIBLE_UNICODE.sub('', str(t))
     return t.replace('"', '').replace("'", '').replace('\n', ' ').strip()
-
 
 # ═══════════════════════════════════════════════════════════
 # ② ENSURE DIR — create folder if missing
 # ═══════════════════════════════════════════════════════════
 
-def ensure_dir(path):
+def ensure_dir(path: str) -> str:
     """
     Create folder if not exists.
 
     Args:
-        path: folder path
+        path (str): Folder path to be created.
 
     Returns:
-        path (same)
+        str: The same path after ensuring the directory exists.
     """
     os.makedirs(path, exist_ok=True)
+    log(f"Directory ensured: {path}", level="INFO")
     return path

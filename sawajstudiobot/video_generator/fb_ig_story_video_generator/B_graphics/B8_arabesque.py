@@ -23,23 +23,23 @@
 """
 
 import math
-
+from PIL import ImageDraw
 
 # ═══════════════════════════════════════════════════════════
 # 🕌 DRAW ARABESQUE
 # ═══════════════════════════════════════════════════════════
 
-def draw_arabesque(draw, t, opacity=30):
+def draw_arabesque(draw: ImageDraw.ImageDraw, t: float, opacity: int = 30) -> None:
     """
     Draw faint arabesque-style pattern (rotating).
 
     Args:
-        draw:    PIL ImageDraw object
-        t:       current time (seconds)
-        opacity: dot opacity (0-255)
+        draw (ImageDraw.ImageDraw): PIL ImageDraw object
+        t (float): Current time in seconds
+        opacity (int, optional): Dot opacity (0-255). Defaults to 30.
     """
-    cx, cy = 540, 960       # Center of frame
-    r_base = 200 + int(20 * math.sin(t * 0.5))   # Pulsing radius
+    cx, cy = 540, 960  # Center of frame
+    r_base = 200 + int(20 * math.sin(t * 0.5))  # Pulsing radius
 
     # ───────── 8 dots in circle ─────────
     for i in range(8):

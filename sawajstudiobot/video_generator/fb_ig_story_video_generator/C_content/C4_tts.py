@@ -28,6 +28,7 @@
 """
 
 import os
+from typing import Optional
 from A_core.A2_logger import log_file_start, log_file_end, log_step, log_api
 from A_core.A4_utils import sanitize
 
@@ -43,12 +44,18 @@ class TTS:
     Try ElevenLabs first, fallback to edge-tts.
     """
 
-    DEFAULT_RATE = "-7%"
+    DEFAULT_RATE: str = "-7%"
 
     # ─────────────────────────────────────────────────────
     # ① INIT
     # ─────────────────────────────────────────────────────
-    def __init__(self, base):
+    def __init__(self, base: object) -> None:
+        """
+        Initialize TTS with base pipeline.
+
+        Args:
+            base: Base pipeline object
+        """
         log_file_start("C4_tts.py", "Text-to-Speech generation")
         self.base = base
         log_file_end("C4_tts.py", "success", "Ready")
@@ -56,14 +63,14 @@ class TTS:
     # ─────────────────────────────────────────────────────
     # ② GENERATE — main generate function
     # ─────────────────────────────────────────────────────
-    def generate(self, text, outfile, rate=None):
+    def generate(self, text: str, outfile: str, rate: Optional[str] = None) -> bool:
         """
         Generate voice from text.
 
         Args:
-            text:    text to speak
-            outfile: output mp3 path
-            rate:    speech rate (default -7%)
+            text:    Text to speak
+            outfile: Output MP3 path
+            rate:    Speech rate (default -7%)
 
         Returns:
             True if successful, False otherwise
@@ -76,16 +83,16 @@ class TTS:
         text = sanitize(text)
 
         # ═══════════ Try ElevenLabs ═══════════
-        el = os.environ.get("ELEVENLABS_API_KEY")
-        if el:
+        el_api_key = os.environ.get("ELEVENLABS_API_KEY")
+        if el_api_key:
             try:
                 log_step("C4_tts.py", "Trying ElevenLabs", "info")
-                r = self.base.session.post(
+                response = self.base.session.post(
                     "https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB",
                     headers={
                         "Accept": "audio/mpeg",
                         "Content-Type": "application/json",
-                        "xi-api-key": el,
+                        "xi-api-key": el_api_key,
                     },
                     json={
                         "text": text,
@@ -97,16 +104,17 @@ class TTS:
                             "use_speaker_boost": True,
                         },
                     },
-                    timeout=50)
-                if r.status_code == 200 and len(r.content) > 5000:
+                    timeout=60)  # Increased timeout to 60 seconds
+
+                if response.status_code == 200 and len(response.content) > 5000:
                     with open(outfile, "wb") as f:
-                        f.write(r.content)
+                        f.write(response.content)
                     self.base.api_status["TTS"]["ElevenLabs"] = "success"
                     log_api("C4_tts.py", "ElevenLabs", "success",
-                            f"{len(r.content)//1024} KB")
+                            f"{len(response.content)//1024} KB")
                     return True
                 self.base.api_status["TTS"]["ElevenLabs"] = "failed"
-                log_api("C4_tts.py", "ElevenLabs", "failed", f"HTTP {r.status_code}")
+                log_api("C4_tts.py", "ElevenLabs", "failed", f"HTTP {response.status_code}")
             except Exception as e:
                 self.base.api_status["TTS"]["ElevenLabs"] = "failed"
                 log_api("C4_tts.py", "ElevenLabs", "failed", str(e)[:60])
@@ -114,15 +122,20 @@ class TTS:
         # ═══════════ Fallback: edge-tts ═══════════
         try:
             log_step("C4_tts.py", f"Trying edge-tts (rate={rate})", "info")
-            tmp = outfile + ".txt"
-            with open(tmp, "w", encoding="utf-8") as f:
+            tmp_file = outfile + ".txt"
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 f.write(text)
-            self.base.run_cmd(
-                f'edge-tts --file "{tmp}" --write-media "{outfile}" '
+            
+            # Run edge-tts command with proper quoting and error handling
+            command = (
+                f'edge-tts --file "{tmp_file}" --write-media "{outfile}" '
                 f'--voice hi-IN-MadhurNeural --rate={rate} '
-                f'--pitch=-2Hz --volume=+8%')
-            if os.path.exists(tmp):
-                os.remove(tmp)
+                f'--pitch=-2Hz --volume=+8%'
+            )
+            self.base.run_cmd(command)
+            
+            if os.path.exists(tmp_file):
+                os.remove(tmp_file)
             self.base.api_status["TTS"]["edge-tts"] = "success"
             log_api("C4_tts.py", "edge-tts", "success",
                     f"{os.path.getsize(outfile)//1024} KB")

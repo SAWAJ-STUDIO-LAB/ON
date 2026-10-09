@@ -27,20 +27,20 @@
 
 import math
 import random
-
+from PIL.ImageDraw import ImageDraw
 
 # ═══════════════════════════════════════════════════════════
 # 🔥 DRAW EMBERS
 # ═══════════════════════════════════════════════════════════
 
-def draw_embers(draw, t, count=15):
+def draw_embers(draw: ImageDraw, t: float, count: int = 15) -> None:
     """
     Draw rising orange ember particles.
 
     Args:
-        draw:  PIL ImageDraw object
-        t:     current time (seconds)
-        count: number of particles (default 15)
+        draw (ImageDraw): PIL ImageDraw object to draw on.
+        t (float): Current time in seconds, used for animation.
+        count (int, optional): Number of ember particles to draw. Defaults to 15.
     """
     # Seed changes with time — particles move
     rng = random.Random(int(t * 5))

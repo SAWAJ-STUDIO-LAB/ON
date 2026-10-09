@@ -29,19 +29,19 @@
 """
 
 from datetime import datetime
-
+from typing import Optional
 
 # ═══════════════════════════════════════════════════════════
 # ① BASIC PRINT LOGGER
 # ═══════════════════════════════════════════════════════════
 
-def log(msg, level="INFO"):
+def log(msg: str, level: str = "INFO") -> None:
     """
     Print message with timestamp.
 
     Args:
-        msg: message to log
-        level: INFO / WARNING / ERROR
+        msg (str): Message to log.
+        level (str): Log level (INFO, WARNING, ERROR). Defaults to "INFO".
     """
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] [{level}] {msg}", flush=True)
@@ -51,8 +51,14 @@ def log(msg, level="INFO"):
 # ② FILE START — called at beginning of module
 # ═══════════════════════════════════════════════════════════
 
-def log_file_start(name, purpose=""):
-    """Log start of a module."""
+def log_file_start(name: str, purpose: str = "") -> None:
+    """
+    Log start of a module.
+
+    Args:
+        name (str): Module name.
+        purpose (str, optional): Module purpose. Defaults to "".
+    """
     log(f"→ START {name}")
     from A_core.A3_telegram import file_start
     file_start(name, purpose)
@@ -62,8 +68,15 @@ def log_file_start(name, purpose=""):
 # ③ FILE END — called at end of module
 # ═══════════════════════════════════════════════════════════
 
-def log_file_end(name, status="success", note=""):
-    """Log end of a module."""
+def log_file_end(name: str, status: str = "success", note: str = "") -> None:
+    """
+    Log end of a module.
+
+    Args:
+        name (str): Module name.
+        status (str, optional): Module status. Defaults to "success".
+        note (str, optional): Additional note. Defaults to "".
+    """
     log(f"← END {name} ({status})")
     from A_core.A3_telegram import file_end
     file_end(name, status, note)
@@ -73,15 +86,15 @@ def log_file_end(name, status="success", note=""):
 # ④ STEP — called for each step inside module
 # ═══════════════════════════════════════════════════════════
 
-def log_step(name, action, result="ok", detail=""):
+def log_step(name: str, action: str, result: str = "ok", detail: str = "") -> None:
     """
     Log a specific step.
 
     Args:
-        name:   module name
-        action: what happened
-        result: ok / fail / skip / warn / info
-        detail: optional details
+        name (str): Module name.
+        action (str): Action performed.
+        result (str, optional): Result of the action. Defaults to "ok".
+        detail (str, optional): Additional details. Defaults to "".
     """
     log(f"  • {name} :: {action} → {result} {detail}")
     from A_core.A3_telegram import step
@@ -92,15 +105,15 @@ def log_step(name, action, result="ok", detail=""):
 # ⑤ API CALL — called for each external API call
 # ═══════════════════════════════════════════════════════════
 
-def log_api(name, api, status, detail=""):
+def log_api(name: str, api: str, status: str, detail: str = "") -> None:
     """
     Log an API call result.
 
     Args:
-        name:   module name
-        api:    API name
-        status: success / failed / fallback / skipped
-        detail: optional details
+        name (str): Module name.
+        api (str): API name.
+        status (str): API call status.
+        detail (str, optional): Additional details. Defaults to "".
     """
     log(f"  ★ {name} :: {api} → {status}")
     from A_core.A3_telegram import api_call
@@ -111,14 +124,14 @@ def log_api(name, api, status, detail=""):
 # ⑥ ERROR — called when an error occurs
 # ═══════════════════════════════════════════════════════════
 
-def log_error(name, error, tb=""):
+def log_error(name: str, error: str, tb: str = "") -> None:
     """
     Log an error with optional traceback.
 
     Args:
-        name:  module name
-        error: error message
-        tb:    optional traceback string
+        name (str): Module name.
+        error (str): Error message.
+        tb (str, optional): Traceback string. Defaults to "".
     """
     log(f"  ✗ {name} :: ERROR → {error}", level="ERROR")
     from A_core.A3_telegram import file_error

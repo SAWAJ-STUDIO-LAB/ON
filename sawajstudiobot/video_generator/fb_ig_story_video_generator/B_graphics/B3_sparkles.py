@@ -25,37 +25,37 @@
 
 import math
 import random
-
+from PIL.ImageDraw import ImageDraw
 
 # ═══════════════════════════════════════════════════════════
 # ✨ DRAW SPARKLES
 # ═══════════════════════════════════════════════════════════
 
-def draw_sparkles(draw, t, count=12):
+def draw_sparkles(draw: ImageDraw, t: float, count: int = 12) -> None:
     """
-    Draw floating sparkles.
+    Draw floating sparkles with random positions and pulsing opacity.
 
     Args:
-        draw:  PIL ImageDraw object
-        t:     current time (seconds)
-        count: number of sparkles (default 12)
+        draw (ImageDraw): PIL ImageDraw object to draw on
+        t (float): Current time in seconds (used for animation)
+        count (int): Number of sparkles to draw (default 12)
     """
-    # Fixed seed per 0.1s for stability
+    # Fixed seed per 0.1s for consistent animation
     rng = random.Random(int(t * 10))
 
     for _ in range(count):
-        # Random position
+        # Random position within typical video dimensions
         x = rng.randint(80, 1000)
         y = rng.randint(200, 1800)
 
-        # Random size
+        # Random size for variety
         size = rng.randint(3, 9)
 
-        # Pulsing alpha
+        # Sine wave based opacity for pulsing effect
         alpha = int(120 + 100 * math.sin(t * 3 + x))
         alpha = max(50, min(255, alpha))
 
-        # Golden sparkle
+        # Draw golden sparkle with calculated opacity
         draw.ellipse(
             [x - size, y - size, x + size, y + size],
             fill=(255, 240, 180, alpha)

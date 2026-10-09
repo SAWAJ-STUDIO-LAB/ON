@@ -12,13 +12,13 @@
 ║   ═══════════════════════                                ║
 ║                                                          ║
 ║   🎯 Purpose:                                            ║
-║      Config + Utils ke basic tests                       ║
+║      Config + Utils के बेसिक टेस्ट्स                    ║
 ║                                                          ║
 ║   📖 Tests:                                              ║
-║      • test_config_import()  → Config loads              ║
-║      • test_sanitize_basic() → Whitespace clean          ║
-║      • test_sanitize_quotes()→ Quote remove              ║
-║      • test_sanitize_empty() → Empty returns empty       ║
+║      • test_config_import()  → Config लोड होना चाहिए    ║
+║      • test_sanitize_basic() → व्हाइटस्पेस और न्यूलाइन्स क्लीन होने चाहिए  ║
+║      • test_sanitize_quotes()→ कोट्स हटाए जाने चाहिए    ║
+║      • test_sanitize_empty() → खाली इनपुट को खाली रिटर्न करना चाहिए  ║
 ║                                                          ║
 ║   ▶️  Run:                                                ║
 ║      pytest H_tests/H2_test_story.py -v                  ║
@@ -35,8 +35,9 @@ from A_core.A4_utils import sanitize
 # ═══════════════════════════════════════════════════════════
 
 def test_config_import():
-    """Config class should load."""
-    assert Config is not None
+    """Config क्लास लोड होना चाहिए और इंस्टेंस बनाया जाना चाहिए."""
+    config = Config()
+    assert isinstance(config, Config)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -44,8 +45,9 @@ def test_config_import():
 # ═══════════════════════════════════════════════════════════
 
 def test_sanitize_basic():
-    """Sanitize should trim whitespace and newlines."""
+    """sanitize फ़ंक्शन को व्हाइटस्पेस और न्यूलाइन्स को ट्रिम करना चाहिए."""
     assert sanitize("  hello\nworld  ") == "hello world"
+    assert sanitize("   multiple   \n  lines  ") == "multiple lines"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -53,8 +55,9 @@ def test_sanitize_basic():
 # ═══════════════════════════════════════════════════════════
 
 def test_sanitize_quotes():
-    """Sanitize should remove quotes."""
+    """sanitize फ़ंक्शन को कोट्स हटाने चाहिए."""
     assert sanitize("it's a 'test'") == "its a test"
+    assert sanitize("'single' and \"double\" quotes") == "single and double quotes"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -62,6 +65,6 @@ def test_sanitize_quotes():
 # ═══════════════════════════════════════════════════════════
 
 def test_sanitize_empty():
-    """Sanitize should handle empty input."""
+    """sanitize फ़ंक्शन को खाली इनपुट को खाली स्ट्रिंग रिटर्न करना चाहिए."""
     assert sanitize("") == ""
     assert sanitize(None) == ""

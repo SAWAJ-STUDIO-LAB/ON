@@ -22,10 +22,17 @@
 
 import math
 import random
+from PIL import ImageDraw
 
+def draw_sparkles(draw: ImageDraw.Draw, t: float, count: int = 12) -> None:
+    """
+    Draw floating sparkles on the image.
 
-def draw_sparkles(draw, t, count=12):
-    """Draw floating sparkles."""
+    Args:
+        draw (ImageDraw.Draw): PIL ImageDraw instance to draw on.
+        t (float): Time in seconds, used for animation.
+        count (int, optional): Number of sparkles to draw. Defaults to 12.
+    """
     rng = random.Random(int(t * 10))
     for _ in range(count):
         x = rng.randint(80, 1000)

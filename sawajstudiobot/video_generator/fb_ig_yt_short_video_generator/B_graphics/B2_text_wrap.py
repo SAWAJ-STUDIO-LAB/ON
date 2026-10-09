@@ -19,10 +19,22 @@
 """
 
 from PIL import ImageDraw
+from typing import List
 
 
-def wrap_text(draw, text, font, max_width=950):
-    """Wrap text into lines."""
+def wrap_text(draw: ImageDraw.Draw, text: str, font: ImageDraw.ImageFont, *, max_width: int = 950) -> List[str]:
+    """
+    Wrap text into lines based on maximum width.
+
+    Args:
+        draw (ImageDraw.Draw): PIL ImageDraw instance.
+        text (str): Text to wrap.
+        font (ImageDraw.ImageFont): Font to use for text measurement.
+        max_width (int, optional): Maximum width of the text. Defaults to 950.
+
+    Returns:
+        List[str]: List of wrapped lines.
+    """
     if not text:
         return []
     words = text.split()
@@ -42,8 +54,18 @@ def wrap_text(draw, text, font, max_width=950):
     return lines
 
 
-def draw_centered(draw, text, y, font, fill, shadow=True):
-    """Draw text centered."""
+def draw_centered(draw: ImageDraw.Draw, text: str, y: int, font: ImageDraw.ImageFont, fill: tuple, *, shadow: bool = True) -> None:
+    """
+    Draw text centered on the image.
+
+    Args:
+        draw (ImageDraw.Draw): PIL ImageDraw instance.
+        text (str): Text to draw.
+        y (int): Y-coordinate for the text.
+        font (ImageDraw.ImageFont): Font to use for the text.
+        fill (tuple): Color fill for the text.
+        shadow (bool, optional): Whether to draw a shadow. Defaults to True.
+    """
     if not text:
         return
     bbox = draw.textbbox((0, 0), text, font=font)

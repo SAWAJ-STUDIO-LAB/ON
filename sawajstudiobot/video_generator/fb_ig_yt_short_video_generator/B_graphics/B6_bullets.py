@@ -26,6 +26,9 @@
 ╚══════════════════════════════════════════════════════════╝
 """
 
+from typing import Optional
+from PIL.ImageDraw import ImageDraw
+
 from B_graphics.B1_fonts import FontLoader
 
 C_HINDI = (240, 130, 200)      # Pink
@@ -33,8 +36,18 @@ C_URDU = (90, 170, 255)        # Blue
 C_ENGLISH = (255, 110, 110)    # Red
 
 
-def _current_word(text, elapsed, total_dur):
-    """Get current word based on elapsed time."""
+def _current_word(text: str, elapsed: float, total_dur: float) -> str:
+    """
+    Get current word based on elapsed time.
+
+    Args:
+        text (str): Input text to process.
+        elapsed (float): Time elapsed since start.
+        total_dur (float): Total duration of the segment.
+
+    Returns:
+        str: Current word to display.
+    """
     if not text:
         return ""
     words = text.split()
@@ -47,9 +60,30 @@ def _current_word(text, elapsed, total_dur):
     return words[idx]
 
 
-def draw_bullets(draw, hindi, urdu, english, elapsed, voice_dur,
-                 y_start=780, alpha=1.0):
-    """Draw 3-language bullets — word by word."""
+def draw_bullets(
+    draw: ImageDraw,
+    hindi: str,
+    urdu: str,
+    english: str,
+    elapsed: float,
+    voice_dur: float,
+    *,
+    y_start: int = 780,
+    alpha: float = 1.0,
+) -> None:
+    """
+    Draw 3-language bullets — word by word.
+
+    Args:
+        draw (ImageDraw): PIL ImageDraw instance.
+        hindi (str): Hindi text.
+        urdu (str): Urdu text.
+        english (str): English text.
+        elapsed (float): Time elapsed since start.
+        voice_dur (float): Total voice duration.
+        y_start (int, optional): Starting Y position. Defaults to 780.
+        alpha (float, optional): Opacity. Defaults to 1.0.
+    """
     font_hindi = FontLoader.load(72, "devanagari", bold=True)
     font_arabic = FontLoader.load(72, "arabic", bold=True)
     font_latin = FontLoader.load(72, "latin", bold=True)

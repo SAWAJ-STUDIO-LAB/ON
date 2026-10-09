@@ -12,10 +12,10 @@
 ║   ═══════════════════                                    ║
 ║                                                          ║
 ║   🎯 Purpose:                                            ║
-║      Soft dark edges (breathing pulse)                   ║
+║      Soft dark edges with a breathing pulse effect.      ║
 ║                                                          ║
 ║   📖 Function:                                           ║
-║      • draw_vignette() → Darken all 4 edges              ║
+║      • draw_vignette() → Darken all 4 edges with pulse   ║
 ║                                                          ║
 ║   🎨 Effect:                                             ║
 ║      • Top / Bottom / Left / Right edges                 ║
@@ -25,26 +25,26 @@
 """
 
 import math
-
+from PIL import ImageDraw
 
 # ═══════════════════════════════════════════════════════════
 # 🌑 DRAW VIGNETTE
 # ═══════════════════════════════════════════════════════════
 
-def draw_vignette(draw, t, intensity=60):
+def draw_vignette(draw: ImageDraw.Draw, t: float, intensity: int = 60) -> None:
     """
-    Draw vignette (breathing effect).
+    Draw a vignette effect with a breathing pulse on the image.
 
     Args:
-        draw:      PIL ImageDraw object
-        t:         current time (seconds)
-        intensity: base intensity (0-100)
+        draw (ImageDraw.Draw): PIL ImageDraw object to draw on.
+        t (float): Current time in seconds, used for the breathing effect.
+        intensity (int, optional): Base intensity of the vignette (0-100). Defaults to 60.
     """
-    # ───────── Breathing pulse ─────────
+    # ───────── Breathing pulse calculation ─────────
     pulse = int(intensity + 20 * math.sin(t * 0.8))
-    pulse = max(20, min(100, pulse))
+    pulse = max(20, min(100, pulse))  # Clamp pulse between 20 and 100
 
-    # ───────── 4 edges ─────────
+    # ───────── Define the 4 edges ─────────
     edges = [
         (0, 0, 1080, 200),        # Top
         (0, 1720, 1080, 1920),    # Bottom
@@ -52,5 +52,6 @@ def draw_vignette(draw, t, intensity=60):
         (930, 0, 1080, 1920),     # Right
     ]
 
+    # ───────── Draw each edge with the calculated pulse ─────────
     for (x1, y1, x2, y2) in edges:
         draw.rectangle([x1, y1, x2, y2], fill=(0, 0, 0, pulse))

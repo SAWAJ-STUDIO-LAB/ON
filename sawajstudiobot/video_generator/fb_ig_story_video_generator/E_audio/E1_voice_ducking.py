@@ -1,14 +1,14 @@
 # ╔══════════════════════════════════════════════════════════╗
 # ║  📄 FILE:      E1_voice_ducking.py                       ║
-# ║  📁 PATH:      .../fb_ig_yt_short_video_generator/       ║
+# ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
 # ║                E_audio/E1_voice_ducking.py               ║
-# ║  🎯 PURPOSE:   Mix voice + music with ducking (SHORT)    ║
+# ║  🎯 PURPOSE:   Mix voice + music with ducking (STORY)    ║
 # ║  📖 FOLDER:    E_audio                                   ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
 ╔══════════════════════════════════════════════════════════╗
-║   🎚️  VOICE DUCKING MODULE (SHORT)                       ║
+║   🎚️  VOICE DUCKING MODULE (STORY)                       ║
 ║   ═══════════════════════                                ║
 ║                                                          ║
 ║   📖 Settings:                                            ║
@@ -19,19 +19,33 @@
 """
 
 from A_core.A2_logger import log_file_start, log_file_end, log_step
+from A_core.A5_base_pipeline import BasePipeline
+from typing import Optional
 
 
 class VoiceDucking:
-    """Mix voice over music with volume ducking (Short version)."""
+    """Mix voice over music with volume ducking (Story version)."""
 
-    def __init__(self, base):
+    def __init__(self, base: BasePipeline):
         log_file_start("E1_voice_ducking.py", "Voice + music mix")
         self.base = base
         log_file_end("E1_voice_ducking.py", "success", "Ready")
 
-    def mix(self, voice_file, music_file, out_file, voice_dur,
-            music_vol=0.20):
-        """Mix voice over music with fade in/out."""
+    def mix(self, voice_file: str, music_file: str, out_file: str, voice_dur: float,
+            music_vol: float = 0.20) -> str:
+        """
+        Mix voice over music with fade in/out.
+
+        Args:
+            voice_file (str): Path to the voice file.
+            music_file (str): Path to the music file.
+            out_file (str): Path to the output file.
+            voice_dur (float): Duration of the voice file in seconds.
+            music_vol (float, optional): Volume of the music. Defaults to 0.20.
+
+        Returns:
+            str: Path to the output file.
+        """
         log_step("E1_voice_ducking.py", "mix() starting", "ok")
 
         fade = max(voice_dur - 3.0, 1.0)

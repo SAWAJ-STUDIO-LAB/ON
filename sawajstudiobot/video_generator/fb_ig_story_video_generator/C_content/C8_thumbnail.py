@@ -31,7 +31,7 @@
 
 import os
 from PIL import Image, ImageDraw
-from A_core.A2_logger import log_file_start, log_file_end, log_step
+from A_core.A2_logger import log_file_start, log_file_end, log_step, log_error
 from B_graphics.B1_fonts import FontLoader
 
 
@@ -40,12 +40,17 @@ from B_graphics.B1_fonts import FontLoader
 # ═══════════════════════════════════════════════════════════
 
 class Thumbnail:
-    """Generate thumbnail JPG."""
+    """Generate thumbnail JPG for video."""
 
     # ─────────────────────────────────────────────────────
     # ① INIT
     # ─────────────────────────────────────────────────────
-    def __init__(self, base):
+    def __init__(self, base: object) -> None:
+        """Initialize Thumbnail class.
+
+        Args:
+            base: Base object (not used here)
+        """
         log_file_start("C8_thumbnail.py", "Thumbnail generator")
         self.base = base
         log_file_end("C8_thumbnail.py", "success", "Ready")
@@ -53,20 +58,20 @@ class Thumbnail:
     # ─────────────────────────────────────────────────────
     # ② MAKE — generate thumbnail
     # ─────────────────────────────────────────────────────
-    def make(self, hindi, urdu, english, hadith_label,
-             outfile="output/final/thumbnail.jpg"):
+    def make(self, hindi: str, urdu: str, english: str, hadith_label: str,
+             outfile: str = "output/final/thumbnail.jpg") -> str:
         """
         Generate thumbnail JPG.
 
         Args:
-            hindi:        Hindi text
-            urdu:         Urdu/Arabic text
-            english:      English text
-            hadith_label: e.g. "#341 · Sahih al-Bukhari"
-            outfile:      output path
+            hindi (str): Hindi text
+            urdu (str): Urdu/Arabic text
+            english (str): English text
+            hadith_label (str): e.g. "#341 · Sahih al-Bukhari"
+            outfile (str): output path
 
         Returns:
-            outfile path
+            str: outfile path
         """
         log_step("C8_thumbnail.py", "make() starting", "ok")
         os.makedirs(os.path.dirname(outfile), exist_ok=True)
@@ -167,8 +172,8 @@ class Thumbnail:
                 logo = Image.open("avatar.png").convert("RGBA").resize(
                     (260, 110), Image.Resampling.LANCZOS)
                 img.paste(logo, ((W - 260) // 2, 1580), logo)
-            except Exception:
-                pass
+            except Exception as e:
+                log_error("C8_thumbnail.py", f"Logo load error: {e}")
 
         # ═══════════ Save ═══════════
         img.save(outfile, "JPEG", quality=92)

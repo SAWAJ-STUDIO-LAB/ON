@@ -1,9 +1,8 @@
 # ╔══════════════════════════════════════════════════════════╗
 # ║  📄 FILE:      B9_god_rays.py                            ║
-# ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
-# ║                B_graphics/B9_god_rays.py                 ║
+# ║  📁 PATH:      .../fb_ig_story_video_generator/B_graphics/║
+# ║                B9_god_rays.py                            ║
 # ║  🎯 PURPOSE:   Soft light rays from top (god rays)       ║
-# ║  📖 FOLDER:    B_graphics                                ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
@@ -26,22 +25,22 @@
 """
 
 import math
-
+from PIL import ImageDraw
 
 # ═══════════════════════════════════════════════════════════
 # 🌤️  DRAW GOD RAYS
 # ═══════════════════════════════════════════════════════════
 
-def draw_god_rays(draw, t, opacity=25):
+def draw_god_rays(draw: ImageDraw.Draw, t: float, opacity: int = 25) -> None:
     """
     Draw soft light beams from top center.
 
     Args:
-        draw:    PIL ImageDraw object
-        t:       current time (seconds)
-        opacity: beam opacity (0-255)
+        draw (ImageDraw.Draw): PIL ImageDraw object
+        t (float): Current time in seconds
+        opacity (int, optional): Beam opacity (0-255). Defaults to 25.
     """
-    cx = 540    # Center X
+    cx = 540  # Center X
 
     # ───────── 5 beams ─────────
     for i in range(5):
