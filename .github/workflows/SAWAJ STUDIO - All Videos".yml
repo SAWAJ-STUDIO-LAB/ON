@@ -156,7 +156,7 @@ jobs:
           DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
           DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
           HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
-        run: python main.py
+        run: python Bot_code.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
