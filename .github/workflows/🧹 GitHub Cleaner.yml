@@ -1,203 +1,51 @@
-name: 🧹 GitHub Cleaner (Fully Automatic)
+name: 🧹 Auto GitHub Cleaner
 
 on:
-  workflow_dispatch:
-
-permissions:
-  actions: write
-  contents: read
-  deployments: write
+  workflow_dispatch: # Agar aap kabhi manual run karna chahein (bina kisi prompt ke direct chalega)
+  
+  # Yeh section dusre workflows ke complete hone par isko automatic trigger karega
+  workflow_run:
+    workflows: 
+      - "KING — One File At A Time (Full Upgrade)"
+      - "Full Secrets API testing"
+      - "Bot Update Upgrade — KING (Single YAML + Telegram File)"
+    types:
+      - completed
 
 jobs:
-  cleaner:
-    name: 🧹 Auto Clean
+  clean-history:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
     steps:
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 📦 Install
-        run: pip install requests
-
-      - name: 🧹 Run Automatic Cleaner
+      - name: 🚀 Automatically Clean Completed Workflow Runs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          REPO: ${{ github.repository }}
         run: |
-          cat > /tmp/cleaner.py << 'END'
-          import os
-          import time
-          import requests
-          from datetime import datetime
-          from collections import defaultdict
-
-          TOKEN = os.environ["GITHUB_TOKEN"]
-          REPO = os.environ["GITHUB_REPOSITORY"]
-          KEEP_LAST = 3          # har workflow ke 3 latest finished runs rakhega
-          CLEAR_CACHE = True
-          CLEAR_ARTIFACTS = True
-          CLEAR_DEPLOYMENTS = True
-
-          HEADERS = {
-              "Authorization": f"Bearer {TOKEN}",
-              "Accept": "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28"
-          }
-
-          def tg(msg):
-              token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-              chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-              if token and chat:
-                  try:
-                      requests.post(
-                          f"https://api.telegram.org/bot{token}/sendMessage",
-                          json={"chat_id": chat, "text": msg[:4000], "parse_mode": "HTML"},
-                          timeout=15
-                      )
-                  except:
-                      pass
-
-          def get(url):
-              r = requests.get(url, headers=HEADERS, timeout=30)
-              if r.status_code == 200:
-                  return r.json()
-              return None
-
-          def delete(url):
-              r = requests.delete(url, headers=HEADERS, timeout=30)
-              return r.status_code in (204, 200)
-
-          def clean_finished_runs():
-              print("\n🧹 Cleaning finished workflow runs...")
-              deleted = 0
-              page = 1
-
-              while True:
-                  data = get(f"https://api.github.com/repos/{REPO}/actions/runs?per_page=100&page={page}")
-                  if not data or not data.get("workflow_runs"):
-                      break
-
-                  runs = data["workflow_runs"]
-                  if not runs:
-                      break
-
-                  groups = defaultdict(list)
-                  for run in runs:
-                      status = run.get("status", "")
-                      if status in ("in_progress", "queued", "waiting", "requested", "pending"):
-                          print(f"   ⏭️ Skipping RUNNING: {run['name']} #{run['run_number']}")
-                          continue
-                      groups[run["name"]].append(run)
-
-                  for name, wf_runs in groups.items():
-                      wf_runs.sort(key=lambda x: x["created_at"], reverse=True)
-                      to_delete = wf_runs[KEEP_LAST:]
-
-                      for run in to_delete:
-                          if delete(f"https://api.github.com/repos/{REPO}/actions/runs/{run['id']}"):
-                              deleted += 1
-                              print(f"   ✅ Deleted: {run['name']} #{run['run_number']}")
-                          time.sleep(0.35)
-
-                  if len(runs) < 100:
-                      break
-                  page += 1
-                  time.sleep(1)
-
-              print(f"✅ Finished runs deleted: {deleted}")
-              return deleted
-
-          def clean_cache():
-              print("\n🧹 Cleaning Cache...")
-              deleted = 0
-              page = 1
-              while True:
-                  data = get(f"https://api.github.com/repos/{REPO}/actions/caches?per_page=100&page={page}")
-                  if not data or not data.get("actions_caches"):
-                      break
-                  for c in data["actions_caches"]:
-                      if delete(f"https://api.github.com/repos/{REPO}/actions/caches/{c['id']}"):
-                          deleted += 1
-                      time.sleep(0.2)
-                  if len(data["actions_caches"]) < 100:
-                      break
-                  page += 1
-              print(f"✅ Caches deleted: {deleted}")
-              return deleted
-
-          def clean_artifacts():
-              print("\n🧹 Cleaning Artifacts...")
-              deleted = 0
-              page = 1
-              while True:
-                  data = get(f"https://api.github.com/repos/{REPO}/actions/artifacts?per_page=100&page={page}")
-                  if not data or not data.get("artifacts"):
-                      break
-                  for a in data["artifacts"]:
-                      if delete(f"https://api.github.com/repos/{REPO}/actions/artifacts/{a['id']}"):
-                          deleted += 1
-                      time.sleep(0.2)
-                  if len(data["artifacts"]) < 100:
-                      break
-                  page += 1
-              print(f"✅ Artifacts deleted: {deleted}")
-              return deleted
-
-          def clean_deployments():
-              print("\n🧹 Cleaning Deployments...")
-              deleted = 0
-              page = 1
-              while True:
-                  data = get(f"https://api.github.com/repos/{REPO}/deployments?per_page=100&page={page}")
-                  if not data or not isinstance(data, list) or not data:
-                      break
-                  for d in data:
-                      if delete(f"https://api.github.com/repos/{REPO}/deployments/{d['id']}"):
-                          deleted += 1
-                      time.sleep(0.3)
-                  if len(data) < 100:
-                      break
-                  page += 1
-              print(f"✅ Deployments deleted: {deleted}")
-              return deleted
-
-          def main():
-              ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              print("═" * 60)
-              print("🧹 FULLY AUTOMATIC SAFE CLEANER")
-              print("═" * 60)
-
-              tg(f"🧹 <b>Auto Cleaner Started</b>\n🕐 {ts}")
-
-              total = 0
-              total += clean_finished_runs()
-              total += clean_cache()
-              total += clean_artifacts()
-              total += clean_deployments()
-
-              msg = (
-                  f"🧹 <b>Auto Cleaner Finished</b>\n"
-                  f"🕐 {ts}\n\n"
-                  f"✅ Total cleaned: <b>{total}</b>\n\n"
-                  f"📌 Running workflows → Safe\n"
-                  f"📌 Code / Files / Folders → Safe"
-              )
-              tg(msg)
-              print(f"\n🧹 DONE — Cleaned {total} items")
-
-          if __name__ == "__main__":
-              main()
-          END
-
-          python /tmp/cleaner.py
-          rm -f /tmp/cleaner.py
-
-      - name: ✅ Summary
-        run: |
-          echo "## 🧹 Automatic Cleaner Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Everything cleaned automatically. No code was touched." >> $GITHUB_STEP_SUMMARY
+          echo "🔍 Dusra workflow complete ho chuka hai. Ab safai shuru ho rahi hai..."
+          
+          # Sirf 'completed' (success, failed, cancelled) runs ko hi uthayega.
+          # Running ya Queued workflows ekdum safe rahenge.
+          RUN_IDS=$(gh api "repos/$REPO/actions/runs?status=completed&per_page=100" --paginate --jq '.workflow_runs[].id' || true)
+          
+          if [ -z "$RUN_IDS" ]; then
+            echo "✅ Koi completed history nahi mili. Sab clean hai!"
+            exit 0
+          fi
+          
+          TOTAL_RUNS=$(echo "$RUN_IDS" | wc -w)
+          echo "🚨 Total $TOTAL_RUNS completed runs delete hone ja rahe hain."
+          
+          SUCCESS_COUNT=0
+          
+          for ID in $RUN_IDS; do
+            echo "🗑️ Deleting run ID: $ID..."
+            if gh api -X DELETE "repos/$REPO/actions/runs/$ID" --silent; then
+              SUCCESS_COUNT=$((SUCCESS_COUNT+1))
+            fi
+            # GitHub API ko safe rakhne ke liye chota sa pause
+            sleep 0.2
+          done
+          
+          echo "====================================================="
+          echo "🎉 Successfully $SUCCESS_COUNT runs ki history delete kar di gayi hai!"
+          echo "====================================================="
