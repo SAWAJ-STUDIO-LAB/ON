@@ -1,10 +1,13 @@
-name: 👑 SawajStudioBot Developer 
+name: 👑 SawajStudioBot Developer
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [continue-upgrade]
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   developer:
@@ -13,7 +16,7 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 📥 Checkout
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -23,12 +26,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📦 Install Packages
+      - name: 📦 Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: 👑 Run Personal Developer
+      - name: 👑 Run SawajStudioBot Master Developer
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -62,11 +65,10 @@ jobs:
           MAX_TOKENS = 8000
 
           ALL_AIS = [
-              "OpenRouter", "Groq", "Gemini", "Mistral",
+              "Groq", "Gemini", "OpenRouter", "Mistral",
               "Cerebras", "Cohere", "NVIDIA", "HuggingFace"
           ]
 
-          # Priority order (important files first)
           PRIORITY_KEYWORDS = [
               "config", "logger", "telegram", "entry", "main", "run",
               "generator", "uploader", "core", "A1_", "A2_", "A3_",
@@ -95,15 +97,15 @@ jobs:
               for p in parts:
                   if p in ("__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv", "node_modules"):
                       return True
-              if ROOT_SKIP in full_path:
-                  return True
-              if "Code editor" in full_path or "_temp_builder" in full_path:
+              if ROOT_SKIP in full_path or "Code editor" in full_path or "_temp_builder" in full_path:
                   return True
               return False
 
           def scan_all():
               files = []
               folders = set()
+              if not os.path.exists(BOT_ROOT):
+                  os.makedirs(BOT_ROOT, exist_ok=True)
               for root, dirs, fnames in os.walk(BOT_ROOT):
                   dirs[:] = [d for d in dirs if not is_skipped(os.path.join(root, d))]
                   rel_dir = os.path.relpath(root, BOT_ROOT)
@@ -119,26 +121,6 @@ jobs:
                           files.append(rel)
               return sorted(files), sorted(folders)
 
-          def priority_sort(files):
-              def score(f):
-                  f_lower = f.lower()
-                  for i, kw in enumerate(PRIORITY_KEYWORDS):
-                      if kw in f_lower:
-                          return i
-                  return 999
-              return sorted(files, key=score)
-
-          def build_structure_text(folders, files):
-              lines = ["═══ FULL PROJECT STRUCTURE ═══"]
-              for f in folders:
-                  lines.append(f"{f}/")
-              lines.append("")
-              lines.append("═══ ALL FILES ═══")
-              for f in files:
-                  lines.append(f)
-              lines.append("═══ END STRUCTURE ═══")
-              return "\n".join(lines)
-
           def load_progress():
               if os.path.exists(PROGRESS_FILE):
                   try:
@@ -153,6 +135,30 @@ jobs:
               with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
                   json.dump(data, f, indent=2)
 
+          def smart_sort_files(files, progress):
+              upgraded_dict = progress.get("upgraded", {})
+              def key_func(f):
+                  f_lower = f.lower()
+                  prio = 999
+                  for i, kw in enumerate(PRIORITY_KEYWORDS):
+                      if kw in f_lower:
+                          prio = i
+                          break
+                  last_time = upgraded_dict.get(f, {}).get("time", "1970-01-01 00:00:00")
+                  return (last_time, prio, f)
+              return sorted(files, key=key_func)
+
+          def build_structure_text(folders, files):
+              lines = ["═══ FULL PROJECT STRUCTURE ═══"]
+              for f in folders:
+                  lines.append(f"{f}/")
+              lines.append("")
+              lines.append("═══ ALL FILES ═══")
+              for f in files:
+                  lines.append(f)
+              lines.append("═══ END STRUCTURE ═══")
+              return "\n".join(lines)
+
           def _post(url, headers, payload, timeout=TIMEOUT, retries=2):
               for attempt in range(1, retries + 1):
                   try:
@@ -160,34 +166,23 @@ jobs:
                       if r.status_code == 200:
                           return r.json()
                       if r.status_code in (429, 500, 502, 503, 504):
-                          time.sleep(attempt * 4)
+                          time.sleep(attempt * 3)
                           continue
                       return None
                   except Exception:
-                      time.sleep(3)
+                      time.sleep(2)
               return None
 
           def call_ai(ai_name, prompt, max_tokens=MAX_TOKENS):
-              if ai_name == "OpenRouter":
-                  key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-                  if not key: return None
-                  d = _post("https://openrouter.ai/api/v1/chat/completions",
-                            {"Authorization": f"Bearer {key}"},
-                            {"model": "openai/gpt-4o-mini",
-                             "messages": [{"role": "user", "content": prompt}],
-                             "max_tokens": max_tokens, "temperature": 0.2})
-                  return d["choices"][0]["message"]["content"] if d else None
-
               if ai_name == "Groq":
                   key = os.environ.get("GROQ_API_KEY", "").strip()
                   if not key: return None
                   for model in ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
                       d = _post("https://api.groq.com/openai/v1/chat/completions",
                                 {"Authorization": f"Bearer {key}"},
-                                {"model": model,
-                                 "messages": [{"role": "user", "content": prompt}],
+                                {"model": model, "messages": [{"role": "user", "content": prompt}],
                                  "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
-                      if d: return d["choices"][0]["message"]["content"]
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   return None
 
               if ai_name == "Gemini":
@@ -196,14 +191,22 @@ jobs:
                   for model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
                       d = _post(
                           f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
-                          {},
-                          {"contents": [{"parts": [{"text": prompt}]}],
-                           "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.2}})
-                      if d:
-                          try:
-                              return d["candidates"][0]["content"]["parts"][0]["text"]
-                          except: continue
+                          {}, {"contents": [{"parts": [{"text": prompt}]}],
+                               "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.2}})
+                      if d and "candidates" in d:
+                          try: return d["candidates"][0]["content"]["parts"][0]["text"]
+                          except: pass
                   return None
+
+              if ai_name == "OpenRouter":
+                  key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+                  if not key: return None
+                  d = _post("https://openrouter.ai/api/v1/chat/completions",
+                            {"Authorization": f"Bearer {key}"},
+                            {"model": "openai/gpt-4o-mini",
+                             "messages": [{"role": "user", "content": prompt}],
+                             "max_tokens": max_tokens, "temperature": 0.2})
+                  return d["choices"][0]["message"]["content"] if d and "choices" in d else None
 
               if ai_name == "Mistral":
                   key = os.environ.get("MISTRAL_API_KEY", "").strip()
@@ -211,10 +214,9 @@ jobs:
                   for model in ["mistral-small-latest", "open-mistral-7b"]:
                       d = _post("https://api.mistral.ai/v1/chat/completions",
                                 {"Authorization": f"Bearer {key}"},
-                                {"model": model,
-                                 "messages": [{"role": "user", "content": prompt}],
+                                {"model": model, "messages": [{"role": "user", "content": prompt}],
                                  "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
-                      if d: return d["choices"][0]["message"]["content"]
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   return None
 
               if ai_name == "Cerebras":
@@ -223,10 +225,9 @@ jobs:
                   for model in ["llama-3.3-70b", "llama3.1-70b"]:
                       d = _post("https://api.cerebras.ai/v1/chat/completions",
                                 {"Authorization": f"Bearer {key}"},
-                                {"model": model,
-                                 "messages": [{"role": "user", "content": prompt}],
+                                {"model": model, "messages": [{"role": "user", "content": prompt}],
                                  "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
-                      if d: return d["choices"][0]["message"]["content"]
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   return None
 
               if ai_name == "Cohere":
@@ -236,7 +237,7 @@ jobs:
                       d = _post("https://api.cohere.com/v1/chat",
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model, "message": prompt})
-                      if d: return d.get("text")
+                      if d and "text" in d: return d.get("text")
                   return None
 
               if ai_name == "NVIDIA":
@@ -245,10 +246,9 @@ jobs:
                   for model in ["meta/llama-3.3-70b-instruct", "meta/llama-3.1-70b-instruct"]:
                       d = _post("https://integrate.api.nvidia.com/v1/chat/completions",
                                 {"Authorization": f"Bearer {key}"},
-                                {"model": model,
-                                 "messages": [{"role": "user", "content": prompt}],
+                                {"model": model, "messages": [{"role": "user", "content": prompt}],
                                  "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
-                      if d: return d["choices"][0]["message"]["content"]
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   return None
 
               if ai_name == "HuggingFace":
@@ -258,58 +258,53 @@ jobs:
                       d = _post(
                           f"https://api-inference.huggingface.co/models/{model}/v1/chat/completions",
                           {"Authorization": f"Bearer {key}"},
-                          {"model": model,
-                           "messages": [{"role": "user", "content": prompt}],
+                          {"model": model, "messages": [{"role": "user", "content": prompt}],
                            "max_tokens": 4000, "temperature": 0.2})
-                      if d:
+                      if d and "choices" in d:
                           try: return d["choices"][0]["message"]["content"]
-                          except: continue
+                          except: pass
                   return None
               return None
 
           def make_prompt(structure, filepath, code):
-              return f"""You are the WORLD #1 Personal AI Developer of SawajStudioBot.
+              return f"""You are the SOLE MASTER DEVELOPER of SawajStudioBot.
 
-          Your only mission is to make this Islamic Video Generation + Social Media Automation Studio the absolute WORLD NUMBER 1 project.
+          Your absolute goal is to upgrade this Islamic Video Generation & Automation Studio to WORLD #1 quality.
 
-          PROJECT CONTEXT:
-          - This is a professional multi-module system that generates Islamic content videos (Hadith, Stories) for Facebook, Instagram and YouTube (Story, Shorts, Long).
-          - It has deep modular structure: A_core, B_graphics, C_content, D_video, E_audio, F_drive, G_entry, uploaders etc.
-          - Never delete any existing functionality.
-          - Always improve, never break.
-
-          FULL PROJECT STRUCTURE (for deep understanding):
+          PROJECT ARCHITECTURE:
           {structure}
 
-          CURRENT FILE YOU MUST UPGRADE:
+          CURRENT TARGET FILE TO UPGRADE:
           ═══ FILE: {filepath} ═══
           {code}
           ═══ END ═══
 
-          YOUR RULES (STRICT):
-          1. Return ONLY the upgraded version of this file (and any new files if needed)
-          2. Use exact format:
+          STRICT MANDATES:
+          1. Upgrade the code cleanly. Add deep error handling, logging, type hints, performance optimization, and robust fail-safes.
+          2. NEVER delete existing functionality or core logic.
+          3. Return output using exact tags:
              ═══ FILE: {filepath} ═══
-             <full upgraded code>
+             <upgraded full code>
              ═══ END ═══
-          3. You are allowed to create new helper/feature files if it makes the system better:
+          4. If new helper module is required:
              ═══ NEW FILE: path/to/new_file.py ═══
              <code>
              ═══ END ═══
-          4. Fix every bug, improve error handling, add type hints, docstrings, logging, fallbacks
-          5. Make code clean, production-ready, highly modular and world-class
-          6. NEVER remove any existing feature or logic
-          7. Think like a senior architect who wants this studio to be the best in the world
-          8. Return ONLY the code blocks — no explanations
+          5. NO markdown commentary outside tags. Pure code tags only.
 
-          Now upgrade this file to World #1 level:"""
+          Upgrade this file now:"""
+
+          def clean_response(text):
+              text = re.sub(r"^```python\s*", "", text, flags=re.MULTILINE)
+              text = re.sub(r"^```\s*", "", text, flags=re.MULTILINE)
+              return text
 
           def apply_response(text):
-              modified = 0
-              new_files = 0
+              text = clean_response(text)
+              modified, new_files = 0, 0
               changed_files = []
 
-              for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══", text, re.DOTALL):
+              for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\s*\n(.*?)\n═══ END ═══", text, re.DOTALL):
                   rel = rel.strip()
                   if not rel or ".." in rel: continue
                   full = os.path.join(BOT_ROOT, rel)
@@ -319,7 +314,7 @@ jobs:
                   new_files += 1
                   changed_files.append(f"NEW: {rel}")
 
-              for rel, code in re.findall(r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══", text, re.DOTALL):
+              for rel, code in re.findall(r"═══ FILE: (.+?) ═══\s*\n(.*?)\n═══ END ═══", text, re.DOTALL):
                   rel = rel.strip()
                   if not rel or ".." in rel: continue
                   full = os.path.join(BOT_ROOT, rel)
@@ -357,73 +352,63 @@ jobs:
           def main():
               ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               print("═" * 60)
-              print("👑 SAWAJSTUDIOBOT PERSONAL DEVELOPER")
+              print("👑 SAWAJSTUDIOBOT MASTER AI DEVELOPER")
               print("═" * 60)
 
               tg_send(
-                  f"👑 <b>PERSONAL DEVELOPER STARTED</b>\n"
+                  f"👑 <b>MASTER DEVELOPER RUN STARTED</b>\n"
                   f"🕐 {ts}\n"
-                  f"🎯 Mission: Make SawajStudioBot World #1\n"
-                  f"📂 Mode: One File At A Time + Smart Priority",
+                  f"🎯 Mission: Non-Stop Studio Upgrade to World #1\n"
+                  f"⚡ Strategy: Round-Robin AI Allocation & Deep Verification",
                   silent=True
               )
 
               os.makedirs(WORK, exist_ok=True)
               os.makedirs(LOG_DIR, exist_ok=True)
 
-              print("\n📁 SCANNING PROJECT...")
               files, folders = scan_all()
-              files = priority_sort(files)
-              print(f"   Total Files: {len(files)}")
-              print(f"   Total Folders: {len(folders)}")
-
               if not files:
-                  tg_send("⚠️ No files found in sawajstudiobot")
+                  tg_send("⚠️ No files found in sawajstudiobot directory!")
                   return
 
-              print("\n💾 CREATING BACKUP...")
               backup_path = backup()
-              print(f"   {backup_path}")
-
-              structure = build_structure_text(folders, files)
               progress = load_progress()
+              files = smart_sort_files(files, progress)
+              structure = build_structure_text(folders, files)
 
               total = len(files)
-              success = 0
-              failed = 0
-              new_created = 0
+              success, failed, new_created = 0, 0, 0
 
               for idx, rel in enumerate(files, 1):
-                  print(f"\n[{idx}/{total}] → {rel}")
-
+                  print(f"\n[{idx}/{total}] → Processing: {rel}")
                   full = os.path.join(BOT_ROOT, rel)
                   try:
                       with open(full, "r", encoding="utf-8") as f:
                           code = f.read()
                   except Exception as e:
-                      print(f"   ❌ Read error: {e}")
+                      print(f"   ❌ File read error: {e}")
                       failed += 1
                       continue
 
                   prompt = make_prompt(structure, rel, code)
                   upgraded = False
-                  used_ai = None
 
-                  for ai in ALL_AIS:
-                      print(f"   🤖 {ai}...")
+                  # Round-Robin AI Assignment: Every file gets assigned a primary AI
+                  primary_ai_idx = (idx - 1) % len(ALL_AIS)
+                  ordered_ais = ALL_AIS[primary_ai_idx:] + ALL_AIS[:primary_ai_idx]
+
+                  for ai in ordered_ais:
+                      print(f"   🤖 Trying AI Provider: {ai}...")
                       try:
                           res = call_ai(ai, prompt)
                           if res and ("═══ FILE:" in res or "═══ NEW FILE:" in res):
                               modified, newf, changed = apply_response(res)
                               if modified > 0 or newf > 0:
-                                  # Check syntax of main file
                                   if check_syntax(rel):
                                       success += 1
                                       new_created += newf
-                                      used_ai = ai
                                       upgraded = True
 
-                                      # Update progress
                                       progress["upgraded"][rel] = {
                                           "time": ts,
                                           "ai": ai,
@@ -433,46 +418,43 @@ jobs:
                                       progress["last_run"] = ts
                                       save_progress(progress)
 
-                                      print(f"   ✅ Upgraded by {ai} | New files: {newf}")
+                                      print(f"   ✅ Upgraded by {ai} | Created {newf} helper file(s)")
                                       tg_send(
-                                          f"✅ <b>[{idx}/{total}]</b>\n"
-                                          f"<code>{rel}</code>\n"
-                                          f"🤖 <b>{ai}</b>\n"
-                                          f"🆕 New files: {newf}"
+                                          f"✅ <b>[{idx}/{total}] FILE UPGRADED</b>\n"
+                                          f"📄 <code>{rel}</code>\n"
+                                          f"🤖 AI: <b>{ai}</b>\n"
+                                          f"🆕 New Helper Files: {newf}"
                                       )
                                       break
                                   else:
-                                      print(f"   ⚠️ Syntax broken by {ai}, trying next AI...")
+                                      print(f"   ⚠️ Syntax error from {ai}, trying fallback AI...")
                           else:
-                              print(f"   ⚠️ Invalid response")
+                              print(f"   ⚠️ Invalid format from {ai}")
                       except Exception as e:
-                          print(f"   ❌ {ai} error: {str(e)[:70]}")
+                          print(f"   ❌ {ai} exception: {str(e)[:70]}")
 
                   if not upgraded:
                       failed += 1
-                      print(f"   ❌ Could not upgrade")
-                      tg_send(f"❌ <b>[{idx}/{total}]</b> Failed\n<code>{rel}</code>")
+                      print(f"   ❌ Upgrade failed for {rel}")
+                      tg_send(f"❌ <b>[{idx}/{total}] Upgrade Failed</b>\n<code>{rel}</code>")
 
-                  time.sleep(1.2)
+                  time.sleep(1)
 
-              # Final Report
-              final = (
-                  "👑 <b>PERSONAL DEVELOPER SESSION COMPLETE</b>\n"
+              final_report = (
+                  "👑 <b>MASTER DEVELOPER RUN COMPLETE</b>\n"
                   "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  f"📅 {ts}\n\n"
-                  f"📁 Total Files Processed: <b>{total}</b>\n"
-                  f"✅ Successfully Upgraded: <b>{success}</b>\n"
+                  f"📅 Timestamp: {ts}\n"
+                  f"📁 Processed Files: <b>{total}</b>\n"
+                  f"✅ Upgraded: <b>{success}</b>\n"
                   f"❌ Failed: <b>{failed}</b>\n"
-                  f"🆕 New Files Created: <b>{new_created}</b>\n"
-                  f"💾 Backup: <code>{backup_path or 'N/A'}</code>\n\n"
-                  "🎯 Mission: World #1 continues...\n"
+                  f"🆕 New Files Generated: <b>{new_created}</b>\n"
+                  f"💾 Backup Path: <code>{backup_path or 'N/A'}</code>\n"
                   "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  "👑 <b>SawajStudioBot Developer</b>"
+                  "🔄 Continuous Execution: Triggering Next Cycle..."
               )
-              tg_send(final)
-
-              print("\n" + "═" * 60)
-              print(f"👑 DONE | Success: {success} | Failed: {failed} | New: {new_created}")
+              tg_send(final_report)
+              print("\n═" * 60)
+              print(f"👑 FINISHED CYCLE | Success: {success} | Failed: {failed} | New: {new_created}")
               print("═" * 60)
 
           if __name__ == "__main__":
@@ -482,17 +464,19 @@ jobs:
           python /tmp/developer.py
           rm -f /tmp/developer.py
 
-      - name: 📤 Commit Changes
+      - name: 📤 Commit & Push Upgraded Code
         if: always()
         run: |
           git config user.name "SawajStudioBot Developer"
           git config user.email "developer@sawajstudio.com"
           git add -A
-          git commit -m "👑 Personal Developer Upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
+          git commit -m "👑 Personal Master Developer Upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
           git push || echo "Push failed"
 
-      - name: ✅ Summary
+      - name: 🔄 Non-Stop Continuous Self-Trigger (Endless Upgrade Loop)
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || github.token }}
         run: |
-          echo "## 👑 SawajStudioBot Personal Developer Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Check Telegram for live file-by-file updates." >> $GITHUB_STEP_SUMMARY
+          echo "🚀 Re-triggering Developer Workflow for continuous 24/7 upgrades..."
+          gh workflow run "👑 SawajStudioBot Developer" || echo "Self-trigger failed"
