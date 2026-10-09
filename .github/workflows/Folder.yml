@@ -1,7 +1,7 @@
 name: Create Project Structure Automatically
 
 on:
-  workflow_dispatch: # Actions tab se manually run karne ke liye
+  workflow_dispatch:
 
 jobs:
   setup-repository:
@@ -10,39 +10,34 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TOKEN_GITHUB }}
 
       - name: Create Folders and Files
         run: |
-          # 1. Subfolders create karein
           mkdir -p fb_ig_story_video
           mkdir -p fb_ig_yt_short_video
           mkdir -p fb_yt_long_video
 
-          # 2. fb_ig_story_video ke files banayein
           touch fb_ig_story_video/generator.py
           touch fb_ig_story_video/requirements.txt
           touch fb_ig_story_video/logo.png
 
-          # 3. fb_ig_yt_short_video ke files banayein
           touch fb_ig_yt_short_video/generator.py
           touch fb_ig_yt_short_video/requirements.txt
           touch fb_ig_yt_short_video/logo.png
 
-          # 4. fb_yt_long_video ke files banayein
           touch fb_yt_long_video/generator.py
           touch fb_yt_long_video/requirements.txt
           touch fb_yt_long_video/logo.png
 
-          # 5. Workflow files create karein
           touch .github/workflows/fb_ig_story_video.yml
           touch .github/workflows/fb_ig_yt_short_video.yml
           touch .github/workflows/fb_yt_long_video.yml
 
-          # 6. Root level optional files banayein
           touch requirements.txt
           touch .gitignore
           
-          # README.md me structure ka description daalein
           echo "# Project ON" > README.md
           echo "Automated video generation workflow repository." >> README.md
 
