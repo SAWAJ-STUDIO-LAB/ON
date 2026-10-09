@@ -1,0 +1,170 @@
+name: "🟢 SAWAJ STUDIO - All Videos"
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_type:
+        description: 'Video Type'
+        required: true
+        type: choice
+        options:
+          - story
+          - short
+          - long
+          - all
+        default: 'short'
+      upload_to_social:
+        description: 'Upload to Social Media?'
+        required: true
+        type: boolean
+        default: false
+  schedule:
+    # Story - 5:00 AM IST (23:30 UTC previous day)
+    - cron: '30 23 * * *'
+    # Short Video - 6:00 AM IST (00:30 UTC)
+    - cron: '30 0 * * *'
+    # Short Video - 12:00 PM IST (06:30 UTC)
+    - cron: '30 6 * * *'
+    # Long Video - 7:00 PM IST (13:30 UTC)
+    - cron: '30 13 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sawaj-studio-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  determine-type:
+    runs-on: ubuntu-latest
+    outputs:
+      video_type: ${{ steps.set-type.outputs.video_type }}
+      should_post_social: ${{ steps.set-type.outputs.should_post_social }}
+    steps:
+      - name: Determine Video Type
+        id: set-type
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            CRON="${{ github.event.schedule }}"
+            case "$CRON" in
+              "30 23 * * *") echo "video_type=story" >> $GITHUB_OUTPUT ;;
+              "30 0 * * *") echo "video_type=short" >> $GITHUB_OUTPUT ;;
+              "30 6 * * *") echo "video_type=short" >> $GITHUB_OUTPUT ;;
+              "30 13 * * *") echo "video_type=long" >> $GITHUB_OUTPUT ;;
+              *) echo "video_type=short" >> $GITHUB_OUTPUT ;;
+            esac
+            echo "should_post_social=true" >> $GITHUB_OUTPUT
+          else
+            echo "video_type=${{ inputs.video_type }}" >> $GITHUB_OUTPUT
+            echo "should_post_social=${{ inputs.upload_to_social }}" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    needs: determine-type
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TOKEN_GITHUB }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Python Packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-tools
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache Custom Fonts
+        id: cache-fonts
+        uses: actions/cache@v4
+        with:
+          path: ~/.fonts
+          key: ${{ runner.os }}-custom-fonts
+
+      - name: Install System Setup (FFmpeg + Fonts)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-noto fonts-noto-core fonts-noto-extra fonts-noto-ui-core fonts-dejavu-core fonts-noto-color-emoji fontconfig
+
+      - name: Download Custom Fonts (only if cache miss)
+        if: steps.cache-fonts.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.fonts
+          wget -q --timeout=20 "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf" -O ~/.fonts/NotoSans-Regular.ttf || true
+          wget -q --timeout=20 "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf" -O ~/.fonts/NotoSans-Bold.ttf || true
+          wget -q --timeout=20 "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Regular.ttf" -O ~/.fonts/NotoSansDevanagari-Regular.ttf || true
+          wget -q --timeout=20 "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansDevanagari/NotoSansDevanagari-Bold.ttf" -O ~/.fonts/NotoSansDevanagari-Bold.ttf || true
+          wget -q --timeout=20 "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Regular.ttf" -O ~/.fonts/NotoNaskhArabic-Regular.ttf || true
+          wget -q --timeout=20 "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Bold.ttf" -O ~/.fonts/NotoNaskhArabic-Bold.ttf || true
+
+      - name: Install Python Packages & Refresh Fonts
+        run: |
+          fc-cache -f -v
+          pip install --no-cache-dir requests edge-tts mutagen Pillow google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+      - name: Run Video Pipeline
+        env:
+          VIDEO_TYPE: ${{ needs.determine-type.outputs.video_type }}
+          SHOULD_POST_SOCIAL: ${{ needs.determine-type.outputs.should_post_social }}
+          # Telegram
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TOKEN_GITHUB: ${{ secrets.TOKEN_GITHUB }}
+          # Google Drive
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          DRIVE_STORY_FOLDER_ID: ${{ secrets.GDRIVE_STORY_VIDEO_FOLDER_ID }}
+          DRIVE_SHORT_FOLDER_ID: ${{ secrets.GDRIVE_SHORT_VIDEO_FOLDER_ID }}
+          DRIVE_LONG_FOLDER_ID: ${{ secrets.GDRIVE_LONG_VIDEO_FOLDER_ID }}
+          # Meta / Facebook / Instagram
+          FACEBOOK_INSTAGRAM_META_TOKEN: ${{ secrets.FACEBOOK_INSTAGRAM_META_TOKEN }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
+          # YouTube
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          DAILY_HADEES_YT_PLAYLIST_ID: ${{ secrets.DAILY_HADEES_YT_PLAYLIST_ID }}
+          PLAYLIST_ID: ${{ secrets.PLAYLIST_ID }}
+          # AI Providers
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY_AI }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_AI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_AI }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY_AI }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY_AI }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY_AI }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY_AI }}
+          # Media
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
+        run: python main.py
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ needs.determine-type.outputs.video_type }}-video
+          path: |
+            Final_Story.mp4
+            Final_Short_Video.mp4
+            Final_Long_Hadith.mp4
+          retention-days: 5
+          if-no-files-found: ignore
