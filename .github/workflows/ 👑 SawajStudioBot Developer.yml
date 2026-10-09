@@ -2,8 +2,6 @@ name: 👑 SawajStudioBot Developer
 
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types: [continue-upgrade]
 
 permissions:
   contents: write
@@ -312,7 +310,6 @@ jobs:
                   f"🎯 One-by-one, no limit\n"
                   f"🚫 No delete, only add/modify"
               )
-
               ok, fail, new_total = 0, 0, 0
 
               for idx, rel in enumerate(files, 1):
@@ -355,9 +352,3 @@ jobs:
           git add -A
           git commit -m "👑 Developer upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
           git push || echo "Push failed"
-
-      - name: 🔄 Self-Trigger
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || github.token }}
-        run: gh workflow run "👑 SawajStudioBot Developer" || echo "Trigger skip"
