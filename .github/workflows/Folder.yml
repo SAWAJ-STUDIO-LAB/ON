@@ -1,98 +1,55 @@
-# ============================================================
-# 📄 FILE:      clean_github.yml
-# 📁 PATH:      .github/workflows/clean_github.yml
-# 🎯 PURPOSE:   Permanent Deep Clean (Caches + Runs + Artifacts)
-# ⚡ TRIGGER:   Manual only
-# ============================================================
-
-name: "🔥🧹clean_github.yml"
+name: Create Project Structure Automatically
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirm:
-        description: '✅ Tick karo — Sab kuch jad se khatm karne ke liye'
-        required: true
-        type: boolean
-        default: false
-
-permissions:
-  contents: write
-  actions: write
+  workflow_dispatch: # Actions tab se manually run karne ke liye
 
 jobs:
-  deep-clean:
+  setup-repository:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔍 Verify Tick Mark
+      - name: Create Folders and Files
         run: |
-          if [ "${{ inputs.confirm }}" != "true" ]; then
-            echo "❌ Tick mark nahi lagaya — workflow cancel!"
-            exit 1
-          fi
-          echo "✅ Confirmed: Permanent deep clean shuru ho raha hai..."
+          # 1. Subfolders create karein
+          mkdir -p fb_ig_story_video
+          mkdir -p fb_ig_yt_short_video
+          mkdir -p fb_yt_long_video
 
-      - name: 🔧 Install GitHub CLI
-        run: |
-          type -p gh || (
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
-            sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
-            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
-            sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-            sudo apt-get update && \
-            sudo apt-get install gh -y
-          )
+          # 2. fb_ig_story_video ke files banayein
+          touch fb_ig_story_video/generator.py
+          touch fb_ig_story_video/requirements.txt
+          touch fb_ig_story_video/logo.png
 
-      - name: 🔥 Purge All Caches
-        env:
-          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🧹 Purging all caches..."
-          gh cache delete --all --repo ${{ github.repository }} || true
-          echo "✅ Caches completely wiped."
+          # 3. fb_ig_yt_short_video ke files banayein
+          touch fb_ig_yt_short_video/generator.py
+          touch fb_ig_yt_short_video/requirements.txt
+          touch fb_ig_yt_short_video/logo.png
 
-      - name: 🔥 Purge All Workflow Runs
-        env:
-          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🧹 Purging all workflow runs history..."
-          runs=$(gh api repos/${{ github.repository }}/actions/runs --paginate -q '.workflow_runs[].id')
-          count=0
-          for run_id in $runs; do
-            if gh api -X DELETE repos/${{ github.repository }}/actions/runs/$run_id 2>/dev/null; then
-              count=$((count + 1))
-            fi
-          done
-          echo "✅ Total runs permanently deleted: $count"
+          # 4. fb_yt_long_video ke files banayein
+          touch fb_yt_long_video/generator.py
+          touch fb_yt_long_video/requirements.txt
+          touch fb_yt_long_video/logo.png
 
-      - name: 🔥 Purge All Artifacts
-        env:
-          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
-        run: |
-          echo "🧹 Purging all stored artifacts..."
-          artifacts=$(gh api repos/${{ github.repository }}/actions/artifacts --paginate -q '.artifacts[].id')
-          art_count=0
-          for art_id in $artifacts; do
-            if gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$art_id 2>/dev/null; then
-              art_count=$((art_count + 1))
-            fi
-          done
-          echo "✅ Total artifacts permanently deleted: $art_count"
+          # 5. Workflow files create karein
+          touch .github/workflows/fb_ig_story_video.yml
+          touch .github/workflows/fb_ig_yt_short_video.yml
+          touch .github/workflows/fb_yt_long_video.yml
 
-      - name: 📋 Final Deep Clean Summary
-        if: always()
+          # 6. Root level optional files banayein
+          touch requirements.txt
+          touch .gitignore
+          
+          # README.md me structure ka description daalein
+          echo "# Project ON" > README.md
+          echo "Automated video generation workflow repository." >> README.md
+
+      - name: Commit and Push Changes
         run: |
-          echo "============================================"
-          echo "🔥 ULTIMATE DEEP CLEAN COMPLETED SUCCESSFULLY"
-          echo "============================================"
-          echo "✓ All Caches -> Eradicated"
-          echo "✓ All Workflow Runs -> Wiped out completely"
-          echo "✓ All Artifacts -> Deleted from roots"
-          echo "GitHub storage is now fully clean!"
-          echo "============================================"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Automated setup: Created complete directory structure and starter files"
+          git push
