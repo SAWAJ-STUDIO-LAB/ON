@@ -1,4 +1,4 @@
-name: 👑 KING — One File At A Time (Full Upgrade)
+name: 👑 SawajStudioBot Developer 
 
 on:
   workflow_dispatch:
@@ -7,10 +7,10 @@ permissions:
   contents: write
 
 jobs:
-  king:
-    name: 👑 King Working (One File Mode)
+  developer:
+    name: 👑 Personal Developer Working
     runs-on: ubuntu-latest
-    timeout-minutes: 360          # 6 hours (759 files ke liye)
+    timeout-minutes: 360
 
     steps:
       - name: 📥 Checkout
@@ -28,7 +28,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: 👑 Run King (One File At A Time)
+      - name: 👑 Run Personal Developer
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -41,7 +41,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
         run: |
-          cat > /tmp/king.py << 'ENDOFSCRIPT'
+          cat > /tmp/developer.py << 'ENDOFSCRIPT'
           import os
           import re
           import ast
@@ -55,6 +55,7 @@ jobs:
           WORK = "bot update upgrade/_work"
           BACKUP = "bot update upgrade/_backups"
           LOG_DIR = "bot update upgrade/_logs"
+          PROGRESS_FILE = "bot update upgrade/_king_progress.json"
           ROOT_SKIP = "bot update upgrade"
           TEXT_EXT = {".py", ".txt", ".md", ".json", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".env", ".example"}
           TIMEOUT = 180
@@ -63,6 +64,13 @@ jobs:
           ALL_AIS = [
               "OpenRouter", "Groq", "Gemini", "Mistral",
               "Cerebras", "Cohere", "NVIDIA", "HuggingFace"
+          ]
+
+          # Priority order (important files first)
+          PRIORITY_KEYWORDS = [
+              "config", "logger", "telegram", "entry", "main", "run",
+              "generator", "uploader", "core", "A1_", "A2_", "A3_",
+              "G_entry", "video_generator", "video_uploader"
           ]
 
           def tg_send(msg, silent=False):
@@ -111,17 +119,39 @@ jobs:
                           files.append(rel)
               return sorted(files), sorted(folders)
 
+          def priority_sort(files):
+              def score(f):
+                  f_lower = f.lower()
+                  for i, kw in enumerate(PRIORITY_KEYWORDS):
+                      if kw in f_lower:
+                          return i
+                  return 999
+              return sorted(files, key=score)
+
           def build_structure_text(folders, files):
-              lines = []
-              lines.append("═══ FULL FOLDER STRUCTURE ═══")
+              lines = ["═══ FULL PROJECT STRUCTURE ═══"]
               for f in folders:
                   lines.append(f"{f}/")
               lines.append("")
-              lines.append("═══ ALL FILES LIST ═══")
+              lines.append("═══ ALL FILES ═══")
               for f in files:
                   lines.append(f)
               lines.append("═══ END STRUCTURE ═══")
               return "\n".join(lines)
+
+          def load_progress():
+              if os.path.exists(PROGRESS_FILE):
+                  try:
+                      with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+                          return json.load(f)
+                  except:
+                      pass
+              return {"upgraded": {}, "last_run": None, "total_upgrades": 0}
+
+          def save_progress(data):
+              os.makedirs(os.path.dirname(PROGRESS_FILE), exist_ok=True)
+              with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+                  json.dump(data, f, indent=2)
 
           def _post(url, headers, payload, timeout=TIMEOUT, retries=2):
               for attempt in range(1, retries + 1):
@@ -145,7 +175,7 @@ jobs:
                             {"Authorization": f"Bearer {key}"},
                             {"model": "openai/gpt-4o-mini",
                              "messages": [{"role": "user", "content": prompt}],
-                             "max_tokens": max_tokens, "temperature": 0.25})
+                             "max_tokens": max_tokens, "temperature": 0.2})
                   return d["choices"][0]["message"]["content"] if d else None
 
               if ai_name == "Groq":
@@ -156,7 +186,7 @@ jobs:
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
@@ -168,7 +198,7 @@ jobs:
                           f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
                           {},
                           {"contents": [{"parts": [{"text": prompt}]}],
-                           "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.25}})
+                           "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.2}})
                       if d:
                           try:
                               return d["candidates"][0]["content"]["parts"][0]["text"]
@@ -183,7 +213,7 @@ jobs:
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
@@ -195,7 +225,7 @@ jobs:
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
@@ -217,7 +247,7 @@ jobs:
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.2})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
@@ -230,7 +260,7 @@ jobs:
                           {"Authorization": f"Bearer {key}"},
                           {"model": model,
                            "messages": [{"role": "user", "content": prompt}],
-                           "max_tokens": 4000, "temperature": 0.25})
+                           "max_tokens": 4000, "temperature": 0.2})
                       if d:
                           try: return d["choices"][0]["message"]["content"]
                           except: continue
@@ -238,40 +268,47 @@ jobs:
               return None
 
           def make_prompt(structure, filepath, code):
-              return f"""You are a WORLD #1 senior Python engineer.
+              return f"""You are the WORLD #1 Personal AI Developer of SawajStudioBot.
 
-          Your job is to UPGRADE this single file to WORLD #1 quality.
+          Your only mission is to make this Islamic Video Generation + Social Media Automation Studio the absolute WORLD NUMBER 1 project.
 
-          FULL PROJECT STRUCTURE (for context only):
+          PROJECT CONTEXT:
+          - This is a professional multi-module system that generates Islamic content videos (Hadith, Stories) for Facebook, Instagram and YouTube (Story, Shorts, Long).
+          - It has deep modular structure: A_core, B_graphics, C_content, D_video, E_audio, F_drive, G_entry, uploaders etc.
+          - Never delete any existing functionality.
+          - Always improve, never break.
+
+          FULL PROJECT STRUCTURE (for deep understanding):
           {structure}
 
-          CURRENT FILE TO UPGRADE:
+          CURRENT FILE YOU MUST UPGRADE:
           ═══ FILE: {filepath} ═══
           {code}
           ═══ END ═══
 
-          STRICT RULES:
-          1. Return ONLY the upgraded code of this one file
-          2. Use EXACT format:
+          YOUR RULES (STRICT):
+          1. Return ONLY the upgraded version of this file (and any new files if needed)
+          2. Use exact format:
              ═══ FILE: {filepath} ═══
              <full upgraded code>
              ═══ END ═══
-          3. You may also create new helper files if needed using:
-             ═══ NEW FILE: path/to/newfile.py ═══
+          3. You are allowed to create new helper/feature files if it makes the system better:
+             ═══ NEW FILE: path/to/new_file.py ═══
              <code>
              ═══ END ═══
-          4. Fix all bugs, add proper error handling, type hints, docstrings
-          5. Make it production ready and world-class
-          6. Do NOT delete any functionality
-          7. Return ONLY the code blocks, no explanations
+          4. Fix every bug, improve error handling, add type hints, docstrings, logging, fallbacks
+          5. Make code clean, production-ready, highly modular and world-class
+          6. NEVER remove any existing feature or logic
+          7. Think like a senior architect who wants this studio to be the best in the world
+          8. Return ONLY the code blocks — no explanations
 
-          UPGRADE THIS FILE NOW:"""
+          Now upgrade this file to World #1 level:"""
 
-          def apply_response(text, original_file):
+          def apply_response(text):
               modified = 0
               new_files = 0
+              changed_files = []
 
-              # New files
               for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══", text, re.DOTALL):
                   rel = rel.strip()
                   if not rel or ".." in rel: continue
@@ -280,8 +317,8 @@ jobs:
                   with open(full, "w", encoding="utf-8") as f:
                       f.write(code.rstrip() + "\n")
                   new_files += 1
+                  changed_files.append(f"NEW: {rel}")
 
-              # Modified files
               for rel, code in re.findall(r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══", text, re.DOTALL):
                   rel = rel.strip()
                   if not rel or ".." in rel: continue
@@ -290,8 +327,9 @@ jobs:
                   with open(full, "w", encoding="utf-8") as f:
                       f.write(code.rstrip() + "\n")
                   modified += 1
+                  changed_files.append(rel)
 
-              return modified, new_files
+              return modified, new_files, changed_files
 
           def backup():
               ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -304,9 +342,9 @@ jobs:
                   return None
 
           def check_syntax(filepath):
-              full = os.path.join(BOT_ROOT, filepath)
               if not filepath.endswith(".py"):
                   return True
+              full = os.path.join(BOT_ROOT, filepath)
               try:
                   with open(full, "r", encoding="utf-8") as f:
                       ast.parse(f.read())
@@ -319,28 +357,36 @@ jobs:
           def main():
               ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               print("═" * 60)
-              print("👑 KING — ONE FILE AT A TIME MODE")
+              print("👑 SAWAJSTUDIOBOT PERSONAL DEVELOPER")
               print("═" * 60)
 
-              tg_send(f"👑 <b>KING STARTED</b>\n🕐 {ts}\nMode: One File At A Time\nTarget: Full World #1 Upgrade", silent=True)
+              tg_send(
+                  f"👑 <b>PERSONAL DEVELOPER STARTED</b>\n"
+                  f"🕐 {ts}\n"
+                  f"🎯 Mission: Make SawajStudioBot World #1\n"
+                  f"📂 Mode: One File At A Time + Smart Priority",
+                  silent=True
+              )
 
               os.makedirs(WORK, exist_ok=True)
               os.makedirs(LOG_DIR, exist_ok=True)
 
-              print("\n📁 SCANNING...")
+              print("\n📁 SCANNING PROJECT...")
               files, folders = scan_all()
+              files = priority_sort(files)
               print(f"   Total Files: {len(files)}")
               print(f"   Total Folders: {len(folders)}")
 
               if not files:
-                  tg_send("⚠️ No files found")
+                  tg_send("⚠️ No files found in sawajstudiobot")
                   return
 
-              print("\n💾 BACKUP...")
+              print("\n💾 CREATING BACKUP...")
               backup_path = backup()
-              print(f"   Backup: {backup_path}")
+              print(f"   {backup_path}")
 
               structure = build_structure_text(folders, files)
+              progress = load_progress()
 
               total = len(files)
               success = 0
@@ -348,73 +394,82 @@ jobs:
               new_created = 0
 
               for idx, rel in enumerate(files, 1):
-                  print(f"\n[{idx}/{total}] Processing: {rel}")
+                  print(f"\n[{idx}/{total}] → {rel}")
 
                   full = os.path.join(BOT_ROOT, rel)
                   try:
                       with open(full, "r", encoding="utf-8") as f:
                           code = f.read()
                   except Exception as e:
-                      print(f"   ❌ Cannot read: {e}")
+                      print(f"   ❌ Read error: {e}")
                       failed += 1
                       continue
 
                   prompt = make_prompt(structure, rel, code)
-
                   upgraded = False
                   used_ai = None
 
                   for ai in ALL_AIS:
-                      print(f"   🤖 Trying {ai}...")
+                      print(f"   🤖 {ai}...")
                       try:
                           res = call_ai(ai, prompt)
                           if res and ("═══ FILE:" in res or "═══ NEW FILE:" in res):
-                              modified, newf = apply_response(res, rel)
+                              modified, newf, changed = apply_response(res)
                               if modified > 0 or newf > 0:
-                                  # Syntax check
+                                  # Check syntax of main file
                                   if check_syntax(rel):
                                       success += 1
                                       new_created += newf
                                       used_ai = ai
                                       upgraded = True
+
+                                      # Update progress
+                                      progress["upgraded"][rel] = {
+                                          "time": ts,
+                                          "ai": ai,
+                                          "new_files": newf
+                                      }
+                                      progress["total_upgrades"] = progress.get("total_upgrades", 0) + 1
+                                      progress["last_run"] = ts
+                                      save_progress(progress)
+
                                       print(f"   ✅ Upgraded by {ai} | New files: {newf}")
                                       tg_send(
-                                          f"✅ <b>[{idx}/{total}]</b> <code>{rel}</code>\n"
-                                          f"🤖 AI: <b>{ai}</b>\n"
+                                          f"✅ <b>[{idx}/{total}]</b>\n"
+                                          f"<code>{rel}</code>\n"
+                                          f"🤖 <b>{ai}</b>\n"
                                           f"🆕 New files: {newf}"
                                       )
                                       break
                                   else:
-                                      print(f"   ⚠️ Syntax error after {ai}, trying next...")
-                              else:
-                                  print(f"   ⚠️ No change from {ai}")
+                                      print(f"   ⚠️ Syntax broken by {ai}, trying next AI...")
                           else:
-                              print(f"   ⚠️ Invalid response from {ai}")
+                              print(f"   ⚠️ Invalid response")
                       except Exception as e:
-                          print(f"   ❌ {ai} error: {str(e)[:60]}")
+                          print(f"   ❌ {ai} error: {str(e)[:70]}")
 
                   if not upgraded:
                       failed += 1
-                      print(f"   ❌ Failed to upgrade: {rel}")
-                      tg_send(f"❌ <b>[{idx}/{total}]</b> Failed: <code>{rel}</code>")
+                      print(f"   ❌ Could not upgrade")
+                      tg_send(f"❌ <b>[{idx}/{total}]</b> Failed\n<code>{rel}</code>")
 
-                  # Thoda delay taaki rate limit na aaye
-                  time.sleep(1.5)
+                  time.sleep(1.2)
 
               # Final Report
-              final_msg = (
-                  "👑 <b>KING FULL UPGRADE COMPLETE</b>\n"
-                  "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              final = (
+                  "👑 <b>PERSONAL DEVELOPER SESSION COMPLETE</b>\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                   f"📅 {ts}\n\n"
-                  f"📁 Total Files: <b>{total}</b>\n"
+                  f"📁 Total Files Processed: <b>{total}</b>\n"
                   f"✅ Successfully Upgraded: <b>{success}</b>\n"
                   f"❌ Failed: <b>{failed}</b>\n"
                   f"🆕 New Files Created: <b>{new_created}</b>\n"
                   f"💾 Backup: <code>{backup_path or 'N/A'}</code>\n\n"
-                  "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  "👑 <b>World #1 Upgrade Session Finished</b>"
+                  "🎯 Mission: World #1 continues...\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                  "👑 <b>SawajStudioBot Developer</b>"
               )
-              tg_send(final_msg)
+              tg_send(final)
 
               print("\n" + "═" * 60)
               print(f"👑 DONE | Success: {success} | Failed: {failed} | New: {new_created}")
@@ -424,20 +479,20 @@ jobs:
               main()
           ENDOFSCRIPT
 
-          python /tmp/king.py
-          rm -f /tmp/king.py
+          python /tmp/developer.py
+          rm -f /tmp/developer.py
 
-      - name: 📤 Commit All Changes
+      - name: 📤 Commit Changes
         if: always()
         run: |
-          git config user.name "SawajBot King"
-          git config user.email "king@sawajstudio.com"
+          git config user.name "SawajStudioBot Developer"
+          git config user.email "developer@sawajstudio.com"
           git add -A
-          git commit -m "👑 King One-File Full Upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
+          git commit -m "👑 Personal Developer Upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
           git push || echo "Push failed"
 
       - name: ✅ Summary
         if: always()
         run: |
-          echo "## 👑 King One-File Mode Complete" >> $GITHUB_STEP_SUMMARY
-          echo "Check Telegram for live updates of every file." >> $GITHUB_STEP_SUMMARY
+          echo "## 👑 SawajStudioBot Personal Developer Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Check Telegram for live file-by-file updates." >> $GITHUB_STEP_SUMMARY
