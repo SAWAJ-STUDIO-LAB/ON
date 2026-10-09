@@ -1,11 +1,11 @@
 """
 Main Package for Islamic Video Generation and Social Media Automation.
 
-This package offers a comprehensive suite of tools for automated video creation and social media management,
-ensuring adherence to Islamic principles and guidelines.
+This package provides a powerful toolkit for automated video creation and social media management,
+tailored to Islamic content and guidelines.
 
 Version: 1.1.1
-Author: Sawaj Studio
+Author: [REDACTED]
 """
 
 import logging
@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Constants
 VERSION = "1.1.1"
-AUTHOR = "Sawaj Studio"
+AUTHOR = "[REDACTED]"
 
 # Initialize the logger
 logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ def display_welcome_message() -> NoReturn:
     """
     Display a welcome message with package details.
 
-    This function logs a welcome message, including the package version and author information.
+    Logs a welcome message including version and author information.
     """
-    welcome_message = f"Welcome to SawajStudioBot v{VERSION} - Islamic Video Automation Suite\n"
+    welcome_message = f"Welcome to IslamicVideoBot v{VERSION} - Islamic Video Automation Suite\n"
     welcome_message += f"Developed by {AUTHOR}\n"
     welcome_message += "------------------------------\n"
     logger.info(welcome_message)
@@ -38,68 +38,82 @@ def display_welcome_message() -> NoReturn:
 # Function to provide detailed usage instructions
 def display_usage_instructions() -> NoReturn:
     """
-    Display comprehensive usage instructions for the package.
+    Provide comprehensive usage instructions for the package.
 
-    This function logs instructions on how to utilize the package's features effectively.
+    Logs detailed instructions on utilizing the package's features.
     """
     usage_instructions = "Usage Instructions:\n"
-    usage_instructions += "1. Import relevant modules from this package.\n"
-    usage_instructions += "2. Leverage the provided classes and functions for various tasks:\n"
-    usage_instructions += "   - Video Generation: Create engaging Islamic-themed videos for social media platforms.\n"
-    usage_instructions += "     - Utilize our advanced video editing tools and templates.\n"
-    usage_instructions += "   - Social Media Automation: Efficiently manage and schedule posts.\n"
-    usage_instructions += "     - Automate content publishing across multiple platforms.\n"
-    usage_instructions += "3. Explore the comprehensive documentation for in-depth guidance, tutorials, and examples.\n"
+    usage_instructions += "1. Import the necessary modules from this package.\n"
+    usage_instructions += "2. Utilize the following features:\n"
+    usage_instructions += "   - Video Generation:\n"
+    usage_instructions += "     - Create Islamic-themed videos for social media.\n"
+    usage_instructions += "     - Access advanced video editing tools and templates.\n"
+    usage_instructions += "   - Social Media Automation:\n"
+    usage_instructions += "     - Efficiently manage and schedule posts.\n"
+    usage_instructions += "     - Automate content publishing across platforms.\n"
+    usage_instructions += "3. Explore the documentation for tutorials and examples.\n"
     logger.info(usage_instructions)
 
 
 # New feature: Update notification system
-def notify_updates() -> NoReturn:
+def check_and_notify_updates() -> NoReturn:
     """
-    Notify the user about available updates.
+    Check for updates and notify the user.
 
-    This function checks for updates and informs the user if a new version is available.
+    This function checks for available updates and informs the user.
     """
     try:
-        # Placeholder code: Implement update checking mechanism here
-        # For demonstration, we'll assume an update is available
-        update_available = True
+        # Placeholder: Implement update checking logic here
+        # For demonstration, we'll simulate an update check
+        import requests
+        response = requests.get("https://api.example.com/updates/check")
+        update_data = response.json()
+        update_available = update_data.get('update_available', False)
 
         if update_available:
-            update_message = f"An update to version {VERSION} is now available!\n"
-            update_message += "Kindly update to access enhanced features and improvements.\n"
+            new_version = update_data.get('new_version', 'Unknown')
+            update_message = f"Update available! Version {new_version} is ready.\n"
+            update_message += "Please update to access the latest features.\n"
             logger.info(update_message)
+        else:
+            logger.info("No updates available. You are using the latest version.")
+    except requests.RequestException as e:
+        logger.error(f"Update check failed: {e}")
     except Exception as e:
-        logger.error(f"Update check encountered an error: {e}")
+        logger.error(f"An error occurred during update check: {e}")
 
 
-# New feature: User feedback collection
-def collect_user_feedback() -> NoReturn:
+# New feature: User feedback collection with validation
+def collect_and_validate_user_feedback() -> NoReturn:
     """
-    Collect user feedback and suggestions.
+    Collect and validate user feedback.
 
-    This function provides a mechanism to gather user feedback and suggestions for improvement.
+    Gather user feedback and ensure it is not empty.
     """
     try:
-        feedback_message = "We value your feedback! Please share your thoughts and suggestions:\n"
-        feedback = input(feedback_message)
-        logger.info(f"User Feedback: {feedback}")
+        feedback_message = "Your feedback is valuable! Please share your thoughts:\n"
+        while True:
+            feedback = input(feedback_message)
+            if feedback:
+                logger.info(f"User Feedback: {feedback}")
+                break
+            logger.warning("Feedback cannot be empty. Please provide your input.")
+    except EOFError:
+        logger.warning("User input interrupted. Feedback collection skipped.")
     except Exception as e:
         logger.error(f"Feedback collection error: {e}")
 
 
 # Main execution flow
 if __name__ == "__main__":
-    # Display welcome message
+    # Display welcome and usage instructions
     display_welcome_message()
-
-    # Display usage instructions
     display_usage_instructions()
 
-    # Check for updates and notify the user
-    notify_updates()
+    # Check for updates and notify
+    check_and_notify_updates()
 
-    # Collect user feedback
-    collect_user_feedback()
+    # Collect user feedback with validation
+    collect_and_validate_user_feedback()
 
-    logger.info("Initialization and setup completed. SawajStudioBot is ready!")
+    logger.info("Initialization complete. IslamicVideoBot is ready to use!")
