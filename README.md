@@ -1,2 +1,2 @@
 # Project ON
-Automated video generation workflow repository.
+Automated video generation repository under social_media directory.
