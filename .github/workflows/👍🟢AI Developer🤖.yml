@@ -1,1749 +1,900 @@
-name: 👍🟢Sawaj AI Developer
+name: Create Full Repository Structure (All 3 Folders)
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: write
-
-concurrency:
-  group: sawaj-ai-developer
-  cancel-in-progress: false
-
 jobs:
-  run:
+  create-structure:
     runs-on: ubuntu-latest
-    timeout-minutes: 355
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.TOKEN_GITHUB }}
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install deps
-        run: pip install --quiet requests pyyaml pyflakes
-
-      - name: Create Backup
-        run: |
-          BACKUP="backup-$(date +%Y%m%d-%H%M%S)"
-          git push origin "HEAD:refs/heads/$BACKUP" || true
-          git ls-remote --heads origin 'backup-*' \
-            | awk '{print $2}' \
-            | sed 's#refs/heads/##' \
-            | sort \
-            | head -n -20 \
-            | xargs -r -I{} git push origin --delete {} || true
-
-      - name: Write AI Developer Script
-        run: |
-          cat > /tmp/ai_dev.py << 'ENDOFPYTHON'
-          #!/usr/bin/env python3
-          """Sawaj AI Developer v7 — Pro Report + Zero Delete + Fast"""
-          from __future__ import annotations
-
-          import ast
-          import difflib
-          import functools
-          import hashlib
-          import json
-          import os
-          import random
-          import re
-          import sys
-          import time
-          import tomllib
-          from concurrent.futures import ThreadPoolExecutor, as_completed
-          from datetime import datetime, timezone
-          from typing import Any, Dict, List, Optional, Set, Tuple
-
-          import requests
-
-          try:
-              import yaml
-          except ImportError:
-              yaml = None
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # CONFIG
-          # ══════════════════════════════════════════════════════════════════════
-          def env_str(name, default=""):
-              return os.environ.get(name, default).strip()
-
-
-          ROOT_FOLDER = env_str("ROOT_FOLDER", "sawajstudiobot")
-          WORKFLOW_FOLDER = ".github/workflows"
-          SELF_FILENAME = "sawaj_ai_developer.yml"
-          SELF_NAME_RE = re.compile(r"(?m)^name:\s*Sawaj AI Developer\s*$")
-          STATE_PATH = ROOT_FOLDER + "/_logs/ai_developer_state.json"
-
-          ALLOW_DELETE = False
-          INCLUDE_WORKFLOWS = True
-          MAX_RUNTIME_MIN = 330
-          REQUEST_DELAY = 1
-          MAX_WORKERS = 4
-          VOTE_JUDGES = 3
-          MAX_CREATES_PER_FILE = 2
-          MAX_FILE_CHARS = 120000
-          MIN_FILE_CHARS = 30
-          AI_TIMEOUT = 240
-
-          KEYS = {
-              "Gemini": env_str("GEMINI_API_KEY"),
-              "Groq": env_str("GROQ_API_KEY"),
-              "OpenRouter": env_str("OPENROUTER_API_KEY"),
-              "Mistral": env_str("MISTRAL_API_KEY"),
-              "Cerebras": env_str("CEREBRAS_API_KEY"),
-              "NVIDIA": env_str("NVIDIA_API_KEY"),
-              "Cohere": env_str("COHERE_API_KEY"),
-              "HuggingFace": env_str("HUGGINGFACE_API_KEY"),
-          }
-
-          GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
-          GEMINI_MAX_OUT = 32768
-          COHERE_MODEL = "command-a-03-2025"
-
-          OPENAI_COMPAT = {
-              "Groq": {
-                  "url": "https://api.groq.com/openai/v1/chat/completions",
-                  "model": "llama-3.3-70b-versatile",
-                  "max_out": 8000,
-              },
-              "OpenRouter": {
-                  "url": "https://openrouter.ai/api/v1/chat/completions",
-                  "model": "openai/gpt-4o-mini",
-                  "max_out": 16000,
-                  "headers": {
-                      "HTTP-Referer": "https://github.com/SAWAJ-STUDIO-LAB",
-                      "X-Title": "SawajAIDev",
-                  },
-              },
-              "Mistral": {
-                  "url": "https://api.mistral.ai/v1/chat/completions",
-                  "model": "mistral-large-latest",
-                  "max_out": 16000,
-              },
-              "Cerebras": {
-                  "url": "https://api.cerebras.ai/v1/chat/completions",
-                  "model": "llama-3.3-70b",
-                  "max_out": 8000,
-              },
-              "NVIDIA": {
-                  "url": "https://integrate.api.nvidia.com/v1/chat/completions",
-                  "model": "meta/llama-3.3-70b-instruct",
-                  "max_out": 4096,
-              },
-              "HuggingFace": {
-                  "url": "https://router.huggingface.co/v1/chat/completions",
-                  "model": "meta-llama/Llama-3.3-70B-Instruct",
-                  "max_out": 4000,
-              },
-          }
-
-          JUDGE_POOL = ["Gemini", "OpenRouter", "Mistral"]
-
-          SKIP_DIRS = {
-              "__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv",
-              ".venv", "node_modules", "_temp_builder", ".pytest_cache", ".mypy_cache",
-              "s_frames", "p_frames", "l_frames", "temp", "final",
-          }
-          PROCESS_EXTENSIONS = (
-              ".py", ".yml", ".yaml", ".json", ".toml", ".cfg", ".md", ".txt", ".ini",
-          )
-
-          SENSITIVE_NAME_RE = re.compile(
-              r"(^|[_\-.])(token|tokens|secret|secrets|credential|credentials|"
-              r"client_secret|service_account|id_rsa|cookies?)([_\-.]|$)|^\.env",
-              re.IGNORECASE,
-          )
-          SECRET_RES = [
-              re.compile(p)
-              for p in (
-                  r"AIza[0-9A-Za-z_\-]{35}",
-                  r"\bsk-[A-Za-z0-9_\-]{20,}",
-                  r"\bgh[pousr]_[A-Za-z0-9]{30,}",
-                  r"\bxox[abprs]-[A-Za-z0-9\-]{10,}",
-                  r"\b\d{8,10}:[A-Za-z0-9_\-]{35}\b",
-                  r"-----BEGIN (?:RSA |EC |OPENSSH |)?PRIVATE KEY-----",
-                  r"\"(?:refresh_token|client_secret|private_key)\"\s*:\s*\"[^\"]{8,}\"",
-                  r"\bya29\.[0-9A-Za-z_\-]{20,}",
-                  r"\bgsk_[A-Za-z0-9]{20,}",
-                  r"\bnvapi-[A-Za-z0-9_\-]{20,}",
-                  r"\bhf_[A-Za-z0-9]{30,}",
-                  r"\bpplx-[A-Za-z0-9]{20,}",
-              )
-          ]
-          PLACEHOLDER_RE = re.compile(
-              r"(?i)(rest of (the )?(code|file)|\.\.\.\s*\(?(unchanged|existing|same)|"
-              r"#\s*\.\.\.|\[\s*empty file\s*\]|existing code here|your code here)"
-          )
-          SERIOUS_FLAKES = {
-              "UndefinedName", "UndefinedLocal", "UndefinedExport", "DuplicateArgument",
-              "ReturnOutsideFunction", "YieldOutsideFunction", "ContinueOutsideLoop",
-              "BreakOutsideLoop", "DefaultExceptNotLast", "TwoStarredExpressions",
-          }
-          SECRETS_REF_RE = re.compile(r"secrets\.([A-Za-z0-9_]+)")
-          HEREDOC_RES = [
-              re.compile(
-                  r"cat\s*>\s*(\S+\.py)\s*<<\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n[ \t]*\2[ \t]*(?:\n|$)",
-                  re.DOTALL,
-              ),
-              re.compile(
-                  r"python3?\s+-\s*<<\s*['\"]?(\w+)['\"]?[^\n]*\n(.*?)\n[ \t]*\1[ \t]*(?:\n|$)",
-                  re.DOTALL,
-              ),
-          ]
-
-          DISABLED = set()
-          COOLDOWN = {}
-          STATS = {
-              "files_seen": 0, "updated": 0, "created": 0, "deleted": 0, "kept": 0,
-              "failed": 0, "rejected_proposals": 0, "resumed_skipped": 0,
-          }
-          WINS = {}
-          REPORT = []
-          JOURNAL = {}
-
-
-          def log(msg=""):
-              print(msg, flush=True)
-
-
-          def redact(text):
-              out = str(text)
-              secrets = [v for v in KEYS.values() if v]
-              secrets.append(env_str("TELEGRAM_BOT_TOKEN"))
-              for secret in secrets:
-                  if secret:
-                      out = out.replace(secret, "***")
-              return out
-
-
-          def sha(text):
-              return hashlib.sha1((text or "").encode("utf-8")).hexdigest()
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # PRO-LEVEL TELEGRAM REPORTER
-          # ══════════════════════════════════════════════════════════════════════
-          class TelegramReporter:
-              def __init__(self):
-                  self.token = env_str("TELEGRAM_BOT_TOKEN")
-                  self.chat_id = env_str("TELEGRAM_CHAT_ID")
-                  self.enabled = bool(self.token and self.chat_id)
-                  self.start_time = time.time()
-
-              def _send(self, msg, silent=False):
-                  if not self.enabled:
-                      return
-                  msg = redact(msg)
-                  if len(msg) > 3800:
-                      chunks = self._split(msg, 3800)
-                      for i, chunk in enumerate(chunks, 1):
-                          header = f"<b>📄 Part {i}/{len(chunks)}</b>\n" if len(chunks) > 1 else ""
-                          self._send_raw(header + chunk, silent)
-                  else:
-                      self._send_raw(msg, silent)
-
-              def _send_raw(self, msg, silent=False):
-                  try:
-                      requests.post(
-                          f"https://api.telegram.org/bot{self.token}/sendMessage",
-                          json={
-                              "chat_id": self.chat_id,
-                              "text": msg,
-                              "parse_mode": "HTML",
-                              "disable_web_page_preview": True,
-                              "disable_notification": silent,
-                          },
-                          timeout=15,
-                      )
-                  except requests.RequestException:
-                      pass
-
-              def _split(self, msg, limit):
-                  chunks = []
-                  current = ""
-                  for line in msg.split("\n"):
-                      if len(current) + len(line) + 1 > limit:
-                          chunks.append(current)
-                          current = line
-                      else:
-                          current += ("\n" if current else "") + line
-                  if current:
-                      chunks.append(current)
-                  return chunks
-
-              def _fmt_time(self, seconds):
-                  m = int(seconds // 60)
-                  s = int(seconds % 60)
-                  if m >= 60:
-                      h = m // 60
-                      m = m % 60
-                      return f"{h}h {m}m {s}s"
-                  return f"{m}m {s}s"
-
-              def send_start(self, files_count, active_ais, max_minutes):
-                  msg = (
-                      f"🚀 <b>SAWAJ AI DEVELOPER — STARTED</b>\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      f"🕐 <b>Time:</b> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-                      f"📁 <b>Root:</b> <code>{ROOT_FOLDER}/</code>\n"
-                      f"🤖 <b>Active AIs:</b> {len(active_ais)}/{len(PROVIDERS)}\n"
-                      f"   <i>{', '.join(active_ais)}</i>\n"
-                      f"📊 <b>Files to Process:</b> {files_count}\n"
-                      f"⏱️  <b>Max Runtime:</b> {max_minutes} min\n"
-                      f"🛡️  <b>Delete:</b> DISABLED\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  )
-                  self._send(msg, silent=True)
-
-              def send_progress(self, current, total, recent_results):
-                  pct = int((current / total) * 100) if total else 0
-                  elapsed = time.time() - self.start_time
-                  eta = (elapsed / current) * (total - current) if current > 0 else 0
-
-                  lines = [
-                      f"📊 <b>PROGRESS: {current}/{total}</b> ({pct}%)",
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━",
-                  ]
-                  for entry in recent_results:
-                      icon = {
-                          "updated": "✅", "created": "🆕", "kept": "⏭️",
-                          "failed": "❌", "deleted": "🗑️",
-                      }.get(entry["result"], "•")
-                      name = os.path.basename(entry["file"])
-                      winner = entry.get("winner", "")
-                      result = entry["result"].upper()
-                      name_display = name[:28].ljust(28, ".")
-                      lines.append(f"{icon} <code>{name_display}</code> {winner} <b>({result})</b>")
-
-                  lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━")
-                  lines.append(f"🕐 <b>Elapsed:</b> {self._fmt_time(elapsed)}")
-                  lines.append(f"⏳ <b>ETA:</b> {self._fmt_time(eta)}")
-                  self._send("\n".join(lines), silent=True)
-
-              def send_final_report(self, stats, wins, report_list, skipped, reverted, elapsed):
-                  updated = [r for r in report_list if r["result"] == "updated"]
-                  created = [r for r in report_list if r["result"] == "created"]
-                  failed = [r for r in report_list if r["result"] == "failed"]
-                  blocked = [r for r in report_list if r.get("rejected")]
-
-                  # ─── MAIN SUMMARY ───
-                  msg = (
-                      f"🎉 <b>SAWAJ AI DEVELOPER — COMPLETE</b>\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                      f"<b>📊 SUMMARY</b>\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      f"📁 Files Reviewed:     <b>{stats['files_seen']}</b>\n"
-                      f"✅ Updated:            <b>{stats['updated']}</b>\n"
-                      f"🆕 New Files Created:  <b>{stats['created']}</b>\n"
-                      f"⏭️  Kept As Is:         <b>{stats['kept']}</b>\n"
-                      f"❌ Failed:             <b>{stats['failed']}</b>\n"
-                      f"🛡️  Unsafe Blocked:     <b>{stats['rejected_proposals']}</b>\n"
-                      f"🔄 Reverted:           <b>{len(reverted)}</b>\n"
-                      f"\n"
-                      f"⏱️  <b>Total Time:</b> {self._fmt_time(elapsed)}\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  )
-                  self._send(msg)
-
-                  # ─── WINS BY AI ───
-                  if wins:
-                      wins_msg = (
-                          f"🏆 <b>VOTES WON BY AI</b>\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      medals = ["🥇", "🥈", "🥉"]
-                      sorted_wins = sorted(wins.items(), key=lambda x: -x[1])
-                      for i, (ai, count) in enumerate(sorted_wins):
-                          medal = medals[i] if i < 3 else "  "
-                          ai_pad = ai.ljust(15, ".")
-                          wins_msg += f"{medal} <code>{ai_pad}</code> <b>{count} wins</b>\n"
-                      self._send(wins_msg)
-
-                  # ─── UPDATED FILES ───
-                  if updated:
-                      upd_msg = (
-                          f"✅ <b>UPDATED FILES</b> ({len(updated)})\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      for r in updated[:15]:
-                          winner = r.get("winner", "?")
-                          upd_msg += f"<code>{r['file']}</code>\n   └─ 🏆 {winner}\n"
-                      if len(updated) > 15:
-                          upd_msg += f"\n<i>... and {len(updated) - 15} more</i>"
-                      self._send(upd_msg)
-
-                  # ─── NEW FILES ───
-                  if created:
-                      new_msg = (
-                          f"🆕 <b>NEW FILES</b> ({len(created)})\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      for r in created[:10]:
-                          new_msg += f"• <code>{r['file']}</code>\n"
-                      self._send(new_msg)
-
-                  # ─── FAILED FILES ───
-                  if failed:
-                      fail_msg = (
-                          f"❌ <b>FAILED FILES</b> ({len(failed)})\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      for r in failed[:10]:
-                          reasons = r.get("rejected", {})
-                          reason_text = "unknown"
-                          if reasons:
-                              reason_text = list(reasons.values())[0][:60]
-                          fail_msg += f"<code>{r['file']}</code>\n   └─ ⚠️ {reason_text}\n"
-                      self._send(fail_msg)
-
-                  # ─── BLOCKED PROPOSALS ───
-                  if blocked:
-                      blk_msg = (
-                          f"🛡️  <b>BLOCKED PROPOSALS</b> ({len(blocked)})\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      for r in blocked[:10]:
-                          reasons = r.get("rejected", {})
-                          if reasons:
-                              for ai, reason in list(reasons.items())[:1]:
-                                  blk_msg += f"<code>{r['file']}</code>\n   └─ 🚫 {reason[:60]}\n"
-                      self._send(blk_msg)
-
-                  # ─── REVERTED ───
-                  if reverted:
-                      rev_msg = (
-                          f"🔄 <b>REVERTED FILES</b> ({len(reverted)})\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      for f in reverted[:10]:
-                          rev_msg += f"• <code>{f}</code>\n"
-                      self._send(rev_msg)
-
-                  # ─── SKIPPED ───
-                  if any(skipped.values()):
-                      skip_msg = (
-                          f"📁 <b>SKIPPED FILES</b>\n"
-                          f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      )
-                      if skipped.get("sensitive"):
-                          skip_msg += f"🔐 <b>Sensitive:</b> {len(skipped['sensitive'])}\n"
-                          for f in skipped["sensitive"][:5]:
-                              skip_msg += f"   • <code>{os.path.basename(f)}</code>\n"
-                      if skipped.get("too_large"):
-                          skip_msg += f"📦 <b>Too Large:</b> {len(skipped['too_large'])}\n"
-                          for f in skipped["too_large"][:5]:
-                              skip_msg += f"   • <code>{os.path.basename(f)}</code>\n"
-                      self._send(skip_msg)
-
-                  # ─── NEXT STEPS ───
-                  final = (
-                      f"🎯 <b>NEXT STEPS</b>\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      f"✅ Backup created\n"
-                      f"💾 Full report: <code>sawaj_ai_report.json</code>\n"
-                      f"🔗 Check GitHub Actions\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      f"<i>SawajStudioBot • Auto-Upgrade System</i>"
-                  )
-                  self._send(final)
-
-              def send_alert(self, alert_type, message):
-                  icons = {"critical": "🚨", "warning": "⚠️", "info": "ℹ️"}
-                  icon = icons.get(alert_type, "ℹ️")
-                  msg = (
-                      f"{icon} <b>ALERT: {alert_type.upper()}</b>\n"
-                      f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                      f"{message}\n"
-                      f"🕐 {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
-                  )
-                  self._send(msg)
-
-
-          REPORTER = TelegramReporter()
-
-
-          def tg(msg, silent=False):
-              REPORTER._send(msg, silent)
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # AI PROVIDERS
-          # ══════════════════════════════════════════════════════════════════════
-          SYSTEM_PROMPT = (
-              "You are a meticulous senior Python engineer for SawajStudioBot. "
-              "You ONLY improve code. NEVER delete functions, classes, constants, imports. "
-              "Always return the COMPLETE file. Never truncate."
-          )
-
-
-          def http_post(url, headers, payload, timeout=AI_TIMEOUT):
-              try:
-                  r = requests.post(url, headers=headers, json=payload, timeout=timeout)
-              except requests.Timeout:
-                  return None, "TIMEOUT", True
-              except requests.RequestException as exc:
-                  return None, "NETWORK: " + type(exc).__name__, True
-              if r.status_code == 200:
-                  try:
-                      return r.json(), "", False
-                  except ValueError:
-                      return None, "BAD_JSON", True
-              retry = r.status_code in (408, 409, 425, 429) or r.status_code >= 500
-              return None, "HTTP %d: %s" % (r.status_code, redact(r.text[:150])), retry
-
-
-          def call_gemini(prompt):
-              last_err = "NO_MODELS"
-              for model in GEMINI_MODELS:
-                  url = (
-                      "https://generativelanguage.googleapis.com/v1beta/models/"
-                      + model + ":generateContent"
-                  )
-                  data, err, _ = http_post(
-                      url,
-                      {"Content-Type": "application/json", "x-goog-api-key": KEYS["Gemini"]},
-                      {
-                          "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
-                          "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                          "generationConfig": {"maxOutputTokens": GEMINI_MAX_OUT, "temperature": 0.2},
-                      },
-                  )
-                  if data:
-                      try:
-                          parts = data["candidates"][0]["content"]["parts"]
-                          text = "".join(p.get("text", "") for p in parts)
-                          if text.strip():
-                              return text, "", False
-                          err = "EMPTY_OR_BLOCKED"
-                      except (KeyError, IndexError, TypeError):
-                          err = "BAD_RESPONSE_SHAPE"
-                  last_err = model + ": " + err
-              return None, last_err, False
-
-
-          def call_openai_compat(name, prompt):
-              cfg = OPENAI_COMPAT[name]
-              headers = {"Authorization": "Bearer " + KEYS[name]}
-              headers.update(cfg.get("headers", {}))
-              data, err, retry = http_post(
-                  cfg["url"], headers,
-                  {
-                      "model": cfg["model"],
-                      "messages": [
-                          {"role": "system", "content": SYSTEM_PROMPT},
-                          {"role": "user", "content": prompt},
-                      ],
-                      "max_tokens": cfg["max_out"],
-                      "temperature": 0.2,
-                  },
-              )
-              if data:
-                  try:
-                      text = data["choices"][0]["message"]["content"]
-                      if text and text.strip():
-                          return text, "", False
-                  except (KeyError, IndexError, TypeError):
-                      pass
-                  return None, "BAD_RESPONSE_SHAPE", False
-              return None, err, retry
-
-
-          def call_cohere(prompt):
-              data, err, retry = http_post(
-                  "https://api.cohere.com/v2/chat",
-                  {"Authorization": "Bearer " + KEYS["Cohere"], "Content-Type": "application/json"},
-                  {
-                      "model": COHERE_MODEL,
-                      "messages": [
-                          {"role": "system", "content": SYSTEM_PROMPT},
-                          {"role": "user", "content": prompt},
-                      ],
-                      "max_tokens": 4000,
-                      "temperature": 0.2,
-                  },
-              )
-              if data:
-                  try:
-                      blocks = data["message"]["content"]
-                      text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-                      if text.strip():
-                          return text, "", False
-                  except (KeyError, TypeError, AttributeError):
-                      pass
-                  return None, "BAD_RESPONSE_SHAPE", False
-              return None, err, retry
-
-
-          PROVIDERS = {
-              "Gemini": {"fn": call_gemini, "max_out": GEMINI_MAX_OUT},
-              "Cohere": {"fn": call_cohere, "max_out": 4000},
-          }
-          for _name, _cfg in OPENAI_COMPAT.items():
-              PROVIDERS[_name] = {
-                  "fn": functools.partial(call_openai_compat, _name),
-                  "max_out": _cfg["max_out"],
-              }
-
-
-          def call_provider(name, prompt):
-              fn = PROVIDERS[name]["fn"]
-              last = ""
-              for attempt, delay in enumerate((0, 8, 20), 1):
-                  if delay:
-                      time.sleep(delay)
-                  try:
-                      text, err, retry = fn(prompt)
-                  except Exception as exc:
-                      text, err, retry = None, type(exc).__name__, False
-                  if text and text.strip():
-                      return text, "OK"
-                  last = redact(err or "EMPTY")
-                  log("    FAIL %s (try %d) - %s" % (name, attempt, last))
-                  if last.startswith(("HTTP 401", "HTTP 403", "HTTP 404")):
-                      DISABLED.add(name)
-                      log("    %s disabled" % name)
-                      break
-                  if not retry:
-                      break
-                  if last.startswith("HTTP 429") and attempt == 3:
-                      COOLDOWN[name] = time.time() + 120
-              return None, last
-
-
-          def active_providers():
-              now = time.time()
-              return [
-                  n for n in PROVIDERS
-                  if KEYS.get(n) and n not in DISABLED and COOLDOWN.get(n, 0) <= now
-              ]
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # AST ANALYSIS
-          # ══════════════════════════════════════════════════════════════════════
-          @functools.lru_cache(maxsize=2048)
-          def _parse_cached(code):
-              try:
-                  return ast.parse(code)
-              except (SyntaxError, ValueError):
-                  return None
-
-
-          def defined_names(code):
-              names = set()
-              tree = _parse_cached(code)
-              if tree is None:
-                  return names
-              for node in ast.walk(tree):
-                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                      names.add(node.name)
-              for node in tree.body:
-                  targets = []
-                  if isinstance(node, ast.Assign):
-                      targets = list(node.targets)
-                  elif isinstance(node, ast.AnnAssign):
-                      targets = [node.target]
-                  for t in targets:
-                      if isinstance(t, ast.Name) and t.id.isupper():
-                          names.add(t.id)
-              return names
-
-
-          def serious_flakes(code):
-              try:
-                  from pyflakes.checker import Checker
-                  tree = _parse_cached(code)
-                  if tree is None:
-                      return 0
-                  return sum(
-                      1 for m in Checker(tree, "candidate.py").messages
-                      if m.__class__.__name__ in SERIOUS_FLAKES
-                  )
-              except Exception:
-                  return 0
-
-
-          @functools.lru_cache(maxsize=2048)
-          def import_records(code):
-              tree = _parse_cached(code)
-              if tree is None:
-                  return ()
-              recs = []
-              for node in ast.walk(tree):
-                  if isinstance(node, ast.Import):
-                      for a in node.names:
-                          recs.append((a.name, 0, ()))
-                  elif isinstance(node, ast.ImportFrom):
-                      recs.append((node.module or "", node.level, tuple(a.name for a in node.names)))
-              return tuple(recs)
-
-
-          @functools.lru_cache(maxsize=2048)
-          def bindings_of(code):
-              tree = _parse_cached(code)
-              if tree is None:
-                  return None
-              names = set()
-
-              def add_targets(node):
-                  if node is None:
-                      return
-                  for n in ast.walk(node):
-                      if isinstance(n, ast.Name):
-                          names.add(n.id)
-
-              def visit(stmts):
-                  for s in stmts:
-                      if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                          names.add(s.name)
-                      elif isinstance(s, ast.Import):
-                          for a in s.names:
-                              names.add((a.asname or a.name).split(".")[0])
-                      elif isinstance(s, ast.ImportFrom):
-                          for a in s.names:
-                              names.add("*" if a.name == "*" else (a.asname or a.name))
-                      elif isinstance(s, ast.Assign):
-                          for t in s.targets:
-                              add_targets(t)
-                      elif isinstance(s, (ast.AnnAssign, ast.AugAssign)):
-                          add_targets(s.target)
-                      elif isinstance(s, (ast.For, ast.AsyncFor)):
-                          add_targets(s.target)
-                          visit(s.body)
-                          visit(s.orelse)
-                      elif isinstance(s, (ast.With, ast.AsyncWith)):
-                          for item in s.items:
-                              add_targets(item.optional_vars)
-                          visit(s.body)
-                      elif isinstance(s, (ast.If, ast.While)):
-                          visit(s.body)
-                          visit(s.orelse)
-                      elif isinstance(s, ast.Try):
-                          visit(s.body)
-                          visit(s.orelse)
-                          visit(s.finalbody)
-                          for h in s.handlers:
-                              visit(h.body)
-
-              visit(tree.body)
-              if "*" in names or "__getattr__" in names:
-                  return None
-              return frozenset(names)
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # FILE TREE
-          # ══════════════════════════════════════════════════════════════════════
-          class Tree:
-              def __init__(self, paths):
-                  self.files = set(paths)
-                  self.dirs = set()
-                  for p in self.files:
-                      d = os.path.dirname(p)
-                      while d and d not in self.dirs:
-                          self.dirs.add(d)
-                          d = os.path.dirname(d)
-
-              def with_changes(self, changes):
-                  paths = set(self.files)
-                  for p, c in changes.items():
-                      if c is None:
-                          paths.discard(p)
-                      else:
-                          paths.add(p)
-                  return Tree(paths)
-
-              def locate(self, base, parts):
-                  if not parts:
-                      return ("pkg", base) if (base == "" or base in self.dirs) else None
-                  path = "/".join([x for x in [base] + parts if x])
-                  if path + ".py" in self.files:
-                      return ("file", path + ".py")
-                  if path in self.dirs:
-                      return ("pkg", path)
-                  return None
-
-
-          def ancestor_dirs(rel):
-              out = []
-              d = os.path.dirname(rel)
-              while True:
-                  out.append(d)
-                  if not d:
-                      break
-                  d = os.path.dirname(d)
-              return out
-
-
-          def resolve_module(tree, importer, module, level):
-              parts = [p for p in module.split(".") if p]
-              if level > 0:
-                  base = os.path.dirname(importer)
-                  for _ in range(level - 1):
-                      base = os.path.dirname(base)
-                  return tree.locate(base, parts)
-              for base in ancestor_dirs(importer):
-                  res = tree.locate(base, parts)
-                  if res:
-                      return res
-              return None
-
-
-          def is_internal(tree, importer, module, level):
-              if level > 0:
-                  return True
-              first = module.split(".")[0]
-              if not first:
-                  return False
-              return any(tree.locate(b, [first]) for b in ancestor_dirs(importer))
-
-
-          def import_errors(path, code, tree, contents):
-              errs = set()
-              for module, level, names in import_records(code):
-                  if not is_internal(tree, path, module, level):
-                      continue
-                  res = resolve_module(tree, path, module, level)
-                  if res is None:
-                      errs.add("%s: cannot resolve '%s%s'" % (path, "." * level, module))
-                      continue
-                  kind, target = res
-                  if "*" in names:
-                      continue
-                  for n in names:
-                      if kind == "file":
-                          src = contents.get(target)
-                          b = bindings_of(src) if src is not None else None
-                          if b is not None and n not in b:
-                              errs.add("%s: '%s' not found in %s" % (path, n, target))
-                      else:
-                          if tree.locate(target, [n]):
-                              continue
-                          init = target + "/__init__.py"
-                          src = contents.get(init)
-                          b = bindings_of(src) if src is not None else None
-                          if b is not None and n not in b:
-                              errs.add("%s: '%s' not found in package %s" % (path, n, target))
-              return errs
-
-
-          def import_targets(path, code, tree):
-              out = set()
-              for module, level, names in import_records(code):
-                  if not is_internal(tree, path, module, level):
-                      continue
-                  res = resolve_module(tree, path, module, level)
-                  if not res:
-                      continue
-                  kind, target = res
-                  if kind == "file":
-                      out.add(target)
-                  else:
-                      init = target + "/__init__.py"
-                      if init in tree.files:
-                          out.add(init)
-                      for n in names:
-                          sub = tree.locate(target, [n])
-                          if sub and sub[0] == "file":
-                              out.add(sub[1])
-              return out
-
-
-          def dependents(target, contents, tree):
-              return [
-                  p for p, c in contents.items()
-                  if p.endswith(".py") and p != target and target in import_targets(p, c, tree)
-              ]
-
-
-          def link_check(changes, contents, tree):
-              contents2 = dict(contents)
-              for p, c in changes.items():
-                  if c is None:
-                      contents2.pop(p, None)
-                  else:
-                      contents2[p] = c
-              tree2 = tree.with_changes(changes)
-              affected = set()
-              for p, c in changes.items():
-                  if p.endswith(".py"):
-                      if c is not None:
-                          affected.add(p)
-                      affected.update(dependents(p, contents, tree))
-              before = set()
-              after = set()
-              for p in affected:
-                  if p in contents:
-                      before |= import_errors(p, contents[p], tree, contents)
-                  if p in contents2:
-                      after |= import_errors(p, contents2[p], tree2, contents2)
-              return sorted(after - before)
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # VALIDATION
-          # ══════════════════════════════════════════════════════════════════════
-          def workflow_signature(data):
-              if not isinstance(data, dict):
-                  return None
-              trigger = data.get("on", data.get(True))
-              jobs = data.get("jobs") or {}
-              sig = {"on": json.dumps(trigger, sort_keys=True, default=str), "jobs": {}}
-              for jname, job in jobs.items():
-                  steps = []
-                  if isinstance(job, dict):
-                      steps = job.get("steps") or []
-                  sig["jobs"][jname] = [
-                      (s.get("name"), str(s.get("uses", "")).split("@")[0], sha(str(s.get("run", ""))))
-                      for s in steps if isinstance(s, dict)
-                  ]
-              return sig
-
-
-          def check_workflow(old, new):
-              if yaml is None:
-                  return True, ""
-              try:
-                  new_data = yaml.safe_load(new)
-              except Exception:
-                  return False, "invalid YAML"
-              if not isinstance(new_data, dict) or "jobs" not in new_data:
-                  return False, "not a workflow"
-              if "on" not in new_data and True not in new_data:
-                  return False, "no trigger"
-              try:
-                  old_data = yaml.safe_load(old)
-              except Exception:
-                  old_data = None
-              if old_data is not None:
-                  if workflow_signature(old_data) != workflow_signature(new_data):
-                      return False, "workflow steps/triggers/run changed"
-                  if not set(SECRETS_REF_RE.findall(new)) <= set(SECRETS_REF_RE.findall(old)):
-                      return False, "new secret reference"
-              for job in (new_data.get("jobs") or {}).values():
-                  if not isinstance(job, dict):
-                      continue
-                  for step in job.get("steps") or []:
-                      run = step.get("run") if isinstance(step, dict) else None
-                      if not isinstance(run, str):
-                          continue
-                      for rx in HEREDOC_RES:
-                          for m in rx.finditer(run):
-                              body = m.group(rx.groups)
-                              try:
-                                  ast.parse(body)
-                              except SyntaxError as exc:
-                                  return False, "embedded python broken (line %s)" % exc.lineno
-              return True, ""
-
-
-          def check_candidate(rel, old, new, extra_defs=None):
-              extra_defs = extra_defs or set()
-              if not new or not new.strip():
-                  return False, "empty output"
-              if PLACEHOLDER_RE.search(new) and not PLACEHOLDER_RE.search(old):
-                  return False, "placeholder / lazy"
-              if len(old) > 500 and len(new) > 4 * len(old):
-                  return False, "output grew > 4x"
-              if rel.endswith(".py"):
-                  if _parse_cached(new) is None:
-                      return False, "syntax error"
-                  if old.strip():
-                      lost = defined_names(old) - defined_names(new) - extra_defs
-                      if lost:
-                          return False, "removed definitions: " + ", ".join(sorted(lost)[:5])
-                      old_imports = {(m, l, tuple(n)) for m, l, n in import_records(old)}
-                      new_imports = {(m, l, tuple(n)) for m, l, n in import_records(new)}
-                      missing = old_imports - new_imports
-                      if missing:
-                          return False, "removed imports: %d" % len(missing)
-                      if len(old) > 400 and len(new) < 0.5 * len(old):
-                          return False, "output far shorter"
-                  if serious_flakes(new) > serious_flakes(old):
-                      return False, "introduces undefined names"
-                  return True, ""
-              if rel.endswith((".yml", ".yaml")):
-                  if rel.startswith(WORKFLOW_FOLDER + "/"):
-                      ok, why = check_workflow(old, new)
-                      if not ok:
-                          return False, why
-                  elif yaml is not None:
-                      try:
-                          yaml.safe_load(new)
-                      except Exception:
-                          return False, "invalid YAML"
-              elif rel.endswith(".json"):
-                  try:
-                      json.loads(new)
-                  except ValueError:
-                      return False, "invalid JSON"
-              elif rel.endswith(".toml"):
-                  try:
-                      tomllib.loads(new)
-                  except tomllib.TOMLDecodeError:
-                      return False, "invalid TOML"
-              if len(old) > 200 and len(new) < 0.6 * len(old):
-                  return False, "output far shorter"
-              return True, ""
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # SCANNING
-          # ══════════════════════════════════════════════════════════════════════
-          def is_skipped(path):
-              parts = [p for p in path.replace("\\", "/").split("/") if p]
-              if any(p in SKIP_DIRS for p in parts):
-                  return True
-              return bool(parts) and parts[-1] == SELF_FILENAME
-
-
-          def looks_sensitive(rel, content):
-              base = os.path.basename(rel).lower()
-              if not base.endswith(".py") and SENSITIVE_NAME_RE.search(base):
-                  return True
-              return any(p.search(content) for p in SECRET_RES)
-
-
-          def scan_folder(root, skipped, all_paths):
-              files = {}
-              if not os.path.isdir(root):
-                  return files
-              for dirpath, dirs, fnames in os.walk(root):
-                  dirs[:] = sorted(d for d in dirs if not is_skipped(os.path.join(dirpath, d)))
-                  for fn in sorted(fnames):
-                      full = os.path.join(dirpath, fn)
-                      rel = full.replace(os.sep, "/")
-                      if is_skipped(rel):
-                          continue
-                      all_paths.add(rel)
-                      if not fn.endswith(PROCESS_EXTENSIONS):
-                          continue
-                      try:
-                          with open(full, "r", encoding="utf-8") as fh:
-                              content = fh.read()
-                      except (OSError, UnicodeDecodeError):
-                          skipped["unreadable"].append(rel)
-                          continue
-                      if root == WORKFLOW_FOLDER and (
-                          not fn.endswith((".yml", ".yaml")) or SELF_NAME_RE.search(content)
-                      ):
-                          continue
-                      if len(content.strip()) < MIN_FILE_CHARS:
-                          continue
-                      if len(content) > MAX_FILE_CHARS:
-                          skipped["too_large"].append(rel)
-                          continue
-                      if looks_sensitive(rel, content):
-                          skipped["sensitive"].append(rel)
-                          continue
-                      files[rel] = content
-              return files
-
-
-          def scan_all():
-              skipped = {"sensitive": [], "too_large": [], "unreadable": []}
-              all_paths = set()
-              files = scan_folder(ROOT_FOLDER, skipped, all_paths)
-              if INCLUDE_WORKFLOWS:
-                  files.update(scan_folder(WORKFLOW_FOLDER, skipped, all_paths))
-              return files, all_paths, skipped
-
-
-          def build_project_tree(paths):
-              """Build a beautiful tree view for AI."""
-              if not paths:
-                  return "(empty)"
-              sorted_paths = sorted(paths)
-              lines = ["📂 REPOSITORY STRUCTURE:", "=" * 60]
-              for p in sorted_paths:
-                  depth = p.count("/")
-                  indent = "  " * depth
-                  name = p.split("/")[-1]
-                  icon = "📄" if name.endswith(".py") else "📋"
-                  lines.append(f"{indent}{icon} {name}")
-              return "\n".join(lines)[:20000]
-
-
-          def project_index(files, focus, limit=15000):
-              def common(a, b):
-                  n = 0
-                  for x, y in zip(a.split("/"), b.split("/")):
-                      if x != y:
-                          break
-                      n += 1
-                  return n
-              lines = ["📚 PUBLIC API INDEX:", "=" * 60]
-              for path in sorted((p for p in files if p.endswith(".py")),
-                                 key=lambda p: (-common(p, focus), p)):
-                  tree = _parse_cached(files[path])
-                  if tree is None:
-                      lines.append(f"{path}: (syntax error)")
-                      continue
-                  items = []
-                  for node in tree.body:
-                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                          items.append(f"def {node.name}()")
-                      elif isinstance(node, ast.ClassDef):
-                          items.append(f"class {node.name}")
-                      elif isinstance(node, ast.Assign):
-                          for t in node.targets:
-                              if isinstance(t, ast.Name) and t.id.isupper():
-                                  items.append(t.id)
-                  if items:
-                      lines.append(f"{path}:")
-                      for item in items[:20]:
-                          lines.append(f"    • {item}")
-              return "\n".join(lines)[:limit]
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # PROMPTS
-          # ══════════════════════════════════════════════════════════════════════
-          def build_analysis_prompt(rel, code, files, tree, idx, total):
-              tree_str = build_project_tree(tree.files) if True else ""
-              api_str = project_index(files, rel) if True else ""
-
-              p = [
-                  "You are the LEAD AI ARCHITECT for SawajStudioBot — an automated Islamic video generation pipeline.",
-                  "",
-                  ">>> SAFE UPGRADE MODE <<<",
-                  "STRICT RULES:",
-                  "1. NEVER delete any function, class, constant or import.",
-                  "2. NEVER remove any file.",
-                  "3. NEVER rename existing public names.",
-                  "4. ONLY add improvements: docstrings, type hints, error handling, logging, constants, validation.",
-                  "5. Keep every existing import statement intact.",
-                  "6. Never touch secrets or API keys.",
-                  "7. Return the COMPLETE file, no placeholders, no '...'.",
-                  "8. No markdown fences.",
-                  "",
-                  "=== PROJECT TREE ===",
-                  tree_str,
-                  "",
-                  "=== PUBLIC API ===",
-                  api_str,
-                  "",
-                  "=== RESPONSE FORMAT ===",
-                  "=== REPORT ===",
-                  "- short Hindi bullet points, max 8 lines",
-                  "=== END REPORT ===",
-                  f"=== FILE: {rel} ===",
-                  "(complete upgraded code)",
-                  "=== END FILE ===",
-                  "Optional extra files:",
-                  "=== CREATE FILE: path/to/new_file.py ===",
-                  "(complete code)",
-                  "=== END FILE ===",
-                  "If file is already perfect:",
-                  "=== REPORT ===",
-                  "- nothing to change",
-                  "=== END REPORT ===",
-                  "NO_CHANGES",
-                  "",
-                  f"=== FILE {idx}/{total}: {rel} ===",
-                  code,
-                  "=== END OF INPUT FILE ===",
-              ]
-              return "\n".join(p)
-
-
-          RE_REPORT = re.compile(r"^===\s*REPORT\s*===\s*$")
-          RE_END_REPORT = re.compile(r"^===\s*END REPORT\s*===\s*$")
-          RE_UPDATE = re.compile(r"^===\s*FILE:\s*(.+?)\s*===\s*$")
-          RE_CREATE = re.compile(r"^===\s*CREATE FILE:\s*(.+?)\s*===\s*$")
-          RE_END_FILE = re.compile(r"^===\s*END FILE\s*===\s*$")
-
-
-          def clean_code(code):
-              lines = code.replace("\r\n", "\n").split("\n")
-              while lines and not lines[0].strip():
-                  lines.pop(0)
-              while lines and not lines[-1].strip():
-                  lines.pop()
-              if lines and re.match(r"^```[\w+\-]*\s*$", lines[0]):
-                  lines.pop(0)
-              if lines and re.match(r"^```\s*$", lines[-1]):
-                  lines.pop()
-              return "\n".join(lines).strip("\n")
-
-
-          def parse_proposal(text):
-              res = {"report": "", "files": [], "creates": [], "no_changes": False, "truncated": []}
-              cur = None
-              in_report = False
-              report = []
-              for raw in text.replace("\r\n", "\n").split("\n"):
-                  line = raw.rstrip()
-                  if in_report:
-                      if RE_END_REPORT.match(line):
-                          in_report = False
-                      else:
-                          report.append(line)
-                      continue
-                  if cur is not None:
-                      if RE_END_FILE.match(line):
-                          code = clean_code("\n".join(cur["lines"]))
-                          (res["files"] if cur["kind"] == "update" else res["creates"]).append(
-                              (cur["path"], code)
-                          )
-                          cur = None
-                      else:
-                          cur["lines"].append(raw)
-                      continue
-                  if RE_REPORT.match(line):
-                      in_report = True
-                      continue
-                  m = RE_UPDATE.match(line)
-                  if m:
-                      cur = {"kind": "update", "path": m.group(1), "lines": []}
-                      continue
-                  m = RE_CREATE.match(line)
-                  if m:
-                      cur = {"kind": "create", "path": m.group(1), "lines": []}
-                      continue
-                  if line.strip() == "NO_CHANGES":
-                      res["no_changes"] = True
-              if cur is not None:
-                  res["truncated"].append(cur["path"])
-              res["report"] = "\n".join(l for l in report if l.strip())[:900]
-              return res
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # PROPOSAL EVALUATION
-          # ══════════════════════════════════════════════════════════════════════
-          def normalize_path(p):
-              p = p.strip().strip("`'\"").replace("\\", "/")
-              while p.startswith("./"):
-                  p = p[2:]
-              return p.lstrip("/")
-
-
-          def resolve_new_path(p, rel):
-              p = normalize_path(p)
-              if p.startswith((ROOT_FOLDER + "/", WORKFLOW_FOLDER + "/")):
-                  return p
-              return (os.path.dirname(rel) + "/" + p).lstrip("/")
-
-
-          def allowed_write_path(rel, creating=False):
-              if not rel or rel.startswith("/") or ".." in rel.split("/"):
-                  return False
-              if is_skipped(rel):
-                  return False
-              in_bot = rel.startswith(ROOT_FOLDER + "/")
-              in_wf = (
-                  INCLUDE_WORKFLOWS
-                  and rel.startswith(WORKFLOW_FOLDER + "/")
-                  and "/" not in rel[len(WORKFLOW_FOLDER) + 1:]
-              )
-              if not (in_bot or in_wf):
-                  return False
-              if in_wf and (creating or not rel.endswith((".yml", ".yaml"))):
-                  return False
-              if not rel.endswith(PROCESS_EXTENSIONS):
-                  return False
-              base = os.path.basename(rel).lower()
-              if not base.endswith(".py") and SENSITIVE_NAME_RE.search(base):
-                  return False
-              real = os.path.realpath(rel)
-              return real.startswith(os.path.realpath(".") + os.sep)
-
-
-          def evaluate_proposal(rel, prop, contents, tree):
-              old = contents[rel]
-              changes = {}
-              new_defs = set()
-              notes = []
-
-              for path, code in prop["creates"][:MAX_CREATES_PER_FILE]:
-                  p = resolve_new_path(path, rel)
-                  if p in tree.files or p in contents or not allowed_write_path(p, creating=True):
-                      notes.append("new file %s not allowed" % os.path.basename(p))
-                      continue
-                  ok, why = check_candidate(p, "", code)
-                  if not ok:
-                      notes.append("new file %s: %s" % (os.path.basename(p), why))
-                      continue
-                  changes[p] = code
-                  if p.endswith(".py"):
-                      new_defs |= defined_names(code)
-
-              update = None
-              for path, code in prop["files"]:
-                  if normalize_path(path) == rel or resolve_new_path(path, rel) == rel:
-                      update = code
-                      break
-              if update is None and len(prop["files"]) == 1:
-                  update = prop["files"][0][1]
-
-              if update is not None and update.strip() != old.strip():
-                  if not allowed_write_path(rel):
-                      return None, "file is not writable"
-                  ok, why = check_candidate(rel, old, update, new_defs)
-                  if not ok:
-                      return None, why
-                  changes[rel] = update
-
-              if not changes:
-                  return None, "no change"
-              errs = link_check(changes, contents, tree)
-              if errs:
-                  return None, "broken imports: " + "; ".join(errs[:2])
-              return changes, "; ".join(notes)
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # VOTING
-          # ══════════════════════════════════════════════════════════════════════
-          def diff_text(old, new, limit=4000):
-              if new is None:
-                  return "(no change)"
-              diff = "".join(
-                  difflib.unified_diff(
-                      old.splitlines(True), new.splitlines(True), "original", "proposal", n=2
-                  )
-              )
-              return diff[:limit] + ("\n...(truncated)" if len(diff) > limit else "")
-
-
-          def describe_proposal(rel, old, changes, report):
-              out = ["Report: " + (report.replace("\n", " ") or "(none)")[:400]]
-              if rel in changes:
-                  out.append("Changes to %s:\n%s" % (rel, diff_text(old, changes[rel])))
-              for p, c in changes.items():
-                  if p != rel and c is not None:
-                      head = "\n".join(c.splitlines()[:20])
-                      out.append("NEW FILE %s:\n%s" % (p, head[:1200]))
-              return "\n".join(out)
-
-
-          def cast_vote(judge, rel, options):
-              order = list(options)
-              random.shuffle(order)
-              letters = "ABCDEFGH"
-              lines = [
-                  "You are an impartial senior reviewer. Several engineers proposed upgrades for `%s`." % rel,
-                  "Choose the option that gives the largest REAL improvement with LEAST risk.",
-                  "Remember: no function/class/import may be lost. Any violation = reject.",
-                  "Choose KEEP if no proposal is clearly safe and better.",
-                  "",
-                  "OPTION KEEP: leave original unchanged.",
-              ]
-              for i, (_, desc) in enumerate(order):
-                  lines += ["", "OPTION %s:" % letters[i], desc]
-              lines += ["", "Reply with ONE line only: VOTE: <KEEP or letter> - short reason"]
-              text, _ = call_provider(judge, "\n".join(lines))
-              if not text:
-                  return judge, None
-              m = re.search(r"VOTE:\s*\**\s*(KEEP|[A-H])\b", text, re.IGNORECASE)
-              if not m:
-                  return judge, None
-              choice = m.group(1).upper()
-              if choice == "KEEP":
-                  return judge, "KEEP"
-              idx = letters.find(choice)
-              if 0 <= idx < len(order):
-                  return judge, order[idx][0]
-              return judge, None
-
-
-          def run_vote(rel, old, valid, reports):
-              reps = {}
-              for a, ch in valid.items():
-                  sig = json.dumps({k: (sha(v) if v is not None else None) for k, v in sorted(ch.items())})
-                  reps.setdefault(sig, a)
-              valid = {a: valid[a] for a in reps.values()}
-              options = [(a, describe_proposal(rel, old, ch, reports.get(a, ""))) for a, ch in valid.items()]
-
-              judges = [j for j in JUDGE_POOL if j in active_providers()]
-              if not judges:
-                  judges = active_providers()[:VOTE_JUDGES]
-              judges = judges[:VOTE_JUDGES]
-
-              tally = {"KEEP": 0}
-              for a in valid:
-                  tally[a] = 0
-              if not judges:
-                  return "KEEP", tally
-              with ThreadPoolExecutor(max_workers=len(judges)) as ex:
-                  futs = [ex.submit(cast_vote, j, rel, options) for j in judges]
-                  for f in as_completed(futs):
-                      _, choice = f.result()
-                      if choice in tally:
-                          tally[choice] += 1
-              best = max(tally.values())
-              if best == 0:
-                  return "KEEP", tally
-              leaders = [k for k, v in tally.items() if v == best]
-              if "KEEP" in leaders:
-                  return "KEEP", tally
-              if len(leaders) == 1:
-                  return leaders[0], tally
-
-              def size(author):
-                  ch = valid[author]
-                  return sum(len(c or "") for c in ch.values())
-              return sorted(leaders, key=size)[0], tally
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # FILE PIPELINE
-          # ══════════════════════════════════════════════════════════════════════
-          def write_file(rel, code, contents, tree):
-              if rel not in JOURNAL:
-                  JOURNAL[rel] = contents.get(rel)
-              os.makedirs(os.path.dirname(rel) or ".", exist_ok=True)
-              with open(rel, "w", encoding="utf-8", newline="\n") as fh:
-                  fh.write(code.rstrip() + "\n")
-              contents[rel] = code.rstrip() + "\n"
-              tree.files.add(rel)
-              d = os.path.dirname(rel)
-              while d and d not in tree.dirs:
-                  tree.dirs.add(d)
-                  d = os.path.dirname(d)
-
-
-          def analyse_file(rel, idx, total, contents, tree):
-              old = contents[rel]
-              entry = {
-                  "file": rel, "result": "failed", "winner": "", "votes": {},
-                  "reports": {}, "rejected": {},
-              }
-              prompt = build_analysis_prompt(rel, old, contents, tree, idx, total)
-              need = int(len(old) / 3.5) + 1500
-              analysts = [n for n in active_providers() if PROVIDERS[n]["max_out"] >= need]
-              if not analysts:
-                  analysts = sorted(active_providers(), key=lambda n: -PROVIDERS[n]["max_out"])[:3]
-              if not analysts:
-                  entry["rejected"]["all"] = "no active AI provider"
-                  return entry
-
-              log("  asking %d AIs: %s" % (len(analysts), ", ".join(analysts)))
-              texts = {}
-              with ThreadPoolExecutor(max_workers=min(len(analysts), MAX_WORKERS)) as ex:
-                  futs = {ex.submit(call_provider, n, prompt): n for n in analysts}
-                  for f in as_completed(futs):
-                      texts[futs[f]] = f.result()[0]
-
-              valid = {}
-              reports = {}
-              answered = 0
-              for name in analysts:
-                  text = texts.get(name)
-                  if not text:
-                      entry["rejected"][name] = "no answer"
-                      continue
-                  answered += 1
-                  prop = parse_proposal(text)
-                  reports[name] = prop["report"]
-                  entry["reports"][name] = prop["report"]
-                  if prop["truncated"] and not prop["files"] and not prop["creates"]:
-                      entry["rejected"][name] = "output truncated"
-                      continue
-                  if prop["no_changes"] and not prop["files"] and not prop["creates"]:
-                      continue
-                  changes, why = evaluate_proposal(rel, prop, contents, tree)
-                  if changes is None:
-                      if why != "no change":
-                          entry["rejected"][name] = why
-                          STATS["rejected_proposals"] += 1
-                      continue
-                  valid[name] = changes
-              if answered == 0:
-                  return entry
-
-              if not valid:
-                  entry["result"] = "kept"
-                  entry["winner"] = "KEEP"
-                  log("  no valid proposal -> KEEP")
-                  return entry
-
-              log("  %d valid proposals -> voting" % len(valid))
-              winner, tally = run_vote(rel, old, valid, reports)
-              entry["votes"] = tally
-              entry["winner"] = winner
-              log("  votes: %s -> winner: %s" % (tally, winner))
-              if winner == "KEEP":
-                  entry["result"] = "kept"
-                  return entry
-
-              changes = valid[winner]
-              kind = "updated"
-              for path, code in changes.items():
-                  if code is None:
-                      continue
-                  write_file(path, code, contents, tree)
-                  if path != rel:
-                      STATS["created"] += 1
-              if rel not in changes:
-                  kind = "created"
-              entry["result"] = kind
-              entry["files"] = sorted(changes)
-              WINS[winner] = WINS.get(winner, 0) + 1
-              return entry
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # STATE, VERIFY, REPORT
-          # ══════════════════════════════════════════════════════════════════════
-          def load_state():
-              try:
-                  with open(STATE_PATH, "r", encoding="utf-8") as fh:
-                      st = json.load(fh)
-                  if isinstance(st, dict) and isinstance(st.get("done"), dict):
-                      return st
-              except (OSError, ValueError):
-                  pass
-              return {"complete": True, "done": {}}
-
-
-          def save_state(state):
-              try:
-                  os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-                  state["updated"] = datetime.now(timezone.utc).isoformat()
-                  with open(STATE_PATH, "w", encoding="utf-8") as fh:
-                      json.dump(state, fh, indent=1, ensure_ascii=False)
-              except OSError:
-                  pass
-
-
-          def final_verify():
-              reverted = []
-              for rel, original in sorted(JOURNAL.items()):
-                  if not os.path.exists(rel):
-                      continue
-                  try:
-                      with open(rel, "r", encoding="utf-8") as fh:
-                          text = fh.read()
-                      if rel.endswith(".py"):
-                          compile(text, rel, "exec")
-                      elif rel.endswith((".yml", ".yaml")) and yaml is not None:
-                          yaml.safe_load(text)
-                      elif rel.endswith(".json"):
-                          json.loads(text)
-                      continue
-                  except Exception:
-                      pass
-                  if original is None:
-                      os.remove(rel)
-                  else:
-                      with open(rel, "w", encoding="utf-8", newline="\n") as fh:
-                          fh.write(original)
-                  reverted.append(rel)
-              return reverted
-
-
-          def write_reports(elapsed, reverted, skipped):
-              try:
-                  with open("/tmp/sawaj_ai_report.json", "w", encoding="utf-8") as fh:
-                      json.dump(
-                          {
-                              "finished": datetime.now(timezone.utc).isoformat(),
-                              "seconds": int(elapsed),
-                              "stats": STATS, "wins": WINS, "skipped": skipped,
-                              "reverted": reverted, "files": REPORT,
-                          },
-                          fh, indent=2, ensure_ascii=False,
-                      )
-              except OSError:
-                  pass
-              summary = env_str("GITHUB_STEP_SUMMARY")
-              if not summary:
-                  return
-              lines = ["## Sawaj AI Developer", "", "| Metric | Count |", "|---|---|"]
-              lines += ["| %s | %d |" % (k, v) for k, v in STATS.items()]
-              if WINS:
-                  lines += ["", "**Votes won:** " + ", ".join("%s %d" % kv for kv in sorted(WINS.items(), key=lambda x: -x[1]))]
-              lines += ["", "### Files", "", "| File | Result | Winner | Votes |", "|---|---|---|---|"]
-              for r in REPORT[:300]:
-                  lines.append("| `%s` | %s | %s | %s |" % (
-                      r["file"], r["result"], r.get("winner", ""),
-                      json.dumps(r.get("votes", {}), ensure_ascii=False)))
-              if any(skipped.values()):
-                  lines += ["", "### Skipped", ""]
-                  for k, v in skipped.items():
-                      if v:
-                          lines.append("- **%s**: %s" % (k, ", ".join("`%s`" % x for x in v[:20])))
-              try:
-                  with open(summary, "a", encoding="utf-8") as fh:
-                      fh.write("\n".join(lines) + "\n")
-              except OSError:
-                  pass
-
-
-          # ══════════════════════════════════════════════════════════════════════
-          # MAIN
-          # ══════════════════════════════════════════════════════════════════════
-          def main():
-              t0 = time.time()
-              log("=" * 60)
-              log("SAWAJ AI DEVELOPER v7 — Pro Report")
-              log("=" * 60)
-              for name in PROVIDERS:
-                  log("  %s: %s" % (name, "SET" if KEYS.get(name) else "MISSING"))
-              if not active_providers():
-                  log("No API keys configured.")
-                  REPORTER.send_alert("critical", "❌ No API keys configured!")
-                  return 1
-
-              contents, all_paths, skipped = scan_all()
-              tree = Tree(all_paths)
-              baseline_errors = set()
-              for p, c in contents.items():
-                  if p.endswith(".py"):
-                      baseline_errors |= import_errors(p, c, tree, contents)
-              log("[SCAN] files: %d | existing import problems: %d" % (len(contents), len(baseline_errors)))
-              for kind, lst in skipped.items():
-                  if lst:
-                      log("  skipped %s: %s" % (kind, ", ".join(lst[:10])))
-              if not contents:
-                  log("NO FILES FOUND")
-                  REPORTER.send_alert("warning", f"❌ No files found in {ROOT_FOLDER}/")
-                  return 0
-
-              state = load_state()
-              if state.get("complete", True):
-                  state = {"complete": False, "done": {}}
-                  resumed = False
-              else:
-                  resumed = True
-              done = state["done"]
-
-              order = sorted(contents, key=lambda p: (p.startswith(WORKFLOW_FOLDER), p))
-              todo = [p for p in order if not (resumed and done.get(p) == sha(contents[p]))]
-              STATS["resumed_skipped"] = len(order) - len(todo)
-              total = len(todo)
-
-              REPORTER.send_start(total, active_providers(), MAX_RUNTIME_MIN)
-
-              digest = []
-              stopped_early = False
-              for i, rel in enumerate(todo, 1):
-                  if time.time() - t0 > MAX_RUNTIME_MIN * 60:
-                      log("runtime guard reached")
-                      stopped_early = True
-                      break
-                  if not active_providers():
-                      log("no AI provider left")
-                      stopped_early = True
-                      break
-                  log("")
-                  log("[%d/%d] %s" % (i, total, rel))
-                  STATS["files_seen"] += 1
-                  entry = analyse_file(rel, i, total, contents, tree)
-                  REPORT.append(entry)
-                  res = entry["result"]
-                  if res == "failed":
-                      STATS["failed"] += 1
-                  else:
-                      if res in ("updated", "created"):
-                          STATS["updated"] += 1
-                      elif res == "kept":
-                          STATS["kept"] += 1
-                      done[rel] = sha(contents.get(rel))
-                  digest.append(entry)
-                  if len(digest) >= 15:
-                      REPORTER.send_progress(i, total, digest)
-                      digest = []
-                      save_state(state)
-                  time.sleep(REQUEST_DELAY)
-
-              if digest:
-                  REPORTER.send_progress(len(todo), total, digest)
-
-              reverted = final_verify()
-              new_errors = set()
-              for p, c in contents.items():
-                  if p.endswith(".py"):
-                      new_errors |= import_errors(p, c, tree, contents)
-              broken_now = sorted(new_errors - baseline_errors)
-
-              state["complete"] = (not stopped_early) and STATS["failed"] == 0
-              if state["complete"]:
-                  state["done"] = {}
-              save_state(state)
-
-              elapsed = time.time() - t0
-              write_reports(elapsed, reverted, skipped)
-
-              REPORTER.send_final_report(
-                  stats=STATS,
-                  wins=WINS,
-                  report_list=REPORT,
-                  skipped=skipped,
-                  reverted=reverted,
-                  elapsed=elapsed,
-              )
-
-              if broken_now:
-                  REPORTER.send_alert("warning",
-                      f"⚠️ {len(broken_now)} new import problems:\n" +
-                      "\n".join(f"• {e}" for e in broken_now[:5]))
-
-              return 0
-
-
-          if __name__ == "__main__":
-              sys.exit(main())
-          ENDOFPYTHON
-
-      - name: Run AI Developer
+      - name: Create All Folders and Files
         env:
-          PYTHONUNBUFFERED: "1"
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_AI }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_AI }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY_AI }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY_AI }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY_AI }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY_AI }}
-          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
-        run: python3 /tmp/ai_dev.py
-
-      - name: Upload report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sawaj-ai-report
-          path: /tmp/sawaj_ai_report.json
-          if-no-files-found: ignore
-
-      - name: Commit and Push
-        if: always()
+          TOKEN_GITHUB: ${{ secrets.TOKEN_GITHUB }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          git config user.name "Sawaj AI Developer"
-          git config user.email "ai.dev@sawajstudio.com"
+          python3 - <<'EOF'
+          import os
+          import requests
+          import base64
 
-          push_with_retry() {
-            for i in 1 2 3; do
-              if git pull --rebase --autostash origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then
-                return 0
-              fi
-              sleep 5
-            done
-            return 1
+          TOKEN = os.getenv("TOKEN_GITHUB")
+          OWNER = os.getenv("REPO_OWNER")
+          REPO = os.getenv("REPO_NAME")
+          BRANCH = os.getenv("BRANCH")
+
+          if not TOKEN or not OWNER or not REPO:
+              print("Error: Missing environment variables.")
+              exit(1)
+
+          API_URL = f"https://api.github.com/repos/{OWNER}/{REPO}/contents"
+          HEADERS = {
+              "Authorization": f"token {TOKEN}",
+              "Accept": "application/vnd.github.v3+json"
           }
 
-          if [ -e sawajstudiobot ]; then git add -A -- sawajstudiobot; fi
-          if [ -e .github/workflows ]; then git add -A -- .github/workflows; fi
+          PATHS = [
+              # ================= SHORT VIDEO =================
+              ".github/workflows/short_video_daily.yml",
+              "fb_ig_yt_short_video/.gitignore",
+              "fb_ig_yt_short_video/.env.example",
+              "fb_ig_yt_short_video/requirements.txt",
+              "fb_ig_yt_short_video/config.py",
+              "fb_ig_yt_short_video/main.py",
+              "fb_ig_yt_short_video/README.md",
+              "fb_ig_yt_short_video/uploader/01___init__.py",
+              "fb_ig_yt_short_video/uploader/02_fb_ig_yt_short.py",
+              "fb_ig_yt_short_video/uploader/03_auth_manager.py",
+              "fb_ig_yt_short_video/uploader/04_retry_handler.py",
+              "fb_ig_yt_short_video/uploader/05_fb_reels_uploader.py",
+              "fb_ig_yt_short_video/uploader/06_ig_reels_uploader.py",
+              "fb_ig_yt_short_video/uploader/07_youtube_shorts_uploader.py",
+              "fb_ig_yt_short_video/uploader/08_fb_video_uploader.py",
+              "fb_ig_yt_short_video/uploader/09_caption_builder.py",
+              "fb_ig_yt_short_video/uploader/10_hashtag_builder.py",
+              "fb_ig_yt_short_video/uploader/11_title_builder.py",
+              "fb_ig_yt_short_video/uploader/12_description_builder.py",
+              "fb_ig_yt_short_video/uploader/13_tags_builder.py",
+              "fb_ig_yt_short_video/uploader/14_thumbnail_generator.py",
+              "fb_ig_yt_short_video/uploader/15_token_refresher.py",
+              "fb_ig_yt_short_video/uploader/16_rate_limit_handler.py",
+              "fb_ig_yt_short_video/uploader/17_upload_scheduler.py",
+              "fb_ig_yt_short_video/uploader/18_playlist_manager.py",
+              "fb_ig_yt_short_video/generator/ai/01___init__.py",
+              "fb_ig_yt_short_video/generator/ai/02_ai_providers.py",
+              "fb_ig_yt_short_video/generator/ai/03_prompt_templates.py",
+              "fb_ig_yt_short_video/generator/ai/04_ai_fallback_chain.py",
+              "fb_ig_yt_short_video/generator/ai/05_ai_response_parser.py",
+              "fb_ig_yt_short_video/generator/ai/06_hook_generator.py",
+              "fb_ig_yt_short_video/generator/ai/07_script_generator.py",
+              "fb_ig_yt_short_video/generator/ai/08_cta_generator.py",
+              "fb_ig_yt_short_video/generator/audio/01___init__.py",
+              "fb_ig_yt_short_video/generator/audio/02_tts_engine.py",
+              "fb_ig_yt_short_video/generator/audio/03_voice_selector.py",
+              "fb_ig_yt_short_video/generator/audio/04_audio_normalizer.py",
+              "fb_ig_yt_short_video/generator/audio/05_audio_compressor.py",
+              "fb_ig_yt_short_video/generator/audio/06_audio_equalizer.py",
+              "fb_ig_yt_short_video/generator/audio/07_music_fetcher.py",
+              "fb_ig_yt_short_video/generator/audio/08_music_mixer.py",
+              "fb_ig_yt_short_video/generator/audio/09_music_ducker.py",
+              "fb_ig_yt_short_video/generator/audio/10_sfx_generator.py",
+              "fb_ig_yt_short_video/generator/audio/11_cta_sound_builder.py",
+              "fb_ig_yt_short_video/generator/audio/12_audio_fade_engine.py",
+              "fb_ig_yt_short_video/generator/audio/13_silence_detector.py",
+              "fb_ig_yt_short_video/generator/audio/14_beat_detector.py",
+              "fb_ig_yt_short_video/generator/media/01___init__.py",
+              "fb_ig_yt_short_video/generator/media/02_background_fetcher.py",
+              "fb_ig_yt_short_video/generator/media/03_background_kenburns.py",
+              "fb_ig_yt_short_video/generator/media/04_background_darkener.py",
+              "fb_ig_yt_short_video/generator/media/05_background_vignette.py",
+              "fb_ig_yt_short_video/generator/media/06_background_color_grader.py",
+              "fb_ig_yt_short_video/generator/media/07_background_loop_maker.py",
+              "fb_ig_yt_short_video/generator/media/08_fonts_manager.py",
+              "fb_ig_yt_short_video/generator/media/09_font_downloader.py",
+              "fb_ig_yt_short_video/generator/media/10_arabic_font_handler.py",
+              "fb_ig_yt_short_video/generator/media/11_hindi_font_handler.py",
+              "fb_ig_yt_short_video/generator/media/12_urdu_font_handler.py",
+              "fb_ig_yt_short_video/generator/media/13_logo_builder.py",
+              "fb_ig_yt_short_video/generator/media/14_logo_border_maker.py",
+              "fb_ig_yt_short_video/generator/media/15_logo_glow_effect.py",
+              "fb_ig_yt_short_video/generator/media/16_logo_animator.py",
+              "fb_ig_yt_short_video/generator/media/17_watermark_placer.py",
+              "fb_ig_yt_short_video/generator/media/18_emoji_renderer.py",
+              "fb_ig_yt_short_video/generator/content/01___init__.py",
+              "fb_ig_yt_short_video/generator/content/02_hadith_fetcher.py",
+              "fb_ig_yt_short_video/generator/content/03_hadith_book_selector.py",
+              "fb_ig_yt_short_video/generator/content/04_hadith_validator.py",
+              "fb_ig_yt_short_video/generator/content/05_hadith_duplicate_checker.py",
+              "fb_ig_yt_short_video/generator/content/06_quran_fetcher.py",
+              "fb_ig_yt_short_video/generator/content/07_dua_fetcher.py",
+              "fb_ig_yt_short_video/generator/content/08_islamic_quote_fetcher.py",
+              "fb_ig_yt_short_video/generator/content/09_translator.py",
+              "fb_ig_yt_short_video/generator/content/10_deepl_translator.py",
+              "fb_ig_yt_short_video/generator/content/11_ai_translator.py",
+              "fb_ig_yt_short_video/generator/content/12_meaning_builder.py",
+              "fb_ig_yt_short_video/generator/content/13_shayari_builder.py",
+              "fb_ig_yt_short_video/generator/content/14_sawal_builder.py",
+              "fb_ig_yt_short_video/generator/content/15_jawab_builder.py",
+              "fb_ig_yt_short_video/generator/content/16_hook_builder.py",
+              "fb_ig_yt_short_video/generator/content/17_cta_builder.py",
+              "fb_ig_yt_short_video/generator/content/18_fact_checker.py",
+              "fb_ig_yt_short_video/generator/content/19_trending_topic_fetcher.py",
+              "fb_ig_yt_short_video/generator/storage/01___init__.py",
+              "fb_ig_yt_short_video/generator/storage/02_drive_uploader.py",
+              "fb_ig_yt_short_video/generator/storage/03_drive_link_generator.py",
+              "fb_ig_yt_short_video/generator/storage/04_drive_permission_setter.py",
+              "fb_ig_yt_short_video/generator/storage/05_local_storage_manager.py",
+              "fb_ig_yt_short_video/generator/storage/06_file_compressor.py",
+              "fb_ig_yt_short_video/generator/monitoring/01___init__.py",
+              "fb_ig_yt_short_video/generator/monitoring/02_telegram_reporter.py",
+              "fb_ig_yt_short_video/generator/monitoring/03_api_status_tracker.py",
+              "fb_ig_yt_short_video/generator/monitoring/04_error_logger.py",
+              "fb_ig_yt_short_video/generator/monitoring/05_progress_notifier.py",
+              "fb_ig_yt_short_video/generator/monitoring/06_performance_tracker.py",
+              "fb_ig_yt_short_video/generator/monitoring/07_success_rate_tracker.py",
+              "fb_ig_yt_short_video/generator/utils/01___init__.py",
+              "fb_ig_yt_short_video/generator/utils/02_helpers.py",
+              "fb_ig_yt_short_video/generator/utils/03_sanitizer.py",
+              "fb_ig_yt_short_video/generator/utils/04_text_cleaner.py",
+              "fb_ig_yt_short_video/generator/utils/05_text_splitter.py",
+              "fb_ig_yt_short_video/generator/utils/06_cmd_runner.py",
+              "fb_ig_yt_short_video/generator/utils/07_file_downloader.py",
+              "fb_ig_yt_short_video/generator/utils/08_file_cleanup.py",
+              "fb_ig_yt_short_video/generator/utils/09_session_builder.py",
+              "fb_ig_yt_short_video/generator/utils/10_retry_wrapper.py",
+              "fb_ig_yt_short_video/generator/utils/11_timer_utils.py",
+              "fb_ig_yt_short_video/generator/utils/12_date_utils.py",
+              "fb_ig_yt_short_video/generator/utils/13_json_utils.py",
+              "fb_ig_yt_short_video/generator/utils/14_env_utils.py",
+              "fb_ig_yt_short_video/generator/utils/15_path_utils.py",
+              "fb_ig_yt_short_video/generator/utils/16_async_runner.py",
+              "fb_ig_yt_short_video/generator/utils/17_thread_pool.py",
+              "fb_ig_yt_short_video/generator/utils/18_rate_limiter.py",
+              "fb_ig_yt_short_video/generator/utils/19_cache_manager.py",
+              "fb_ig_yt_short_video/generator/subtitles/01___init__.py",
+              "fb_ig_yt_short_video/generator/subtitles/02_ass_header.py",
+              "fb_ig_yt_short_video/generator/subtitles/03_srt_builder.py",
+              "fb_ig_yt_short_video/generator/subtitles/04_typed_word_builder.py",
+              "fb_ig_yt_short_video/generator/subtitles/05_karaoke_builder.py",
+              "fb_ig_yt_short_video/generator/subtitles/06_arabic_style.py",
+              "fb_ig_yt_short_video/generator/subtitles/07_hindi_style.py",
+              "fb_ig_yt_short_video/generator/subtitles/08_english_style.py",
+              "fb_ig_yt_short_video/generator/subtitles/09_bilingual_style.py",
+              "fb_ig_yt_short_video/generator/subtitles/10_subtitle_timer.py",
+              "fb_ig_yt_short_video/generator/subtitles/11_subtitle_positioner.py",
+              "fb_ig_yt_short_video/generator/subtitles/12_subtitle_highlighter.py",
+              "fb_ig_yt_short_video/generator/text/01___init__.py",
+              "fb_ig_yt_short_video/generator/text/02_hadith_text_renderer.py",
+              "fb_ig_yt_short_video/generator/text/03_hindi_text_renderer.py",
+              "fb_ig_yt_short_video/generator/text/04_english_text_renderer.py",
+              "fb_ig_yt_short_video/generator/text/05_arabic_text_renderer.py",
+              "fb_ig_yt_short_video/generator/text/06_shayari_text_renderer.py",
+              "fb_ig_yt_short_video/generator/text/07_hadith_reference_renderer.py",
+              "fb_ig_yt_short_video/generator/text/08_hook_text_renderer.py",
+              "fb_ig_yt_short_video/generator/text/09_line_break_optimizer.py",
+              "fb_ig_yt_short_video/generator/text/10_rtl_text_handler.py",
+              "fb_ig_yt_short_video/generator/effects/01___init__.py",
+              "fb_ig_yt_short_video/generator/effects/02_zoom_in_effect.py",
+              "fb_ig_yt_short_video/generator/effects/03_zoom_out_effect.py",
+              "fb_ig_yt_short_video/generator/effects/04_kenburns_effect.py",
+              "fb_ig_yt_short_video/generator/effects/05_parallax_effect.py",
+              "fb_ig_yt_short_video/generator/effects/06_glow_pulse_effect.py",
+              "fb_ig_yt_short_video/generator/effects/07_floating_particles_effect.py",
+              "fb_ig_yt_short_video/generator/effects/08_star_twinkle_effect.py",
+              "fb_ig_yt_short_video/generator/effects/09_light_leak_effect.py",
+              "fb_ig_yt_short_video/generator/effects/10_film_grain_effect.py",
+              "fb_ig_yt_short_video/generator/effects/11_bokeh_effect.py",
+              "fb_ig_yt_short_video/generator/effects/12_vignette_effect.py",
+              "fb_ig_yt_short_video/generator/effects/13_lens_flare_effect.py",
+              "fb_ig_yt_short_video/generator/effects/14_motion_blur_effect.py",
+              "fb_ig_yt_short_video/generator/effects/15_gaussian_blur_effect.py",
+              "fb_ig_yt_short_video/generator/effects/16_sepia_effect.py",
+              "fb_ig_yt_short_video/generator/effects/17_vintage_effect.py",
+              "fb_ig_yt_short_video/generator/effects/18_hdr_effect.py",
+              "fb_ig_yt_short_video/generator/effects/19_duotone_effect.py",
+              "fb_ig_yt_short_video/generator/effects/20_sketch_effect.py",
+              "fb_ig_yt_short_video/generator/effects/21_watercolor_effect.py",
+              "fb_ig_yt_short_video/generator/effects/22_neon_glow_effect.py",
+              "fb_ig_yt_short_video/generator/effects/23_hologram_effect.py",
+              "fb_ig_yt_short_video/generator/effects/24_glitch_effect.py",
+              "fb_ig_yt_short_video/generator/effects/25_vhs_effect.py",
+              "fb_ig_yt_short_video/generator/effects/26_old_film_effect.py",
+              "fb_ig_yt_short_video/generator/effects/27_mirror_effect.py",
+              "fb_ig_yt_short_video/generator/effects/28_ripple_effect.py",
+              "fb_ig_yt_short_video/generator/effects/29_wave_effect.py",
+              "fb_ig_yt_short_video/generator/effects/30_shake_effect.py",
+              "fb_ig_yt_short_video/generator/effects/31_rotation_effect.py",
+              "fb_ig_yt_short_video/generator/effects/32_heartbeat_effect.py",
+              "fb_ig_yt_short_video/generator/effects/33_breathing_effect.py",
+              "fb_ig_yt_short_video/generator/effects/34_shimmer_effect.py",
+              "fb_ig_yt_short_video/generator/effects/35_sparkle_effect.py",
+              "fb_ig_yt_short_video/generator/effects/36_confetti_effect.py",
+              "fb_ig_yt_short_video/generator/effects/37_snow_effect.py",
+              "fb_ig_yt_short_video/generator/effects/38_rain_effect.py",
+              "fb_ig_yt_short_video/generator/effects/39_fire_effect.py",
+              "fb_ig_yt_short_video/generator/effects/40_smoke_effect.py",
+              "fb_ig_yt_short_video/generator/effects/41_aurora_effect.py",
+              "fb_ig_yt_short_video/generator/effects/42_galaxy_effect.py",
+              "fb_ig_yt_short_video/generator/effects/43_sunrays_effect.py",
+              "fb_ig_yt_short_video/generator/effects/44_moon_glow_effect.py",
+              "fb_ig_yt_short_video/generator/effects/45_speed_ramp_effect.py",
+              "fb_ig_yt_short_video/generator/effects/46_beat_sync_effect.py",
+              "fb_ig_yt_short_video/generator/transitions/01___init__.py",
+              "fb_ig_yt_short_video/generator/transitions/02_fade_in_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/03_fade_out_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/04_crossfade_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/05_slide_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/06_zoom_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/07_wipe_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/08_dissolve_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/09_glitch_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/10_blur_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/11_beat_cut_transition.py",
+              "fb_ig_yt_short_video/generator/transitions/12_transition_selector.py",
+              "fb_ig_yt_short_video/generator/overlays/01___init__.py",
+              "fb_ig_yt_short_video/generator/overlays/02_intro_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/03_outro_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/04_cta_buttons_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/05_countdown_timer_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/06_logo_moving_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/07_logo_center_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/08_progress_bar_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/09_subscribe_popup_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/10_like_animation_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/11_islamic_pattern_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/12_moon_star_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/13_ramadan_lantern_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/14_mosque_silhouette_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/15_question_box_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/16_quiz_answer_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/17_text_glow_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/18_brand_badge_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/19_hook_text_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/20_swipe_up_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/21_arrow_pointer_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/22_trending_badge_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/23_hashtag_overlay.py",
+              "fb_ig_yt_short_video/generator/overlays/24_mention_overlay.py",
+              "fb_ig_yt_short_video/generator/frames/01___init__.py",
+              "fb_ig_yt_short_video/generator/frames/02_frame_builder.py",
+              "fb_ig_yt_short_video/generator/frames/03_frame_batch_generator.py",
+              "fb_ig_yt_short_video/generator/frames/04_frame_timeline_planner.py",
+              "fb_ig_yt_short_video/generator/frames/05_frame_compositor.py",
+              "fb_ig_yt_short_video/generator/frames/06_frame_layer_manager.py",
+              "fb_ig_yt_short_video/generator/frames/07_frame_cleanup.py",
+              "fb_ig_yt_short_video/generator/render/01___init__.py",
+              "fb_ig_yt_short_video/generator/render/02_ffmpeg_command_builder.py",
+              "fb_ig_yt_short_video/generator/render/03_ffmpeg_filter_builder.py",
+              "fb_ig_yt_short_video/generator/render/04_video_encoder.py",
+              "fb_ig_yt_short_video/generator/render/05_audio_encoder.py",
+              "fb_ig_yt_short_video/generator/render/06_subtitle_burner.py",
+              "fb_ig_yt_short_video/generator/render/07_final_muxer.py",
+              "fb_ig_yt_short_video/generator/render/08_video_quality_tuner.py",
+              "fb_ig_yt_short_video/generator/render/09_video_resolution_setter.py",
+              "fb_ig_yt_short_video/generator/render/10_video_bitrate_setter.py",
+              "fb_ig_yt_short_video/generator/render/11_codec_selector.py",
+              "fb_ig_yt_short_video/generator/render/12_preset_selector.py",
+              "fb_ig_yt_short_video/generator/render/13_crf_optimizer.py",
+              "fb_ig_yt_short_video/generator/render/14_video_thumbnail_extractor.py",
+              "fb_ig_yt_short_video/generator/render/15_video_metadata_writer.py",
+              "fb_ig_yt_short_video/generator/render/16_video_watermark.py",
+              "fb_ig_yt_short_video/generator/render/17_video_export_presets.py",
+              "fb_ig_yt_short_video/generator/render/18_shorts_aspect_ratio.py",
+              "fb_ig_yt_short_video/generator/render/19_shorts_duration_limiter.py",
+              "fb_ig_yt_short_video/generator/pipeline/01___init__.py",
+              "fb_ig_yt_short_video/generator/pipeline/02_short_pipeline.py",
+              "fb_ig_yt_short_video/generator/pipeline/03_short_content.py",
+              "fb_ig_yt_short_video/generator/pipeline/04_short_audio.py",
+              "fb_ig_yt_short_video/generator/pipeline/05_short_subtitles.py",
+              "fb_ig_yt_short_video/generator/pipeline/06_short_frames.py",
+              "fb_ig_yt_short_video/generator/pipeline/07_short_renderer.py",
+              "fb_ig_yt_short_video/generator/pipeline/08_short_thumbnail.py",
+              "fb_ig_yt_short_video/generator/pipeline/09_short_metadata.py",
+              "fb_ig_yt_short_video/generator/config/01___init__.py",
+              "fb_ig_yt_short_video/generator/config/02_short_config.py",
+              "fb_ig_yt_short_video/generator/config/03_audio_config.py",
+              "fb_ig_yt_short_video/generator/config/04_video_config.py",
+              "fb_ig_yt_short_video/generator/config/05_upload_config.py",
+              "fb_ig_yt_short_video/generator/assets/01___init__.py",
+              "fb_ig_yt_short_video/generator/assets/02_font_notosans_bold.py",
+              "fb_ig_yt_short_video/generator/assets/03_font_notonaskh_arabic.py",
+              "fb_ig_yt_short_video/generator/assets/04_font_notosans_devanagari.py",
+              "fb_ig_yt_short_video/generator/assets/05_logo_sawaj.py",
+              "fb_ig_yt_short_video/generator/assets/06_music_ambient.py",
+              "fb_ig_yt_short_video/generator/assets/07_music_trending.py",
+              "fb_ig_yt_short_video/generator/assets/08_sfx_ding.py",
+              "fb_ig_yt_short_video/generator/assets/09_sfx_whoosh.py",
+              "fb_ig_yt_short_video/generator/assets/10_sfx_tick.py",
+              "fb_ig_yt_short_video/generator/assets/11_background_mosque.py",
 
-          if ! git diff --cached --quiet; then
-            git commit -m "Sawaj AI Developer: Pro upgrade - $(date -u '+%Y-%m-%d %H:%M UTC')"
-            push_with_retry || { echo "Push failed"; exit 1; }
-          else
-            echo "No changes to commit"
-          fi
+              # ================= LONG VIDEO =================
+              ".github/workflows/long_video_daily.yml",
+              "fb_yt_long_video/.gitignore",
+              "fb_yt_long_video/.env.example",
+              "fb_yt_long_video/requirements.txt",
+              "fb_yt_long_video/config.py",
+              "fb_yt_long_video/main.py",
+              "fb_yt_long_video/README.md",
+              "fb_yt_long_video/uploader/01___init__.py",
+              "fb_yt_long_video/uploader/02_fb_yt_long.py",
+              "fb_yt_long_video/uploader/03_auth_manager.py",
+              "fb_yt_long_video/uploader/04_retry_handler.py",
+              "fb_yt_long_video/uploader/05_fb_video_uploader.py",
+              "fb_yt_long_video/uploader/06_youtube_video_uploader.py",
+              "fb_yt_long_video/uploader/07_youtube_playlist_manager.py",
+              "fb_yt_long_video/uploader/08_youtube_chapter_maker.py",
+              "fb_yt_long_video/uploader/09_youtube_end_screen.py",
+              "fb_yt_long_video/uploader/10_youtube_card_maker.py",
+              "fb_yt_long_video/uploader/11_caption_builder.py",
+              "fb_yt_long_video/uploader/12_hashtag_builder.py",
+              "fb_yt_long_video/uploader/13_title_builder.py",
+              "fb_yt_long_video/uploader/14_description_builder.py",
+              "fb_yt_long_video/uploader/15_tags_builder.py",
+              "fb_yt_long_video/uploader/16_thumbnail_generator.py",
+              "fb_yt_long_video/uploader/17_token_refresher.py",
+              "fb_yt_long_video/uploader/18_rate_limit_handler.py",
+              "fb_yt_long_video/uploader/19_upload_scheduler.py",
+              "fb_yt_long_video/uploader/20_resumable_upload_manager.py",
+              "fb_yt_long_video/generator/ai/01___init__.py",
+              "fb_yt_long_video/generator/ai/02_ai_providers.py",
+              "fb_yt_long_video/generator/ai/03_prompt_templates.py",
+              "fb_yt_long_video/generator/ai/04_ai_fallback_chain.py",
+              "fb_yt_long_video/generator/ai/05_ai_response_parser.py",
+              "fb_yt_long_video/generator/ai/06_hook_generator.py",
+              "fb_yt_long_video/generator/ai/07_script_generator.py",
+              "fb_yt_long_video/generator/ai/08_outline_generator.py",
+              "fb_yt_long_video/generator/ai/09_chapter_generator.py",
+              "fb_yt_long_video/generator/ai/10_cta_generator.py",
+              "fb_yt_long_video/generator/ai/11_summary_generator.py",
+              "fb_yt_long_video/generator/audio/01___init__.py",
+              "fb_yt_long_video/generator/audio/02_tts_engine.py",
+              "fb_yt_long_video/generator/audio/03_voice_selector.py",
+              "fb_yt_long_video/generator/audio/04_audio_normalizer.py",
+              "fb_yt_long_video/generator/audio/05_audio_compressor.py",
+              "fb_yt_long_video/generator/audio/06_audio_equalizer.py",
+              "fb_yt_long_video/generator/audio/07_music_fetcher.py",
+              "fb_yt_long_video/generator/audio/08_music_mixer.py",
+              "fb_yt_long_video/generator/audio/09_music_ducker.py",
+              "fb_yt_long_video/generator/audio/10_background_score_fetcher.py",
+              "fb_yt_long_video/generator/audio/11_sfx_generator.py",
+              "fb_yt_long_video/generator/audio/12_cta_sound_builder.py",
+              "fb_yt_long_video/generator/audio/13_audio_fade_engine.py",
+              "fb_yt_long_video/generator/audio/14_silence_detector.py",
+              "fb_yt_long_video/generator/audio/15_pause_handler.py",
+              "fb_yt_long_video/generator/audio/16_long_audio_merger.py",
+              "fb_yt_long_video/generator/media/01___init__.py",
+              "fb_yt_long_video/generator/media/02_background_fetcher.py",
+              "fb_yt_long_video/generator/media/03_background_kenburns.py",
+              "fb_yt_long_video/generator/media/04_background_darkener.py",
+              "fb_yt_long_video/generator/media/05_background_vignette.py",
+              "fb_yt_long_video/generator/media/06_background_color_grader.py",
+              "fb_yt_long_video/generator/media/07_background_loop_maker.py",
+              "fb_yt_long_video/generator/media/08_background_scene_selector.py",
+              "fb_yt_long_video/generator/media/09_fonts_manager.py",
+              "fb_yt_long_video/generator/media/10_font_downloader.py",
+              "fb_yt_long_video/generator/media/11_arabic_font_handler.py",
+              "fb_yt_long_video/generator/media/12_hindi_font_handler.py",
+              "fb_yt_long_video/generator/media/13_urdu_font_handler.py",
+              "fb_yt_long_video/generator/media/14_logo_builder.py",
+              "fb_yt_long_video/generator/media/15_logo_border_maker.py",
+              "fb_yt_long_video/generator/media/16_logo_glow_effect.py",
+              "fb_yt_long_video/generator/media/17_logo_animator.py",
+              "fb_yt_long_video/generator/media/18_watermark_placer.py",
+              "fb_yt_long_video/generator/media/19_emoji_renderer.py",
+              "fb_yt_long_video/generator/content/01___init__.py",
+              "fb_yt_long_video/generator/content/02_hadith_fetcher.py",
+              "fb_yt_long_video/generator/content/03_hadith_book_selector.py",
+              "fb_yt_long_video/generator/content/04_hadith_validator.py",
+              "fb_yt_long_video/generator/content/05_hadith_duplicate_checker.py",
+              "fb_yt_long_video/generator/content/06_hadith_long_form_fetcher.py",
+              "fb_yt_long_video/generator/content/07_quran_fetcher.py",
+              "fb_yt_long_video/generator/content/08_tafsir_fetcher.py",
+              "fb_yt_long_video/generator/content/09_dua_fetcher.py",
+              "fb_yt_long_video/generator/content/10_islamic_quote_fetcher.py",
+              "fb_yt_long_video/generator/content/11_story_fetcher.py",
+              "fb_yt_long_video/generator/content/12_seerah_fetcher.py",
+              "fb_yt_long_video/generator/content/13_translator.py",
+              "fb_yt_long_video/generator/content/14_deepl_translator.py",
+              "fb_yt_long_video/generator/content/15_ai_translator.py",
+              "fb_yt_long_video/generator/content/16_meaning_builder.py",
+              "fb_yt_long_video/generator/content/17_lesson_builder.py",
+              "fb_yt_long_video/generator/content/18_shayari_builder.py",
+              "fb_yt_long_video/generator/content/19_sawal_builder.py",
+              "fb_yt_long_video/generator/content/20_jawab_builder.py",
+              "fb_yt_long_video/generator/content/21_hook_builder.py",
+              "fb_yt_long_video/generator/content/22_cta_builder.py",
+              "fb_yt_long_video/generator/content/23_fact_checker.py",
+              "fb_yt_long_video/generator/content/24_source_citation_builder.py",
+              "fb_yt_long_video/generator/storage/01___init__.py",
+              "fb_yt_long_video/generator/storage/02_drive_uploader.py",
+              "fb_yt_long_video/generator/storage/03_drive_link_generator.py",
+              "fb_yt_long_video/generator/storage/04_drive_permission_setter.py",
+              "fb_yt_long_video/generator/storage/05_local_storage_manager.py",
+              "fb_yt_long_video/generator/storage/06_file_compressor.py",
+              "fb_yt_long_video/generator/monitoring/01___init__.py",
+              "fb_yt_long_video/generator/monitoring/02_telegram_reporter.py",
+              "fb_yt_long_video/generator/monitoring/03_api_status_tracker.py",
+              "fb_yt_long_video/generator/monitoring/04_error_logger.py",
+              "fb_yt_long_video/generator/monitoring/05_progress_notifier.py",
+              "fb_yt_long_video/generator/monitoring/06_performance_tracker.py",
+              "fb_yt_long_video/generator/monitoring/07_success_rate_tracker.py",
+              "fb_yt_long_video/generator/utils/01___init__.py",
+              "fb_yt_long_video/generator/utils/02_helpers.py",
+              "fb_yt_long_video/generator/utils/03_sanitizer.py",
+              "fb_yt_long_video/generator/utils/04_text_cleaner.py",
+              "fb_yt_long_video/generator/utils/05_text_splitter.py",
+              "fb_yt_long_video/generator/utils/06_cmd_runner.py",
+              "fb_yt_long_video/generator/utils/07_file_downloader.py",
+              "fb_yt_long_video/generator/utils/08_file_cleanup.py",
+              "fb_yt_long_video/generator/utils/09_session_builder.py",
+              "fb_yt_long_video/generator/utils/10_retry_wrapper.py",
+              "fb_yt_long_video/generator/utils/11_timer_utils.py",
+              "fb_yt_long_video/generator/utils/12_date_utils.py",
+              "fb_yt_long_video/generator/utils/13_json_utils.py",
+              "fb_yt_long_video/generator/utils/14_env_utils.py",
+              "fb_yt_long_video/generator/utils/15_path_utils.py",
+              "fb_yt_long_video/generator/utils/16_async_runner.py",
+              "fb_yt_long_video/generator/utils/17_thread_pool.py",
+              "fb_yt_long_video/generator/utils/18_rate_limiter.py",
+              "fb_yt_long_video/generator/utils/19_cache_manager.py",
+              "fb_yt_long_video/generator/subtitles/01___init__.py",
+              "fb_yt_long_video/generator/subtitles/02_ass_header.py",
+              "fb_yt_long_video/generator/subtitles/03_srt_builder.py",
+              "fb_yt_long_video/generator/subtitles/04_vtt_builder.py",
+              "fb_yt_long_video/generator/subtitles/05_typed_word_builder.py",
+              "fb_yt_long_video/generator/subtitles/06_karaoke_builder.py",
+              "fb_yt_long_video/generator/subtitles/07_arabic_style.py",
+              "fb_yt_long_video/generator/subtitles/08_hindi_style.py",
+              "fb_yt_long_video/generator/subtitles/09_english_style.py",
+              "fb_yt_long_video/generator/subtitles/10_bilingual_style.py",
+              "fb_yt_long_video/generator/subtitles/11_subtitle_timer.py",
+              "fb_yt_long_video/generator/subtitles/12_subtitle_positioner.py",
+              "fb_yt_long_video/generator/subtitles/13_subtitle_highlighter.py",
+              "fb_yt_long_video/generator/subtitles/14_chapter_subtitle_sync.py",
+              "fb_yt_long_video/generator/text/01___init__.py",
+              "fb_yt_long_video/generator/text/02_hadith_text_renderer.py",
+              "fb_yt_long_video/generator/text/03_hindi_text_renderer.py",
+              "fb_yt_long_video/generator/text/04_english_text_renderer.py",
+              "fb_yt_long_video/generator/text/05_arabic_text_renderer.py",
+              "fb_yt_long_video/generator/text/06_shayari_text_renderer.py",
+              "fb_yt_long_video/generator/text/07_hadith_reference_renderer.py",
+              "fb_yt_long_video/generator/text/08_hook_text_renderer.py",
+              "fb_yt_long_video/generator/text/09_chapter_title_renderer.py",
+              "fb_yt_long_video/generator/text/10_source_citation_renderer.py",
+              "fb_yt_long_video/generator/text/11_line_break_optimizer.py",
+              "fb_yt_long_video/generator/text/12_rtl_text_handler.py",
+              "fb_yt_long_video/generator/effects/01___init__.py",
+              "fb_yt_long_video/generator/effects/02_zoom_in_effect.py",
+              "fb_yt_long_video/generator/effects/03_zoom_out_effect.py",
+              "fb_yt_long_video/generator/effects/04_kenburns_effect.py",
+              "fb_yt_long_video/generator/effects/05_parallax_effect.py",
+              "fb_yt_long_video/generator/effects/06_glow_pulse_effect.py",
+              "fb_yt_long_video/generator/effects/07_floating_particles_effect.py",
+              "fb_yt_long_video/generator/effects/08_star_twinkle_effect.py",
+              "fb_yt_long_video/generator/effects/09_light_leak_effect.py",
+              "fb_yt_long_video/generator/effects/10_film_grain_effect.py",
+              "fb_yt_long_video/generator/effects/11_bokeh_effect.py",
+              "fb_yt_long_video/generator/effects/12_vignette_effect.py",
+              "fb_yt_long_video/generator/effects/13_lens_flare_effect.py",
+              "fb_yt_long_video/generator/effects/14_motion_blur_effect.py",
+              "fb_yt_long_video/generator/effects/15_gaussian_blur_effect.py",
+              "fb_yt_long_video/generator/effects/16_sepia_effect.py",
+              "fb_yt_long_video/generator/effects/17_vintage_effect.py",
+              "fb_yt_long_video/generator/effects/18_hdr_effect.py",
+              "fb_yt_long_video/generator/effects/19_duotone_effect.py",
+              "fb_yt_long_video/generator/effects/20_sketch_effect.py",
+              "fb_yt_long_video/generator/effects/21_watercolor_effect.py",
+              "fb_yt_long_video/generator/effects/22_neon_glow_effect.py",
+              "fb_yt_long_video/generator/effects/23_hologram_effect.py",
+              "fb_yt_long_video/generator/effects/24_glitch_effect.py",
+              "fb_yt_long_video/generator/effects/25_vhs_effect.py",
+              "fb_yt_long_video/generator/effects/26_old_film_effect.py",
+              "fb_yt_long_video/generator/effects/27_mirror_effect.py",
+              "fb_yt_long_video/generator/effects/28_ripple_effect.py",
+              "fb_yt_long_video/generator/effects/29_wave_effect.py",
+              "fb_yt_long_video/generator/effects/30_shake_effect.py",
+              "fb_yt_long_video/generator/effects/31_rotation_effect.py",
+              "fb_yt_long_video/generator/effects/32_heartbeat_effect.py",
+              "fb_yt_long_video/generator/effects/33_breathing_effect.py",
+              "fb_yt_long_video/generator/effects/34_shimmer_effect.py",
+              "fb_yt_long_video/generator/effects/35_sparkle_effect.py",
+              "fb_yt_long_video/generator/effects/36_confetti_effect.py",
+              "fb_yt_long_video/generator/effects/37_snow_effect.py",
+              "fb_yt_long_video/generator/effects/38_rain_effect.py",
+              "fb_yt_long_video/generator/effects/39_fire_effect.py",
+              "fb_yt_long_video/generator/effects/40_smoke_effect.py",
+              "fb_yt_long_video/generator/effects/41_aurora_effect.py",
+              "fb_yt_long_video/generator/effects/42_galaxy_effect.py",
+              "fb_yt_long_video/generator/effects/43_sunrays_effect.py",
+              "fb_yt_long_video/generator/effects/44_moon_glow_effect.py",
+              "fb_yt_long_video/generator/effects/45_slow_zoom_effect.py",
+              "fb_yt_long_video/generator/effects/46_cinematic_bars_effect.py",
+              "fb_yt_long_video/generator/transitions/01___init__.py",
+              "fb_yt_long_video/generator/transitions/02_fade_in_transition.py",
+              "fb_yt_long_video/generator/transitions/03_fade_out_transition.py",
+              "fb_yt_long_video/generator/transitions/04_crossfade_transition.py",
+              "fb_yt_long_video/generator/transitions/05_slide_transition.py",
+              "fb_yt_long_video/generator/transitions/06_zoom_transition.py",
+              "fb_yt_long_video/generator/transitions/07_wipe_transition.py",
+              "fb_yt_long_video/generator/transitions/08_dissolve_transition.py",
+              "fb_yt_long_video/generator/transitions/09_glitch_transition.py",
+              "fb_yt_long_video/generator/transitions/10_blur_transition.py",
+              "fb_yt_long_video/generator/transitions/11_chapter_transition.py",
+              "fb_yt_long_video/generator/transitions/12_transition_selector.py",
+              "fb_yt_long_video/generator/overlays/01___init__.py",
+              "fb_yt_long_video/generator/overlays/02_intro_overlay.py",
+              "fb_yt_long_video/generator/overlays/03_outro_overlay.py",
+              "fb_yt_long_video/generator/overlays/04_cta_buttons_overlay.py",
+              "fb_yt_long_video/generator/overlays/05_countdown_timer_overlay.py",
+              "fb_yt_long_video/generator/overlays/06_logo_moving_overlay.py",
+              "fb_yt_long_video/generator/overlays/07_logo_center_overlay.py",
+              "fb_yt_long_video/generator/overlays/08_progress_bar_overlay.py",
+              "fb_yt_long_video/generator/overlays/09_subscribe_popup_overlay.py",
+              "fb_yt_long_video/generator/overlays/10_like_animation_overlay.py",
+              "fb_yt_long_video/generator/overlays/11_islamic_pattern_overlay.py",
+              "fb_yt_long_video/generator/overlays/12_moon_star_overlay.py",
+              "fb_yt_long_video/generator/overlays/13_ramadan_lantern_overlay.py",
+              "fb_yt_long_video/generator/overlays/14_mosque_silhouette_overlay.py",
+              "fb_yt_long_video/generator/overlays/15_question_box_overlay.py",
+              "fb_yt_long_video/generator/overlays/16_quiz_answer_overlay.py",
+              "fb_yt_long_video/generator/overlays/17_text_glow_overlay.py",
+              "fb_yt_long_video/generator/overlays/18_brand_badge_overlay.py",
+              "fb_yt_long_video/generator/overlays/19_chapter_title_overlay.py",
+              "fb_yt_long_video/generator/overlays/20_chapter_number_overlay.py",
+              "fb_yt_long_video/generator/overlays/21_source_citation_overlay.py",
+              "fb_yt_long_video/generator/overlays/22_lower_third_overlay.py",
+              "fb_yt_long_video/generator/overlays/23_timeline_overlay.py",
+              "fb_yt_long_video/generator/overlays/24_end_screen_overlay.py",
+              "fb_yt_long_video/generator/overlays/25_subscribe_reminder_overlay.py",
+              "fb_yt_long_video/generator/overlays/26_bell_icon_overlay.py",
+              "fb_yt_long_video/generator/overlays/27_watermark_corner_overlay.py",
+              "fb_yt_long_video/generator/frames/01___init__.py",
+              "fb_yt_long_video/generator/frames/02_frame_builder.py",
+              "fb_yt_long_video/generator/frames/03_frame_batch_generator.py",
+              "fb_yt_long_video/generator/frames/04_frame_timeline_planner.py",
+              "fb_yt_long_video/generator/frames/05_frame_compositor.py",
+              "fb_yt_long_video/generator/frames/06_frame_layer_manager.py",
+              "fb_yt_long_video/generator/frames/07_frame_cache.py",
+              "fb_yt_long_video/generator/frames/08_frame_cleanup.py",
+              "fb_yt_long_video/generator/render/01___init__.py",
+              "fb_yt_long_video/generator/render/02_ffmpeg_command_builder.py",
+              "fb_yt_long_video/generator/render/03_ffmpeg_filter_builder.py",
+              "fb_yt_long_video/generator/render/04_video_encoder.py",
+              "fb_yt_long_video/generator/render/05_audio_encoder.py",
+              "fb_yt_long_video/generator/render/06_subtitle_burner.py",
+              "fb_yt_long_video/generator/render/07_final_muxer.py",
+              "fb_yt_long_video/generator/render/08_video_quality_tuner.py",
+              "fb_yt_long_video/generator/render/09_video_resolution_setter.py",
+              "fb_yt_long_video/generator/render/10_video_bitrate_setter.py",
+              "fb_yt_long_video/generator/render/11_codec_selector.py",
+              "fb_yt_long_video/generator/render/12_preset_selector.py",
+              "fb_yt_long_video/generator/render/13_crf_optimizer.py",
+              "fb_yt_long_video/generator/render/14_video_thumbnail_extractor.py",
+              "fb_yt_long_video/generator/render/15_video_metadata_writer.py",
+              "fb_yt_long_video/generator/render/16_video_watermark.py",
+              "fb_yt_long_video/generator/render/17_video_export_presets.py",
+              "fb_yt_long_video/generator/render/18_long_video_chapter_embedder.py",
+              "fb_yt_long_video/generator/render/19_long_video_multi_pass_encoder.py",
+              "fb_yt_long_video/generator/render/20_long_video_preview_generator.py",
+              "fb_yt_long_video/generator/pipeline/01___init__.py",
+              "fb_yt_long_video/generator/pipeline/02_long_pipeline.py",
+              "fb_yt_long_video/generator/pipeline/03_long_content.py",
+              "fb_yt_long_video/generator/pipeline/04_long_audio.py",
+              "fb_yt_long_video/generator/pipeline/05_long_subtitles.py",
+              "fb_yt_long_video/generator/pipeline/06_long_frames.py",
+              "fb_yt_long_video/generator/pipeline/07_long_renderer.py",
+              "fb_yt_long_video/generator/pipeline/08_long_thumbnail.py",
+              "fb_yt_long_video/generator/pipeline/09_long_metadata.py",
+              "fb_yt_long_video/generator/pipeline/10_long_chapter_builder.py",
+              "fb_yt_long_video/generator/config/01___init__.py",
+              "fb_yt_long_video/generator/config/02_long_config.py",
+              "fb_yt_long_video/generator/config/03_audio_config.py",
+              "fb_yt_long_video/generator/config/04_video_config.py",
+              "fb_yt_long_video/generator/config/05_upload_config.py",
+              "fb_yt_long_video/generator/assets/01___init__.py",
+              "fb_yt_long_video/generator/assets/02_font_notosans_bold.py",
+              "fb_yt_long_video/generator/assets/03_font_notonaskh_arabic.py",
+              "fb_yt_long_video/generator/assets/04_font_notosans_devanagari.py",
+              "fb_yt_long_video/generator/assets/05_logo_sawaj.py",
+              "fb_yt_long_video/generator/assets/06_music_ambient.py",
+              "fb_yt_long_video/generator/assets/07_music_cinematic.py",
+              "fb_yt_long_video/generator/assets/08_sfx_ding.py",
+              "fb_yt_long_video/generator/assets/09_sfx_whoosh.py",
+              "fb_yt_long_video/generator/assets/10_sfx_tick.py",
+              "fb_yt_long_video/generator/assets/11_sfx_chapter_transition.py",
+              "fb_yt_long_video/generator/assets/12_background_mosque.py",
+
+              # ================= STORY VIDEO =================
+              ".github/workflows/story_daily.yml",
+              "fb_ig_story_video/.gitignore",
+              "fb_ig_story_video/.env.example",
+              "fb_ig_story_video/requirements.txt",
+              "fb_ig_story_video/config.py",
+              "fb_ig_story_video/main.py",
+              "fb_ig_story_video/README.md",
+              "fb_ig_story_video/uploader/01___init__.py",
+              "fb_ig_story_video/uploader/02_fb_ig_story.py",
+              "fb_ig_story_video/uploader/03_auth_manager.py",
+              "fb_ig_story_video/uploader/04_retry_handler.py",
+              "fb_ig_story_video/uploader/05_fb_story_uploader.py",
+              "fb_ig_story_video/uploader/06_ig_story_uploader.py",
+              "fb_ig_story_video/uploader/07_caption_builder.py",
+              "fb_ig_story_video/uploader/08_hashtag_builder.py",
+              "fb_ig_story_video/uploader/09_token_refresher.py",
+              "fb_ig_story_video/uploader/10_rate_limit_handler.py",
+              "fb_ig_story_video/uploader/11_upload_scheduler.py",
+              "fb_ig_story_video/uploader/12_thumbnail_generator.py",
+              "fb_ig_story_video/generator/ai/01___init__.py",
+              "fb_ig_story_video/generator/ai/02_ai_providers.py",
+              "fb_ig_story_video/generator/ai/03_prompt_templates.py",
+              "fb_ig_story_video/generator/ai/04_ai_fallback_chain.py",
+              "fb_ig_story_video/generator/ai/05_ai_response_parser.py",
+              "fb_ig_story_video/generator/audio/01___init__.py",
+              "fb_ig_story_video/generator/audio/02_tts_engine.py",
+              "fb_ig_story_video/generator/audio/03_voice_selector.py",
+              "fb_ig_story_video/generator/audio/04_audio_normalizer.py",
+              "fb_ig_story_video/generator/audio/05_audio_compressor.py",
+              "fb_ig_story_video/generator/audio/06_audio_equalizer.py",
+              "fb_ig_story_video/generator/audio/07_music_fetcher.py",
+              "fb_ig_story_video/generator/audio/08_music_mixer.py",
+              "fb_ig_story_video/generator/audio/09_music_ducker.py",
+              "fb_ig_story_video/generator/audio/10_sfx_generator.py",
+              "fb_ig_story_video/generator/audio/11_cta_sound_builder.py",
+              "fb_ig_story_video/generator/audio/12_audio_fade_engine.py",
+              "fb_ig_story_video/generator/audio/13_silence_detector.py",
+              "fb_ig_story_video/generator/media/01___init__.py",
+              "fb_ig_story_video/generator/media/02_background_fetcher.py",
+              "fb_ig_story_video/generator/media/03_background_kenburns.py",
+              "fb_ig_story_video/generator/media/04_background_darkener.py",
+              "fb_ig_story_video/generator/media/05_background_vignette.py",
+              "fb_ig_story_video/generator/media/06_background_color_grader.py",
+              "fb_ig_story_video/generator/media/07_background_loop_maker.py",
+              "fb_ig_story_video/generator/media/08_fonts_manager.py",
+              "fb_ig_story_video/generator/media/09_font_downloader.py",
+              "fb_ig_story_video/generator/media/10_arabic_font_handler.py",
+              "fb_ig_story_video/generator/media/11_hindi_font_handler.py",
+              "fb_ig_story_video/generator/media/12_urdu_font_handler.py",
+              "fb_ig_story_video/generator/media/13_logo_builder.py",
+              "fb_ig_story_video/generator/media/14_logo_border_maker.py",
+              "fb_ig_story_video/generator/media/15_logo_glow_effect.py",
+              "fb_ig_story_video/generator/media/16_logo_animator.py",
+              "fb_ig_story_video/generator/media/17_watermark_placer.py",
+              "fb_ig_story_video/generator/media/18_emoji_renderer.py",
+              "fb_ig_story_video/generator/content/01___init__.py",
+              "fb_ig_story_video/generator/content/02_hadith_fetcher.py",
+              "fb_ig_story_video/generator/content/03_hadith_book_selector.py",
+              "fb_ig_story_video/generator/content/04_hadith_validator.py",
+              "fb_ig_story_video/generator/content/05_hadith_duplicate_checker.py",
+              "fb_ig_story_video/generator/content/06_quran_fetcher.py",
+              "fb_ig_story_video/generator/content/07_dua_fetcher.py",
+              "fb_ig_story_video/generator/content/08_islamic_quote_fetcher.py",
+              "fb_ig_story_video/generator/content/09_translator.py",
+              "fb_ig_story_video/generator/content/10_deepl_translator.py",
+              "fb_ig_story_video/generator/content/11_ai_translator.py",
+              "fb_ig_story_video/generator/content/12_meaning_builder.py",
+              "fb_ig_story_video/generator/content/13_shayari_builder.py",
+              "fb_ig_story_video/generator/content/14_sawal_builder.py",
+              "fb_ig_story_video/generator/content/15_jawab_builder.py",
+              "fb_ig_story_video/generator/content/16_hook_builder.py",
+              "fb_ig_story_video/generator/content/17_cta_builder.py",
+              "fb_ig_story_video/generator/content/18_title_builder.py",
+              "fb_ig_story_video/generator/content/19_description_builder.py",
+              "fb_ig_story_video/generator/content/20_tags_builder.py",
+              "fb_ig_story_video/generator/storage/01___init__.py",
+              "fb_ig_story_video/generator/storage/02_drive_uploader.py",
+              "fb_ig_story_video/generator/storage/03_drive_link_generator.py",
+              "fb_ig_story_video/generator/storage/04_drive_permission_setter.py",
+              "fb_ig_story_video/generator/storage/05_local_storage_manager.py",
+              "fb_ig_story_video/generator/storage/06_file_compressor.py",
+              "fb_ig_story_video/generator/monitoring/01___init__.py",
+              "fb_ig_story_video/generator/monitoring/02_telegram_reporter.py",
+              "fb_ig_story_video/generator/monitoring/03_api_status_tracker.py",
+              "fb_ig_story_video/generator/monitoring/04_error_logger.py",
+              "fb_ig_story_video/generator/monitoring/05_progress_notifier.py",
+              "fb_ig_story_video/generator/monitoring/06_performance_tracker.py",
+              "fb_ig_story_video/generator/monitoring/07_success_rate_tracker.py",
+              "fb_ig_story_video/generator/utils/01___init__.py",
+              "fb_ig_story_video/generator/utils/02_helpers.py",
+              "fb_ig_story_video/generator/utils/03_sanitizer.py",
+              "fb_ig_story_video/generator/utils/04_text_cleaner.py",
+              "fb_ig_story_video/generator/utils/05_text_splitter.py",
+              "fb_ig_story_video/generator/utils/06_cmd_runner.py",
+              "fb_ig_story_video/generator/utils/07_file_downloader.py",
+              "fb_ig_story_video/generator/utils/08_file_cleanup.py",
+              "fb_ig_story_video/generator/utils/09_session_builder.py",
+              "fb_ig_story_video/generator/utils/10_retry_wrapper.py",
+              "fb_ig_story_video/generator/utils/11_timer_utils.py",
+              "fb_ig_story_video/generator/utils/12_date_utils.py",
+              "fb_ig_story_video/generator/utils/13_json_utils.py",
+              "fb_ig_story_video/generator/utils/14_env_utils.py",
+              "fb_ig_story_video/generator/utils/15_path_utils.py",
+              "fb_ig_story_video/generator/utils/16_async_runner.py",
+              "fb_ig_story_video/generator/utils/17_thread_pool.py",
+              "fb_ig_story_video/generator/utils/18_rate_limiter.py",
+              "fb_ig_story_video/generator/utils/19_cache_manager.py",
+              "fb_ig_story_video/generator/subtitles/01___init__.py",
+              "fb_ig_story_video/generator/subtitles/02_ass_header.py",
+              "fb_ig_story_video/generator/subtitles/03_srt_builder.py",
+              "fb_ig_story_video/generator/subtitles/04_typed_word_builder.py",
+              "fb_ig_story_video/generator/subtitles/05_karaoke_builder.py",
+              "fb_ig_story_video/generator/subtitles/06_arabic_style.py",
+              "fb_ig_story_video/generator/subtitles/07_hindi_style.py",
+              "fb_ig_story_video/generator/subtitles/08_english_style.py",
+              "fb_ig_story_video/generator/subtitles/09_bilingual_style.py",
+              "fb_ig_story_video/generator/subtitles/10_subtitle_timer.py",
+              "fb_ig_story_video/generator/subtitles/11_subtitle_positioner.py",
+              "fb_ig_story_video/generator/text/01___init__.py",
+              "fb_ig_story_video/generator/text/02_hadith_text_renderer.py",
+              "fb_ig_story_video/generator/text/03_hindi_text_renderer.py",
+              "fb_ig_story_video/generator/text/04_english_text_renderer.py",
+              "fb_ig_story_video/generator/text/05_arabic_text_renderer.py",
+              "fb_ig_story_video/generator/text/06_shayari_text_renderer.py",
+              "fb_ig_story_video/generator/text/07_hadith_reference_renderer.py",
+              "fb_ig_story_video/generator/text/08_line_break_optimizer.py",
+              "fb_ig_story_video/generator/text/09_rtl_text_handler.py",
+              "fb_ig_story_video/generator/effects/01___init__.py",
+              "fb_ig_story_video/generator/effects/02_zoom_in_effect.py",
+              "fb_ig_story_video/generator/effects/03_zoom_out_effect.py",
+              "fb_ig_story_video/generator/effects/04_kenburns_effect.py",
+              "fb_ig_story_video/generator/effects/05_parallax_effect.py",
+              "fb_ig_story_video/generator/effects/06_glow_pulse_effect.py",
+              "fb_ig_story_video/generator/effects/07_floating_particles_effect.py",
+              "fb_ig_story_video/generator/effects/08_star_twinkle_effect.py",
+              "fb_ig_story_video/generator/effects/09_light_leak_effect.py",
+              "fb_ig_story_video/generator/effects/10_film_grain_effect.py",
+              "fb_ig_story_video/generator/effects/11_bokeh_effect.py",
+              "fb_ig_story_video/generator/effects/12_vignette_effect.py",
+              "fb_ig_story_video/generator/effects/13_lens_flare_effect.py",
+              "fb_ig_story_video/generator/effects/14_motion_blur_effect.py",
+              "fb_ig_story_video/generator/effects/15_gaussian_blur_effect.py",
+              "fb_ig_story_video/generator/effects/16_sepia_effect.py",
+              "fb_ig_story_video/generator/effects/17_vintage_effect.py",
+              "fb_ig_story_video/generator/effects/18_hdr_effect.py",
+              "fb_ig_story_video/generator/effects/19_duotone_effect.py",
+              "fb_ig_story_video/generator/effects/20_sketch_effect.py",
+              "fb_ig_story_video/generator/effects/21_watercolor_effect.py",
+              "fb_ig_story_video/generator/effects/22_neon_glow_effect.py",
+              "fb_ig_story_video/generator/effects/23_hologram_effect.py",
+              "fb_ig_story_video/generator/effects/24_glitch_effect.py",
+              "fb_ig_story_video/generator/effects/25_vhs_effect.py",
+              "fb_ig_story_video/generator/effects/26_old_film_effect.py",
+              "fb_ig_story_video/generator/effects/27_mirror_effect.py",
+              "fb_ig_story_video/generator/effects/28_ripple_effect.py",
+              "fb_ig_story_video/generator/effects/29_wave_effect.py",
+              "fb_ig_story_video/generator/effects/30_shake_effect.py",
+              "fb_ig_story_video/generator/effects/31_rotation_effect.py",
+              "fb_ig_story_video/generator/effects/32_heartbeat_effect.py",
+              "fb_ig_story_video/generator/effects/33_breathing_effect.py",
+              "fb_ig_story_video/generator/effects/34_shimmer_effect.py",
+              "fb_ig_story_video/generator/effects/35_sparkle_effect.py",
+              "fb_ig_story_video/generator/effects/36_confetti_effect.py",
+              "fb_ig_story_video/generator/effects/37_snow_effect.py",
+              "fb_ig_story_video/generator/effects/38_rain_effect.py",
+              "fb_ig_story_video/generator/effects/39_fire_effect.py",
+              "fb_ig_story_video/generator/effects/40_smoke_effect.py",
+              "fb_ig_story_video/generator/effects/41_aurora_effect.py",
+              "fb_ig_story_video/generator/effects/42_galaxy_effect.py",
+              "fb_ig_story_video/generator/effects/43_sunrays_effect.py",
+              "fb_ig_story_video/generator/effects/44_moon_glow_effect.py",
+              "fb_ig_story_video/generator/transitions/01___init__.py",
+              "fb_ig_story_video/generator/transitions/02_fade_in_transition.py",
+              "fb_ig_story_video/generator/transitions/03_fade_out_transition.py",
+              "fb_ig_story_video/generator/transitions/04_crossfade_transition.py",
+              "fb_ig_story_video/generator/transitions/05_slide_transition.py",
+              "fb_ig_story_video/generator/transitions/06_zoom_transition.py",
+              "fb_ig_story_video/generator/transitions/07_wipe_transition.py",
+              "fb_ig_story_video/generator/transitions/08_dissolve_transition.py",
+              "fb_ig_story_video/generator/transitions/09_glitch_transition.py",
+              "fb_ig_story_video/generator/transitions/10_blur_transition.py",
+              "fb_ig_story_video/generator/transitions/11_transition_selector.py",
+              "fb_ig_story_video/generator/overlays/01___init__.py",
+              "fb_ig_story_video/generator/overlays/02_intro_overlay.py",
+              "fb_ig_story_video/generator/overlays/03_outro_overlay.py",
+              "fb_ig_story_video/generator/overlays/04_cta_buttons_overlay.py",
+              "fb_ig_story_video/generator/overlays/05_countdown_timer_overlay.py",
+              "fb_ig_story_video/generator/overlays/06_logo_moving_overlay.py",
+              "fb_ig_story_video/generator/overlays/07_logo_center_overlay.py",
+              "fb_ig_story_video/generator/overlays/08_progress_bar_overlay.py",
+              "fb_ig_story_video/generator/overlays/09_subscribe_popup_overlay.py",
+              "fb_ig_story_video/generator/overlays/10_like_animation_overlay.py",
+              "fb_ig_story_video/generator/overlays/11_islamic_pattern_overlay.py",
+              "fb_ig_story_video/generator/overlays/12_moon_star_overlay.py",
+              "fb_ig_story_video/generator/overlays/13_ramadan_lantern_overlay.py",
+              "fb_ig_story_video/generator/overlays/14_mosque_silhouette_overlay.py",
+              "fb_ig_story_video/generator/overlays/15_question_box_overlay.py",
+              "fb_ig_story_video/generator/overlays/16_quiz_answer_overlay.py",
+              "fb_ig_story_video/generator/overlays/17_text_glow_overlay.py",
+              "fb_ig_story_video/generator/overlays/18_brand_badge_overlay.py",
+              "fb_ig_story_video/generator/frames/01___init__.py",
+              "fb_ig_story_video/generator/frames/02_frame_builder.py",
+              "fb_ig_story_video/generator/frames/03_frame_batch_generator.py",
+              "fb_ig_story_video/generator/frames/04_frame_timeline_planner.py",
+              "fb_ig_story_video/generator/frames/05_frame_compositor.py",
+              "fb_ig_story_video/generator/frames/06_frame_layer_manager.py",
+              "fb_ig_story_video/generator/frames/07_frame_cleanup.py",
+              "fb_ig_story_video/generator/render/01___init__.py",
+              "fb_ig_story_video/generator/render/02_ffmpeg_command_builder.py",
+              "fb_ig_story_video/generator/render/03_ffmpeg_filter_builder.py",
+              "fb_ig_story_video/generator/render/04_video_encoder.py",
+              "fb_ig_story_video/generator/render/05_audio_encoder.py",
+              "fb_ig_story_video/generator/render/06_subtitle_burner.py",
+              "fb_ig_story_video/generator/render/07_final_muxer.py",
+              "fb_ig_story_video/generator/render/08_video_quality_tuner.py",
+              "fb_ig_story_video/generator/render/09_video_resolution_setter.py",
+              "fb_ig_story_video/generator/render/10_video_bitrate_setter.py",
+              "fb_ig_story_video/generator/render/11_codec_selector.py",
+              "fb_ig_story_video/generator/render/12_preset_selector.py",
+              "fb_ig_story_video/generator/render/13_crf_optimizer.py",
+              "fb_ig_story_video/generator/render/14_video_thumbnail_extractor.py",
+              "fb_ig_story_video/generator/render/15_video_metadata_writer.py",
+              "fb_ig_story_video/generator/render/16_video_watermark.py",
+              "fb_ig_story_video/generator/render/17_video_export_presets.py",
+              "fb_ig_story_video/generator/pipeline/01___init__.py",
+              "fb_ig_story_video/generator/pipeline/02_story_pipeline.py",
+              "fb_ig_story_video/generator/pipeline/03_story_content.py",
+              "fb_ig_story_video/generator/pipeline/04_story_audio.py",
+              "fb_ig_story_video/generator/pipeline/05_story_subtitles.py",
+              "fb_ig_story_video/generator/pipeline/06_story_frames.py",
+              "fb_ig_story_video/generator/pipeline/07_story_renderer.py",
+              "fb_ig_story_video/generator/pipeline/08_story_thumbnail.py",
+              "fb_ig_story_video/generator/config/01___init__.py",
+              "fb_ig_story_video/generator/config/02_story_config.py",
+              "fb_ig_story_video/generator/config/03_audio_config.py",
+              "fb_ig_story_video/generator/config/04_video_config.py",
+              "fb_ig_story_video/generator/assets/01___init__.py",
+              "fb_ig_story_video/generator/assets/02_font_notosans_bold.py",
+              "fb_ig_story_video/generator/assets/03_font_notonaskh_arabic.py",
+              "fb_ig_story_video/generator/assets/04_font_notosans_devanagari.py",
+              "fb_ig_story_video/generator/assets/05_logo_sawaj.py",
+              "fb_ig_story_video/generator/assets/06_music_ambient.py",
+              "fb_ig_story_video/generator/assets/07_sfx_ding.py",
+              "fb_ig_story_video/generator/assets/08_sfx_whoosh.py",
+              "fb_ig_story_video/generator/assets/09_sfx_tick.py",
+              "fb_ig_story_video/generator/assets/10_background_mosque.py"
+          ]
+
+          def create_file(path):
+              url = f"{API_URL}/{path}"
+              res = requests.get(url, headers=HEADERS)
+              if res.status_code == 200:
+                  print(f"Already exists: {path}")
+                  return
+
+              if path.endswith("__init__.py"):
+                  content = ""
+              elif path.endswith(".yml"):
+                  content = "name: Auto Workflow\n\non:\n  push:\n    branches: [ main ]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n"
+              elif path.endswith(".py"):
+                  content = f"# {path}\n# Auto-generated by script\n"
+              elif path.endswith(".txt"):
+                  content = "# Requirements\n"
+              elif path.endswith(".md"):
+                  content = f"# {path}\n\nAuto-generated README.\n"
+              else:
+                  content = ""
+
+              encoded_content = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+              data = {
+                  "message": f"Create {path}",
+                  "content": encoded_content,
+                  "branch": BRANCH
+              }
+
+              response = requests.put(url, headers=HEADERS, json=data)
+              if response.status_code == 201:
+                  print(f"Created: {path}")
+              elif response.status_code == 422:
+                  print(f"Skipped: {path}")
+              else:
+                  print(f"Failed {path}: {response.text}")
+
+          print(f"Starting creation for {OWNER}/{REPO} on branch {BRANCH}...")
+          for p in PATHS:
+              create_file(p)
+          print("All done!")
+          EOF
