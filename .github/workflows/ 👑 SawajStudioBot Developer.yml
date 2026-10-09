@@ -1,4 +1,4 @@
-name: 👑 SawajStudioBot Developer
+name: 👑 SawajStudioBot Autonomous Developer
 
 on:
   workflow_dispatch:
@@ -9,12 +9,12 @@ permissions:
 
 jobs:
   developer:
-    name: 👑 Developer Working
+    name: 👑 Autonomous Developer Working
     runs-on: ubuntu-latest
     timeout-minutes: 1440
 
     steps:
-      - name: 📥 Checkout
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -24,10 +24,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📦 Install
+      - name: 📦 Install Requirements
         run: pip install requests
 
-      - name: 👑 Run Developer
+      - name: 👑 Run Autonomous Developer Engine
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -69,14 +69,13 @@ jobs:
               return False
 
           def scan():
-              """Scan all files + folder structure."""
               files = []
               folders = {}
               for root, dirs, fnames in os.walk(BOT_ROOT):
                   dirs[:] = [d for d in dirs if not skip(os.path.join(root, d))]
                   rel_dir = os.path.relpath(root, BOT_ROOT)
                   if rel_dir != ".":
-                      folders[rel_dir] = {"count": 0, "files": []}
+                      folders[rel_dir] = []
                   for fn in fnames:
                       full = os.path.join(root, fn)
                       if skip(full): continue
@@ -85,8 +84,7 @@ jobs:
                           files.append(rel)
                           parent = os.path.dirname(rel)
                           if parent in folders:
-                              folders[parent]["count"] += 1
-                              folders[parent]["files"].append(fn)
+                              folders[parent].append(fn)
               return sorted(files), folders
 
           def load_prog():
@@ -121,267 +119,167 @@ jobs:
                   elif ai == "Gemini":
                       k = os.environ.get("GEMINI_API_KEY", "").strip()
                       if not k: return None
-                      for m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+                      for m in ["gemini-2.5-pro", "gemini-2.0-flash"]:
                           d = post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={k}",
-                                   {}, {"contents": [{"parts": [{"text": prompt}]}],
-                                        "generationConfig": {"maxOutputTokens": 8000, "temperature": 0.2}})
+                                   {"Content-Type": "application/json"}, 
+                                   {"contents": [{"parts": [{"text": prompt}]}],
+                                    "generationConfig": {"maxOutputTokens": 8000, "temperature": 0.2}})
                           if d and "candidates" in d:
                               try: return d["candidates"][0]["content"]["parts"][0]["text"]
                               except: pass
-                  elif ai == "OpenRouter":
-                      k = os.environ.get("OPENROUTER_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://openrouter.ai/api/v1/chat/completions",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "openai/gpt-4o-mini",
-                                "messages": [{"role": "user", "content": prompt}],
-                                "max_tokens": 8000, "temperature": 0.2})
-                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "Mistral":
-                      k = os.environ.get("MISTRAL_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://api.mistral.ai/v1/chat/completions",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "mistral-small-latest",
-                                "messages": [{"role": "user", "content": prompt}],
-                                "max_tokens": 8000, "temperature": 0.2})
-                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "Cerebras":
-                      k = os.environ.get("CEREBRAS_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://api.cerebras.ai/v1/chat/completions",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "llama-3.3-70b",
-                                "messages": [{"role": "user", "content": prompt}],
-                                "max_tokens": 8000, "temperature": 0.2})
-                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "Cohere":
-                      k = os.environ.get("COHERE_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://api.cohere.com/v1/chat",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "command-r-plus-08-2024", "message": prompt})
-                      if d and "text" in d: return d["text"]
-                  elif ai == "NVIDIA":
-                      k = os.environ.get("NVIDIA_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://integrate.api.nvidia.com/v1/chat/completions",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "meta/llama-3.3-70b-instruct",
-                                "messages": [{"role": "user", "content": prompt}],
-                                "max_tokens": 8000, "temperature": 0.2})
-                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "HuggingFace":
-                      k = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct/v1/chat/completions",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-                                "messages": [{"role": "user", "content": prompt}],
-                                "max_tokens": 4000, "temperature": 0.2})
-                      if d and "choices" in d:
-                          try: return d["choices"][0]["message"]["content"]
-                          except: pass
-              except: pass
+              except Exception as e: 
+                  print(f"Error calling {ai}: {e}")
               return None
 
-          def build_full_structure(folders, total_files):
-              lines = [f"TOTAL FILES: {total_files}", "=" * 60, ""]
+          def build_tree(folders, files):
+              lines = [f"{BOT_ROOT}/"]
               for folder in sorted(folders.keys()):
-                  info = folders[folder]
-                  lines.append(f"📁 {folder}/ ({info['count']} files)")
-                  for f in sorted(info["files"])[:10]:
-                      lines.append(f"   - {f}")
-                  if info["count"] > 10:
-                      lines.append(f"   ... +{info['count'] - 10} more")
-                  lines.append("")
+                  depth = folder.count(os.sep)
+                  indent = "  " * depth
+                  name = os.path.basename(folder)
+                  fcount = len(folders[folder])
+                  lines.append(f"{indent}├── {name}/ ({fcount} files)")
               return "\n".join(lines)
 
-          def extract_code(response):
-              patterns = [
-                  r"═══ FILE:\s*.+?\s*═══\s*\n(.*?)\n\s*═══ END",
-                  r"═══ FILE:\s*.+?\s*═══\n(.*?)\n\s*═══ END",
-                  r"###\s*FILE:\s*.+?\n\`\`\`(?:python)?\n(.*?)\n\`\`\`",
-                  r"\`\`\`(?:python)?\n(.*?)\n\`\`\`",
-              ]
-              for p in patterns:
-                  m = re.search(p, response, re.DOTALL)
-                  if m:
-                      return m.group(1).strip()
+          def get_siblings(rel, folders):
+              parent = os.path.dirname(rel)
+              return folders.get(parent, [])
 
-              lines = response.split("\n")
-              for i, line in enumerate(lines):
-                  if re.match(r"^\s*(import|from|def|class|#|\"\"\"|''')", line):
-                      code = "\n".join(lines[i:]).strip()
-                      code = re.sub(r"\n\s*(Explanation|Note|This code|Here|Hope).*$", "", code, flags=re.DOTALL | re.IGNORECASE)
-                      return code
-              return None
+          def parse_ai_response(response, current_file_rel):
+              # 1. Extract main file code
+              main_code = None
+              main_match = re.search(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END", response, re.DOTALL)
+              if main_match:
+                  main_code = main_match.group(2).strip()
+              else:
+                  # Fallback if AI didn't use strict tags
+                  code_blocks = re.findall(r"\`\`\`(?:python)?\n(.*?)\n\`\`\`", response, re.DOTALL)
+                  if code_blocks: main_code = code_blocks[0].strip()
 
-          def upgrade_one(rel, idx, total, folders, full_struct):
+              # 2. Extract any NEW files the AI decided to create
+              new_files = {}
+              new_matches = re.findall(r"═══ NEW FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END", response, re.DOTALL)
+              for path, code in new_matches:
+                  path = path.strip()
+                  code = code.strip()
+                  if path and code and ".." not in path:
+                      new_files[path] = code
+              
+              return main_code, new_files
+
+          def upgrade_one(rel, idx, total, folders):
               full = os.path.join(BOT_ROOT, rel)
               try:
                   with open(full, "r", encoding="utf-8") as f:
                       code = f.read()
-              except Exception as e:
-                  return False, rel, None, 0, "read_error"
+              except Exception:
+                  tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code> — read error")
+                  return False, rel, None, 0
 
-              parent_folder = os.path.dirname(rel) or "sawajstudiobot"
-              is_empty = len(code.strip()) < 50
-              is_small = len(code.strip()) < 300
+              tree = build_tree(folders, [])
+              parent = os.path.dirname(rel)
+              siblings = get_siblings(rel, folders)
+              siblings_str = ", ".join(siblings[:15])
 
-              if is_empty:
-                  prompt = f"""You are the MASTER AI DEVELOPER of SawajStudioBot.
+              prompt = f"""You are the AUTONOMOUS LEAD DEVELOPER & ARCHITECT for "SawajStudioBot".
+          You fully own this project. You write the code, you control the structure, and you upgrade it to WORLD-CLASS standards.
 
-          FULL PROJECT STRUCTURE:
-          {full_struct}
+          1️⃣ PROJECT ARCHITECTURE (FOLDER STRUCTURE):
+          {tree}
 
-          THIS IS AN EMPTY FILE: {rel}
-          Parent folder: {parent_folder}
-          Current content: {repr(code[:200])}
+          2️⃣ CURRENT TASK:
+          - Current File Location: {rel}
+          - Folder: {parent}/
+          - Siblings in this folder: {siblings_str}
 
-          TASK:
-          This file is EMPTY. Write the FULL code for this file.
-
-          Consider what this file's PURPOSE is based on:
-          - Its name: {os.path.basename(rel)}
-          - Its folder: {parent_folder}
-          - The project structure above
-
-          RULES:
-          - Write the COMPLETE file content
-          - If it's __init__.py — write proper package init with exports
-          - Add docstring, imports if needed
-          - NEVER leave it empty
+          3️⃣ CRITICAL RULES (STRICTLY FOLLOW):
+          1. NEVER DELETE ANYTHING: Keep all existing logic, functions, variables, and imports. 
+          2. UPGRADE & ENHANCE: Add robust error handling (try-except), type hints, logging, and professional docstrings. Make the code production-ready.
+          3. FULL CODE REQUIRED: Do not write "rest of the code here". You must return the FULL, complete, upgraded file code.
+          4. CREATE NEW FILES IF NEEDED: If you want to add new features, utilities, or split code for better architecture, you CAN create new files.
 
           RETURN FORMAT (EXACT):
+          You must return the updated code for the current file:
           ═══ FILE: {rel} ═══
-          <full code>
+          <full upgraded python code here>
           ═══ END ═══
 
-          Write the complete code now:"""
-              else:
-                  prompt = f"""You are the MASTER AI DEVELOPER of SawajStudioBot.
-
-          FULL PROJECT STRUCTURE:
-          {full_struct}
-
-          THIS FILE: {rel}
-          Parent folder: {parent_folder}
-          Current size: {len(code)} chars
-
-          TASK: Upgrade this file to WORLD #1 quality.
-
-          RULES:
-          - Keep ALL existing functionality
-          - Add error handling, docstrings, type hints, logging
-          - Remove any copyright text
-          - Add helpful features
-          - NEVER delete any function or logic
-
-          RETURN FORMAT (EXACT):
-          ═══ FILE: {rel} ═══
-          <full upgraded code>
+          (Optional) If you want to add NEW files to the project, use this format for each new file:
+          ═══ NEW FILE: folder/path/new_feature.py ═══
+          <new python code here>
           ═══ END ═══
 
-          CODE:
-          {code}"""
+          CURRENT CODE OF {rel}:
+          {code if code.strip() else "# Empty file - Please generate world-class boilerplate for this file based on its name and location."}
+          """
 
               start = (idx - 1) % len(AIS)
               ordered = AIS[start:] + AIS[:start]
 
               for ai in ordered:
+                  print(f"  [{idx}/{total}] {ai} processing {rel}...")
                   res = call_ai(ai, prompt)
-                  if not res:
-                      continue
+                  if not res: continue
 
-                  new_code = extract_code(res)
-                  if not new_code:
-                      continue
-
-                  min_len = 10 if is_empty else 30
-                  if len(new_code) < min_len:
-                      continue
+                  main_code, new_files = parse_ai_response(res, rel)
+                  if not main_code or len(main_code) < 20: continue
 
                   try:
-                      ast.parse(new_code)
-                  except SyntaxError:
-                      continue
+                      ast.parse(main_code) # Syntax Check
+                  except SyntaxError: continue
 
+                  # Save Main File back to exactly where it was
                   with open(full, "w", encoding="utf-8") as f:
-                      f.write(new_code + "\n")
+                      f.write(main_code + "\n")
 
-                  created = 0
-                  new_files_pattern = r"═══ NEW FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END"
-                  for nf_path, nf_code in re.findall(new_files_pattern, res, re.DOTALL):
-                      nf_path = nf_path.strip()
-                      if not nf_path or ".." in nf_path: continue
-                      nf_full = os.path.join(BOT_ROOT, nf_path)
-                      os.makedirs(os.path.dirname(nf_full) or ".", exist_ok=True)
+                  created_count = 0
+                  new_file_msg = ""
+                  
+                  # Save Any New Files Created by AI
+                  for nf_path, nf_code in new_files.items():
                       try:
-                          ast.parse(nf_code.strip())
+                          ast.parse(nf_code) # Check new file syntax
+                          nf_full = os.path.join(BOT_ROOT, nf_path)
+                          os.makedirs(os.path.dirname(nf_full), exist_ok=True)
                           with open(nf_full, "w", encoding="utf-8") as f:
-                              f.write(nf_code.strip() + "\n")
-                          created += 1
-                          tg(f"🆕 <b>NEW</b>: <code>{nf_path}</code>")
+                              f.write(nf_code + "\n")
+                          created_count += 1
+                          new_file_msg += f"\n🆕 Created: <code>{nf_path}</code>"
                       except: pass
 
-                  if is_empty:
-                      action = "📝 FILLED"
-                  elif is_small:
-                      action = "⚡ EXPANDED"
-                  else:
-                      action = "✅ UPGRADED"
+                  msg = f"✅ <b>[{idx}/{total}]</b>\n📄 <code>{rel}</code>\n🤖 {ai}\n📊 Size: {len(code)} → {len(main_code)}"
+                  if created_count > 0:
+                      msg += new_file_msg
+                  tg(msg)
+                  
+                  return True, rel, ai, created_count
 
-                  diff = len(new_code) - len(code)
-                  sign = "+" if diff >= 0 else ""
-
-                  tg(
-                      f"{action} <b>[{idx}/{total}]</b>\n"
-                      f"📄 <code>{rel}</code>\n"
-                      f"🤖 {ai}\n"
-                      f"📊 {len(code)}→{len(new_code)} ({sign}{diff})"
-                  )
-                  return True, rel, ai, created, "ok"
-
-              tg(f"⚠️ <b>[{idx}/{total}]</b> <code>{rel}</code> — AI failed, will retry next run")
-              return False, rel, None, 0, "ai_failed"
+              tg(f"⚠️ <b>[{idx}/{total}]</b> <code>{rel}</code> — AI failed")
+              return False, rel, None, 0
 
           def main():
               files, folders = scan()
               if not files:
-                  tg("⚠️ No files")
+                  tg("⚠️ No files found to process.")
                   return
+
+              tree = build_tree(folders, files)
+              tg(f"👑 <b>AUTONOMOUS DEVELOPER STARTED</b>\n📁 Target Files: <b>{len(files)}</b>\n📂 Folders: <b>{len(folders)}</b>\n\n<b>PROJECT STRUCTURE:</b>\n<pre>{tree[:3500]}</pre>")
 
               prog = load_prog()
               files = sorted(files, key=lambda f: prog["upgraded"].get(f, {}).get("time", "0"))
               total = len(files)
 
-              full_struct = build_full_structure(folders, total)
-
-              tg(
-                  f"👑 <b>DEVELOPER STARTED</b>\n"
-                  f"📁 {total} files\n"
-                  f"📂 {len(folders)} folders\n"
-                  f"⚡ Every file processed\n"
-                  f"🚫 No delete, no skip"
-              )
-
-              ok, fail, new_total = 0, 0, 0
+              ok, fail, total_new = 0, 0, 0
 
               for idx, rel in enumerate(files, 1):
                   try:
-                      status, r, ai, created, reason = upgrade_one(
-                          rel, idx, total, folders, full_struct
-                      )
+                      status, r, ai, new_count = upgrade_one(rel, idx, total, folders)
                       if status:
                           ok += 1
-                          new_total += created
-                          prog["upgraded"][rel] = {
-                              "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                              "ai": ai
-                          }
-                          if ok % 5 == 0:
-                              save_prog(prog)
+                          total_new += new_count
+                          prog["upgraded"][rel] = {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ai": ai}
+                          if ok % 5 == 0: save_prog(prog)
                       else:
                           fail += 1
                   except Exception as e:
@@ -389,14 +287,7 @@ jobs:
                       tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code>\n{str(e)[:100]}")
 
               save_prog(prog)
-
-              tg(
-                  f"🏁 <b>DEVELOPER COMPLETE</b>\n"
-                  f"✅ Upgraded: <b>{ok}</b>\n"
-                  f"❌ Failed: <b>{fail}</b>\n"
-                  f"🆕 New files: <b>{new_total}</b>\n"
-                  f"📁 Total: <b>{total}</b>"
-              )
+              tg(f"🏁 <b>DEVELOPER COMPLETE</b>\n✅ Upgraded: <b>{ok}</b> files\n🆕 New Files Created: <b>{total_new}</b>\n❌ Failed: <b>{fail}</b>\n📁 Total Processed: <b>{total}</b>")
 
           if __name__ == "__main__":
               main()
@@ -404,11 +295,11 @@ jobs:
           sed -i 's/^          //' /tmp/dev.py
           python /tmp/dev.py
 
-      - name: 📤 Commit
+      - name: 📤 Commit and Push Changes
         if: always()
         run: |
-          git config user.name "SawajBot Dev"
-          git config user.email "dev@sawajstudio.com"
+          git config user.name "SawajBot Developer AI"
+          git config user.email "ai.dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Developer upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
+          git commit -m "👑 Autonomous Developer Upgrade: Enhanced code & added new features — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
           git push || echo "Push failed"
