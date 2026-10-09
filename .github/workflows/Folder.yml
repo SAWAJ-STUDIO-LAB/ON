@@ -1,0 +1,53 @@
+name: Create Project Folder Structure
+
+on:
+  workflow_dispatch: # Isse aap manually GitHub Actions tab se run kar sakte hain
+
+jobs:
+  build-structure:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Files ko push karne ke liye permission zaroori hai
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Folders and Files
+        run: |
+          # 1. Main folders banana
+          mkdir -p .github/workflows
+          mkdir -p fb_ig_story_video
+          mkdir -p fb_ig_yt_short_video
+          mkdir -p fb_yt_long_video
+
+          # 2. YML files banana (khaali files)
+          touch .github/workflows/fb_ig_story_video.yml
+          touch .github/workflows/fb_ig_yt_short_video.yml
+          touch .github/workflows/fb_yt_long_video.yml
+
+          # 3. Python files banana (khaali files)
+          touch fb_ig_story_video/generator.py
+          touch fb_ig_yt_short_video/generator.py
+          touch fb_yt_long_video/generator.py
+
+          # 4. Ek basic requirements.txt bhi bana dete hain (optional)
+          touch requirements.txt
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add .
+          
+          # Check karein ki koi change hua hai ya nahi
+          if git diff --staged --quiet; then
+            echo "Koi naya folder ya file nahi bana (already exists)."
+          else
+            git commit -m "Auto-generated project folder structure"
+            git push
+            echo "Folder structure successfully GitHub par push ho gaya!"
+          fi
