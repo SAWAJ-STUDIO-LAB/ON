@@ -1,0 +1,41 @@
+{
+  "upgraded": {
+    "video_generator/fb_ig_story_video_generator/A_core/A1_config.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Mistral",
+      "new_files": 1
+    },
+    "video_generator/fb_ig_story_video_generator/A_core/A3_config_class.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Cohere",
+      "new_files": 0
+    },
+    "video_generator/fb_ig_story_video_generator/H_tests/H2_test_config.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Mistral",
+      "new_files": 1
+    },
+    "video_generator/fb_ig_yt_short_video_generator/A_core/A1_config.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Mistral",
+      "new_files": 1
+    },
+    "video_generator/fb_ig_yt_short_video_generator/H_tests/H2_test_config.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Mistral",
+      "new_files": 1
+    },
+    "video_generator/fb_yt_long_video_generator/A_core/A1_config.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Mistral",
+      "new_files": 2
+    },
+    "video_generator/fb_yt_long_video_generator/H_tests/H2_test_config.py": {
+      "time": "2026-10-09 05:30:17",
+      "ai": "Cohere",
+      "new_files": 0
+    }
+  },
+  "last_run": "2026-10-09 05:30:17",
+  "total_upgrades": 7
+}
