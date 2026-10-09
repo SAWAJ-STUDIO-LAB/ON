@@ -11,17 +11,21 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 1440
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.TOKEN_GITHUB }}
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - run: pip install requests pyyaml
+      - name: Install deps
+        run: pip install requests pyyaml
 
       - name: Create Backup
         run: |
@@ -30,10 +34,9 @@ jobs:
           git push origin "$BACKUP" || true
           git checkout main
 
-      - name: Write Python Code
+      - name: Write AI Developer
         run: |
-          mkdir -p /tmp
-          cat << 'PYEOF' > /tmp/ai_dev.py
+          cat > /tmp/ai_dev.py << 'ENDOFPYTHON'
           import os
           import re
           import ast
@@ -45,12 +48,11 @@ jobs:
           ROOT_FOLDER = "sawajstudiobot"
           WORKFLOW_FOLDER = ".github/workflows"
           SELF_FILENAME = "sawaj_ai_developer.yml"
-          BOT_EDITOR_FOLDER = "sawajstudiobot/Bot_code_editor"
 
           SKIP_DIRS = (
               "__pycache__", ".git", "output", "_work", "_backups",
               "_logs", "venv", "node_modules", "_temp_builder",
-              ".pytest_cache", BOT_EDITOR_FOLDER,
+              ".pytest_cache",
           )
 
           PROCESS_EXTENSIONS = (
@@ -87,7 +89,7 @@ jobs:
               for chunk in chunks:
                   try:
                       requests.post(
-                          f"https://api.telegram.org/bot{token}/sendMessage",
+                          "https://api.telegram.org/bot" + token + "/sendMessage",
                           json={
                               "chat_id": chat_id,
                               "text": chunk,
@@ -105,11 +107,9 @@ jobs:
                   r = requests.post(url, headers=headers, json=payload, timeout=timeout)
                   if r.status_code == 200:
                       return r.json()
-                  print(f"    HTTP {r.status_code}: {r.text[:200]}")
-              except requests.Timeout:
-                  print(f"    TIMEOUT")
+                  print("    HTTP " + str(r.status_code) + ": " + r.text[:200])
               except Exception as e:
-                  print(f"    ERR: {str(e)[:100]}")
+                  print("    ERR: " + str(e)[:100])
               return None
 
 
@@ -118,27 +118,21 @@ jobs:
               if not k:
                   print("    Gemini: NO KEY")
                   return None
-              models = [
-                  "gemini-2.5-flash",
-                  "gemini-2.0-flash",
-                  "gemini-1.5-flash-latest",
-                  "gemini-1.5-flash",
-              ]
+              models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"]
               for m in models:
-                  print(f"    Gemini trying: {m}")
+                  print("    Gemini trying: " + m)
                   d = http_post(
-                      f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={k}",
+                      "https://generativelanguage.googleapis.com/v1beta/models/" + m + ":generateContent?key=" + k,
                       {"Content-Type": "application/json"},
                       {"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS,
-                                             "temperature": 0.3}})
+                       "generationConfig": {"maxOutputTokens": MAX_OUTPUT_TOKENS, "temperature": 0.3}})
                   if d and "candidates" in d:
                       try:
                           text = d["candidates"][0]["content"]["parts"][0]["text"]
                           if text and len(text) > 100:
                               return text
-                      except Exception as e:
-                          print(f"    Parse error: {e}")
+                      except Exception:
+                          pass
               return None
 
 
@@ -148,16 +142,13 @@ jobs:
                   print("    Groq: NO KEY")
                   return None
               d = http_post("https://api.groq.com/openai/v1/chat/completions",
-                            {"Authorization": f"Bearer {k}"},
+                            {"Authorization": "Bearer " + k},
                             {"model": "llama-3.3-70b-versatile",
                              "messages": [{"role": "user", "content": prompt}],
                              "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
                              "temperature": 0.3})
               if d and "choices" in d:
-                  try:
-                      return d["choices"][0]["message"]["content"]
-                  except Exception as e:
-                      print(f"    Parse error: {e}")
+                  return d["choices"][0]["message"]["content"]
               return None
 
 
@@ -167,7 +158,7 @@ jobs:
                   print("    OpenRouter: NO KEY")
                   return None
               d = http_post("https://openrouter.ai/api/v1/chat/completions",
-                            {"Authorization": f"Bearer {k}",
+                            {"Authorization": "Bearer " + k,
                              "HTTP-Referer": "https://github.com/SAWAJ-STUDIO-LAB",
                              "X-Title": "SawajAIDev"},
                             {"model": "openai/gpt-4o-mini",
@@ -175,10 +166,7 @@ jobs:
                              "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
                              "temperature": 0.3})
               if d and "choices" in d:
-                  try:
-                      return d["choices"][0]["message"]["content"]
-                  except Exception as e:
-                      print(f"    Parse error: {e}")
+                  return d["choices"][0]["message"]["content"]
               return None
 
 
@@ -188,16 +176,13 @@ jobs:
                   print("    Mistral: NO KEY")
                   return None
               d = http_post("https://api.mistral.ai/v1/chat/completions",
-                            {"Authorization": f"Bearer {k}"},
+                            {"Authorization": "Bearer " + k},
                             {"model": "mistral-small-latest",
                              "messages": [{"role": "user", "content": prompt}],
                              "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
                              "temperature": 0.3})
               if d and "choices" in d:
-                  try:
-                      return d["choices"][0]["message"]["content"]
-                  except Exception as e:
-                      print(f"    Parse error: {e}")
+                  return d["choices"][0]["message"]["content"]
               return None
 
 
@@ -207,16 +192,13 @@ jobs:
                   print("    Cerebras: NO KEY")
                   return None
               d = http_post("https://api.cerebras.ai/v1/chat/completions",
-                            {"Authorization": f"Bearer {k}"},
+                            {"Authorization": "Bearer " + k},
                             {"model": "llama-3.3-70b",
                              "messages": [{"role": "user", "content": prompt}],
                              "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
                              "temperature": 0.3})
               if d and "choices" in d:
-                  try:
-                      return d["choices"][0]["message"]["content"]
-                  except Exception as e:
-                      print(f"    Parse error: {e}")
+                  return d["choices"][0]["message"]["content"]
               return None
 
 
@@ -226,16 +208,13 @@ jobs:
                   print("    NVIDIA: NO KEY")
                   return None
               d = http_post("https://integrate.api.nvidia.com/v1/chat/completions",
-                            {"Authorization": f"Bearer {k}"},
+                            {"Authorization": "Bearer " + k},
                             {"model": "meta/llama-3.3-70b-instruct",
                              "messages": [{"role": "user", "content": prompt}],
                              "max_tokens": min(MAX_OUTPUT_TOKENS, 8000),
                              "temperature": 0.3})
               if d and "choices" in d:
-                  try:
-                      return d["choices"][0]["message"]["content"]
-                  except Exception as e:
-                      print(f"    Parse error: {e}")
+                  return d["choices"][0]["message"]["content"]
               return None
 
 
@@ -245,7 +224,7 @@ jobs:
                   print("    Cohere: NO KEY")
                   return None
               d = http_post("https://api.cohere.com/v1/chat",
-                            {"Authorization": f"Bearer {k}",
+                            {"Authorization": "Bearer " + k,
                              "Content-Type": "application/json"},
                             {"model": "command-r-plus", "message": prompt})
               if d and "text" in d:
@@ -260,16 +239,13 @@ jobs:
                   return None
               d = http_post(
                   "https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-8B-Instruct/v1/chat/completions",
-                  {"Authorization": f"Bearer {k}"},
+                  {"Authorization": "Bearer " + k},
                   {"model": "meta-llama/Llama-3.1-8B-Instruct",
                    "messages": [{"role": "user", "content": prompt}],
                    "max_tokens": min(MAX_OUTPUT_TOKENS, 4000),
                    "temperature": 0.3})
               if d and "choices" in d:
-                  try:
-                      return d["choices"][0]["message"]["content"]
-                  except Exception as e:
-                      print(f"    Parse error: {e}")
+                  return d["choices"][0]["message"]["content"]
               return None
 
 
@@ -286,16 +262,16 @@ jobs:
                   fn = AI_FUNCS.get(ai_name)
                   if not fn:
                       continue
-                  print(f"  Trying {ai_name}...")
+                  print("  Trying " + ai_name + "...")
                   try:
                       res = fn(prompt)
                       if res and len(res) > 100:
-                          print(f"  SUCCESS {ai_name} ({len(res)} chars)")
+                          print("  SUCCESS " + ai_name + " (" + str(len(res)) + " chars)")
                           return res, ai_name
                       else:
-                          print(f"  FAIL {ai_name} - empty/short")
+                          print("  FAIL " + ai_name)
                   except Exception as e:
-                      print(f"  FAIL {ai_name} - {e}")
+                      print("  FAIL " + ai_name + " - " + str(e))
               return None, None
 
 
@@ -316,21 +292,11 @@ jobs:
                   return False
 
 
-          def valid_json(code):
-              try:
-                  json.loads(code)
-                  return True
-              except Exception:
-                  return False
-
-
           def validate(rel_path, code):
               if rel_path.endswith(".py"):
                   return valid_python(code)
               if rel_path.endswith((".yml", ".yaml")):
                   return valid_yaml(code)
-              if rel_path.endswith(".json"):
-                  return valid_json(code)
               return True
 
 
@@ -340,10 +306,8 @@ jobs:
               s = 0.0
               s += min(len(code), 20000) / 100
               s += code.count('"""') * 5
-              s += code.count("'''") * 5
               s += code.count("try:") * 8
               s += code.count("except") * 8
-              s += code.count("finally:") * 3
               s += code.count("-> ") * 3
               s += code.count(": str") * 2
               s += code.count(": int") * 2
@@ -351,10 +315,7 @@ jobs:
               s += code.count(": Dict") * 2
               s += code.count(": List") * 2
               s += code.count(": Optional") * 2
-              s += code.count(": Tuple") * 2
-              s += code.count("log(") * 2
               s += code.count("logging.") * 2
-              s += code.count("print(") * 1
               s += code.count("class ") * 5
               s += code.count("def ") * 3
               s += code.count("import ") * 2
@@ -374,14 +335,12 @@ jobs:
                       return True
               if SELF_FILENAME in p:
                   return True
-              if "ai_developer.py" in p:
-                  return True
               return False
 
 
           def scan_folder(root):
               files_data = {}
-              tree_lines = [f"  {root}/"]
+              tree_lines = ["  " + root + "/"]
               if not os.path.exists(root):
                   return files_data, "\n".join(tree_lines)
 
@@ -391,7 +350,7 @@ jobs:
                   depth = 0 if rel_dir == "." else rel_dir.count(os.sep) + 1
                   indent = "  " * (depth + 1)
                   if rel_dir != ".":
-                      tree_lines.append(f"{indent}{os.path.basename(dirpath)}/")
+                      tree_lines.append(indent + os.path.basename(dirpath) + "/")
 
                   for fn in sorted(fnames):
                       full = os.path.join(dirpath, fn)
@@ -406,7 +365,7 @@ jobs:
                       except Exception:
                           content = ""
                       files_data[rel] = content
-                      tree_lines.append(f"{indent}{fn}")
+                      tree_lines.append(indent + fn)
 
               return files_data, "\n".join(tree_lines)
 
@@ -417,11 +376,11 @@ jobs:
 
               all_files = {}
               for k, v in bot_files.items():
-                  all_files[f"{ROOT_FOLDER}/{k}"] = v
+                  all_files[ROOT_FOLDER + "/" + k] = v
               for k, v in wf_files.items():
-                  all_files[f"{WORKFLOW_FOLDER}/{k}"] = v
+                  all_files[WORKFLOW_FOLDER + "/" + k] = v
 
-              tree_view = f"{bot_tree}\n\n{wf_tree}"
+              tree_view = bot_tree + "\n\n" + wf_tree
               return all_files, tree_view
 
 
@@ -445,12 +404,12 @@ jobs:
                   if orig.endswith(returned) or orig.endswith("/" + returned):
                       return orig
               for root in [ROOT_FOLDER, WORKFLOW_FOLDER]:
-                  test = f"{root}/{returned}"
+                  test = root + "/" + returned
                   if test in original_files:
                       return test
               if returned.endswith((".yml", ".yaml")):
-                  return f"{WORKFLOW_FOLDER}/{returned}"
-              return f"{ROOT_FOLDER}/{returned}"
+                  return WORKFLOW_FOLDER + "/" + returned
+              return ROOT_FOLDER + "/" + returned
 
 
           def safe_write(rel_path, code):
@@ -512,7 +471,7 @@ jobs:
           def bundle(batch):
               out = ""
               for path, code in batch:
-                  out += f"\n=== FILE: {path} ===\n"
+                  out += "\n=== FILE: " + path + " ===\n"
                   out += code if code.strip() else "# [EMPTY FILE]"
                   out += "\n=== END FILE ===\n"
               return out
@@ -521,104 +480,65 @@ jobs:
           def build_prompt(batch, folder_name, tree_view, bnum, btotal):
               bundled = bundle(batch)
 
-              return f"""You are the LEAD AI ARCHITECT for SawajStudioBot.
-
-=== YOUR JOB ===
-Analyze the folder and its files, find ALL problems, and FIX them with production-grade code. You have FULL AUTHORITY to restructure.
-
-=== PROJECT STRUCTURE ===
-{tree_view[:2500]}
-
-=== CURRENT FOLDER: {folder_name}/ ===
-TOTAL FILES: {len(batch)}
-
-=== WHAT TO FIX ===
-1. Bugs and logic errors
-2. Missing error handling (try-except)
-3. Missing type hints
-4. Missing docstrings
-5. Hardcoded values
-6. Missing logging
-7. Incomplete functions (pass/TODO)
-8. Wrong API URLs
-9. Missing imports
-10. Bad variable names
-11. Duplicate code
-12. API failures without fallback
-13. Security issues
-14. Performance issues
-15. Inconsistent style
-
-=== ARCHITECTURE RULES ===
-16. ONE FILE = ONE THING. Split if multiple things.
-17. Create NEW FOLDER if needed.
-18. Create NEW FILE if needed.
-19. Use snake_case for filenames.
-20. Merge tiny files if meaningless.
-
-=== FILE OPERATION FORMAT ===
-
-Update existing file:
-=== FILE: path/to/file.py ===
-<complete upgraded code>
-=== END FILE ===
-
-Create new file:
-=== CREATE FILE: path/to/new.py ===
-<complete code>
-=== END FILE ===
-
-Create new folder:
-=== CREATE FOLDER: path/to/folder/ ===
-=== END FOLDER ===
-
-Delete file:
-=== DELETE FILE: path/to/file.py ===
-=== END DELETE ===
-
-Split file:
-=== SPLIT FILE: path/to/original.py ===
-=== INTO FILE: path/to/part1.py ===
-<code>
-=== END FILE ===
-=== INTO FILE: path/to/part2.py ===
-<code>
-=== END FILE ===
-=== END SPLIT ===
-
-=== CRITICAL RULES ===
-1. ZERO DELETION of logic
-2. ENHANCE - add error handling, types, docstrings, logging
-3. FIX BUGS
-4. EMPTY FILES - write full code
-5. RETURN ALL FILES
-6. VALID SYNTAX
-7. NO PLACEHOLDERS
-8. NO MARKDOWN FENCES
-
-=== BATCH {bnum}/{btotal} ===
-{bundled}
-
-=== RESPONSE ===
-=== FILE: <path> ===
-<upgraded code>
-=== END FILE ===
-
-RETURN ALL {len(batch)} FILES NOW."""
+              return "You are the LEAD AI ARCHITECT for SawajStudioBot.\n\n" + \
+                  "=== YOUR JOB ===\n" + \
+                  "Analyze the folder and its files, find ALL problems, and FIX them.\n\n" + \
+                  "=== PROJECT STRUCTURE ===\n" + \
+                  tree_view[:2500] + "\n\n" + \
+                  "=== CURRENT FOLDER: " + folder_name + "/ ===\n" + \
+                  "TOTAL FILES: " + str(len(batch)) + "\n\n" + \
+                  "=== WHAT TO FIX ===\n" + \
+                  "1. Bugs and logic errors\n" + \
+                  "2. Missing error handling (try-except)\n" + \
+                  "3. Missing type hints\n" + \
+                  "4. Missing docstrings\n" + \
+                  "5. Hardcoded values\n" + \
+                  "6. Missing logging\n" + \
+                  "7. Incomplete functions\n" + \
+                  "8. Wrong API URLs\n" + \
+                  "9. Missing imports\n" + \
+                  "10. Bad variable names\n" + \
+                  "11. Duplicate code\n" + \
+                  "12. API failures without fallback\n" + \
+                  "13. Security issues\n" + \
+                  "14. Performance issues\n" + \
+                  "15. Inconsistent style\n\n" + \
+                  "=== ARCHITECTURE RULES ===\n" + \
+                  "16. ONE FILE = ONE THING. Split if multiple things.\n" + \
+                  "17. Create NEW FOLDER if needed.\n" + \
+                  "18. Create NEW FILE if needed.\n" + \
+                  "19. Use snake_case for filenames.\n" + \
+                  "20. Merge tiny files if meaningless.\n\n" + \
+                  "=== FILE OPERATION FORMAT ===\n\n" + \
+                  "Update: \n=== FILE: path ===\n<code>\n=== END FILE ===\n\n" + \
+                  "Create: \n=== CREATE FILE: path ===\n<code>\n=== END FILE ===\n\n" + \
+                  "Folder: \n=== CREATE FOLDER: path/ ===\n=== END FOLDER ===\n\n" + \
+                  "Delete: \n=== DELETE FILE: path ===\n=== END DELETE ===\n\n" + \
+                  "Split: \n=== SPLIT FILE: orig ===\n=== INTO FILE: p1 ===\n<code>\n=== END FILE ===\n=== INTO FILE: p2 ===\n<code>\n=== END FILE ===\n=== END SPLIT ===\n\n" + \
+                  "=== CRITICAL RULES ===\n" + \
+                  "1. ZERO DELETION of logic\n" + \
+                  "2. ENHANCE - add error handling, types, docstrings, logging\n" + \
+                  "3. FIX BUGS\n" + \
+                  "4. EMPTY FILES - write full code\n" + \
+                  "5. RETURN ALL FILES\n" + \
+                  "6. VALID SYNTAX\n" + \
+                  "7. NO PLACEHOLDERS\n" + \
+                  "8. NO MARKDOWN FENCES\n\n" + \
+                  "=== BATCH " + str(bnum) + "/" + str(btotal) + " ===\n" + \
+                  bundled + "\n\n" + \
+                  "=== RESPONSE ===\n" + \
+                  "=== FILE: <path> ===\n<upgraded code>\n=== END FILE ===\n\n" + \
+                  "RETURN ALL " + str(len(batch)) + " FILES NOW."
 
 
           def clean_code(code):
-              code = re.sub(r"^```(?:python|yaml|yml|json)?\s*\n",
-                            "", code, flags=re.IGNORECASE)
+              code = re.sub(r"^```(?:python|yaml|yml|json)?\s*\n", "", code, flags=re.IGNORECASE)
               code = re.sub(r"\n```\s*$", "", code)
               return code.strip()
 
 
           def parse_response(text):
-              result = {
-                  "updates": [], "creates": [], "folders": [],
-                  "deletes": [], "splits": [],
-              }
+              result = {"updates": [], "creates": [], "folders": [], "deletes": [], "splits": []}
 
               pattern_upd = r"===\s*FILE:\s*(.+?)\s*===\s*\n(.*?)\n\s*===\s*END FILE\s*==="
               for path, code in re.findall(pattern_upd, text, re.DOTALL):
@@ -655,72 +575,54 @@ RETURN ALL {len(batch)} FILES NOW."""
 
               print("\n[CHECK] API Keys:")
               for name, key in KEYS.items():
-                  status = "SET" if key else "MISSING"
-                  print(f"  {name}: {status}")
-
-              print("\n[CHECK] Telegram:")
-              print(f"  TOKEN: {'SET' if os.environ.get('TELEGRAM_BOT_TOKEN') else 'MISSING'}")
-              print(f"  CHAT_ID: {'SET' if os.environ.get('TELEGRAM_CHAT_ID') else 'MISSING'}")
+                  print("  " + name + ": " + ("SET" if key else "MISSING"))
 
               start = time.time()
-              tg(f"Sawaj AI Developer Started\nFolder-by-folder mode\n{datetime.now().strftime('%H:%M:%S')}", silent=True)
+              tg("Sawaj AI Developer Started", silent=True)
 
-              print("\n[SCAN] Scanning folders...")
+              print("\n[SCAN] Scanning...")
               all_files, tree_view = scan_all()
-              print(f"  Files found: {len(all_files)}")
+              print("  Files found: " + str(len(all_files)))
 
               if not all_files:
-                  print("  NO FILES FOUND")
-                  tg("No files found")
+                  print("  NO FILES")
                   return
 
               folder_batches = get_folder_batches(all_files)
               total_batches = len(folder_batches)
-              print(f"  Folders: {total_batches}")
+              print("  Folders: " + str(total_batches))
 
               bot_count = sum(1 for k in all_files if k.startswith(ROOT_FOLDER + "/"))
               wf_count = sum(1 for k in all_files if k.startswith(WORKFLOW_FOLDER + "/"))
 
-              tg(f"""Scan Complete
+              tg("Scan Complete\n\nsawajstudiobot/ - " + str(bot_count) + " files\n.github/workflows/ - " + str(wf_count) + " files\n\nTotal: " + str(len(all_files)) + " files\nTotal Folders: " + str(total_batches))
 
-sawajstudiobot/ - {bot_count} files
-.github/workflows/ - {wf_count} files
-
-Total: {len(all_files)} files
-Total Folders: {total_batches}""")
-
-              stats = {
-                  "updated": 0, "cancelled": 0, "invalid": 0,
-                  "created_files": 0, "created_folders": 0,
-                  "deleted": 0, "splits": 0,
-              }
+              stats = {"updated": 0, "cancelled": 0, "invalid": 0, "created_files": 0, "created_folders": 0, "deleted": 0, "splits": 0}
               ai_used = {}
               failed_batches = []
 
-              print(f"\n[PROCESS] Starting {total_batches} folders...\n")
-
               for bnum, (folder_name, batch) in enumerate(folder_batches, 1):
-                  print(f"\n[Batch {bnum}/{total_batches}] Folder: {folder_name}/")
-                  print(f"  Files: {len(batch)}")
+                  print("\n[Batch " + str(bnum) + "/" + str(total_batches) + "] " + folder_name + "/")
+                  print("  Files: " + str(len(batch)))
 
                   group = AI_GROUPS[(bnum - 1) % len(AI_GROUPS)]
-                  print(f"  AI Group: {group}")
+                  print("  AI Group: " + str(group))
 
                   prompt = build_prompt(batch, folder_name, tree_view, bnum, total_batches)
-                  print(f"  Prompt size: {len(prompt)} chars")
+                  print("  Prompt: " + str(len(prompt)) + " chars")
 
                   response, used_ai = call_ai(group, prompt)
 
                   if not response:
-                      print(f"  BATCH {bnum} FAILED")
+                      print("  BATCH FAILED")
                       failed_batches.append(bnum)
                       continue
 
                   ai_used[used_ai] = ai_used.get(used_ai, 0) + 1
-                  print(f"  SUCCESS via {used_ai}")
+                  print("  SUCCESS " + used_ai)
 
                   ops = parse_response(response)
-                  print(f"  Parsed: {len(ops['updates'])} updates, {len(ops['creates'])} creates")
+                  print("  Updates: " + str(len(ops["updates"])))
 
                   for path, code in ops["updates"]:
                       orig = find_original_path(path, all_files)
@@ -753,49 +655,24 @@ Total Folders: {total_batches}""")
                           stats["deleted"] += 1
                       stats["splits"] += 1
 
-                  tg(f"""Batch {bnum}/{total_batches}
-
-Folder: {folder_name}/
-Files: {len(batch)}
-Updated: {len(ops['updates'])}
-Created: {len(ops['creates'])}
-AI: {used_ai}""", silent=True)
+                  tg("Batch " + str(bnum) + "/" + str(total_batches) + "\n" + folder_name + "/\nUpdated: " + str(len(ops["updates"])) + "\nAI: " + used_ai, silent=True)
 
               elapsed = time.time() - start
               mins = int(elapsed // 60)
               secs = int(elapsed % 60)
 
-              ai_summary = "\n".join(
-                  f"  {ai}: {cnt} folders"
-                  for ai, cnt in sorted(ai_used.items(), key=lambda x: -x[1]))
-
               print("\n" + "=" * 60)
-              print(f"DONE in {mins}m {secs}s")
+              print("DONE in " + str(mins) + "m " + str(secs) + "s")
               print("=" * 60)
 
-              tg(f"""Sawaj AI Developer Complete
-
-RESULTS
-Total Folders: {total_batches}
-Files Updated: {stats['updated']}
-Cancelled: {stats['cancelled']}
-Invalid: {stats['invalid']}
-New Files: {stats['created_files']}
-New Folders: {stats['created_folders']}
-Deleted: {stats['deleted']}
-Splits: {stats['splits']}
-Failed Folders: {len(failed_batches)}
-Time: {mins}m {secs}s
-
-AI USAGE
-{ai_summary}""")
+              tg("Sawaj AI Developer Complete\n\nTotal Folders: " + str(total_batches) + "\nFiles Updated: " + str(stats["updated"]) + "\nCancelled: " + str(stats["cancelled"]) + "\nNew Files: " + str(stats["created_files"]) + "\nNew Folders: " + str(stats["created_folders"]) + "\nDeleted: " + str(stats["deleted"]) + "\nSplits: " + str(stats["splits"]) + "\nFailed: " + str(len(failed_batches)) + "\nTime: " + str(mins) + "m " + str(secs) + "s")
 
 
           if __name__ == "__main__":
               main()
-          PYEOF
+          ENDOFPYTHON
 
-      - name: Execute AI Developer
+      - name: Run AI Developer
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
