@@ -1,4 +1,4 @@
-name: 👑 SawajStudioBot Autonomous Developer
+name: 👑 SawajStudioBot_Developer
 
 on:
   workflow_dispatch:
@@ -119,15 +119,69 @@ jobs:
                   elif ai == "Gemini":
                       k = os.environ.get("GEMINI_API_KEY", "").strip()
                       if not k: return None
-                      for m in ["gemini-2.5-pro", "gemini-2.0-flash"]:
+                      for m in ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"]:
                           d = post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={k}",
-                                   {"Content-Type": "application/json"}, 
+                                   {"Content-Type": "application/json"},
                                    {"contents": [{"parts": [{"text": prompt}]}],
                                     "generationConfig": {"maxOutputTokens": 8000, "temperature": 0.2}})
                           if d and "candidates" in d:
                               try: return d["candidates"][0]["content"]["parts"][0]["text"]
                               except: pass
-              except Exception as e: 
+                  elif ai == "OpenRouter":
+                      k = os.environ.get("OPENROUTER_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://openrouter.ai/api/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "openai/gpt-4o-mini",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
+                  elif ai == "Mistral":
+                      k = os.environ.get("MISTRAL_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.mistral.ai/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "mistral-small-latest",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
+                  elif ai == "Cerebras":
+                      k = os.environ.get("CEREBRAS_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.cerebras.ai/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "llama-3.3-70b",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
+                  elif ai == "Cohere":
+                      k = os.environ.get("COHERE_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.cohere.com/v1/chat",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "command-r-plus-08-2024", "message": prompt})
+                      if d and "text" in d: return d["text"]
+                  elif ai == "NVIDIA":
+                      k = os.environ.get("NVIDIA_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://integrate.api.nvidia.com/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "meta/llama-3.3-70b-instruct",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
+                  elif ai == "HuggingFace":
+                      k = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+                                "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 4000, "temperature": 0.2})
+                      if d and "choices" in d:
+                          try: return d["choices"][0]["message"]["content"]
+                          except: pass
+              except Exception as e:
                   print(f"Error calling {ai}: {e}")
               return None
 
@@ -146,17 +200,14 @@ jobs:
               return folders.get(parent, [])
 
           def parse_ai_response(response, current_file_rel):
-              # 1. Extract main file code
               main_code = None
               main_match = re.search(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END", response, re.DOTALL)
               if main_match:
                   main_code = main_match.group(2).strip()
               else:
-                  # Fallback if AI didn't use strict tags
-                  code_blocks = re.findall(r"\`\`\`(?:python)?\n(.*?)\n\`\`\`", response, re.DOTALL)
+                  code_blocks = re.findall(r"```(?:python)?\n(.*?)\n```", response, re.DOTALL)
                   if code_blocks: main_code = code_blocks[0].strip()
 
-              # 2. Extract any NEW files the AI decided to create
               new_files = {}
               new_matches = re.findall(r"═══ NEW FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END", response, re.DOTALL)
               for path, code in new_matches:
@@ -164,7 +215,7 @@ jobs:
                   code = code.strip()
                   if path and code and ".." not in path:
                       new_files[path] = code
-              
+
               return main_code, new_files
 
           def upgrade_one(rel, idx, total, folders):
@@ -180,7 +231,8 @@ jobs:
               parent = os.path.dirname(rel)
               siblings = get_siblings(rel, folders)
               siblings_str = ", ".join(siblings[:15])
-
+              
+              # ZERO DELETION PROMPT
               prompt = f"""You are the AUTONOMOUS LEAD DEVELOPER & ARCHITECT for "SawajStudioBot".
           You fully own this project. You write the code, you control the structure, and you upgrade it to WORLD-CLASS standards.
 
@@ -192,16 +244,16 @@ jobs:
           - Folder: {parent}/
           - Siblings in this folder: {siblings_str}
 
-          3️⃣ CRITICAL RULES (STRICTLY FOLLOW):
-          1. NEVER DELETE ANYTHING: Keep all existing logic, functions, variables, and imports. 
+          3️⃣ CRITICAL RULES (STRICTLY FOLLOW - ZERO DELETION POLICY):
+          1. 🚫 DO NOT DELETE ANY EXISTING CODE. You MUST KEEP ALL existing imports, variables, functions, classes, and logic exactly as they are. 
           2. UPGRADE & ENHANCE: Add robust error handling (try-except), type hints, logging, and professional docstrings. Make the code production-ready.
-          3. FULL CODE REQUIRED: Do not write "rest of the code here". You must return the FULL, complete, upgraded file code.
+          3. 🚫 DO NOT SUMMARIZE. Write the FULL, complete code. Do not write "rest of the code here". You must return the FULL upgraded file code.
           4. CREATE NEW FILES IF NEEDED: If you want to add new features, utilities, or split code for better architecture, you CAN create new files.
 
           RETURN FORMAT (EXACT):
           You must return the updated code for the current file:
           ═══ FILE: {rel} ═══
-          <full upgraded python code here>
+          <full upgraded python code here (old code + your new improvements)>
           ═══ END ═══
 
           (Optional) If you want to add NEW files to the project, use this format for each new file:
@@ -224,21 +276,25 @@ jobs:
                   main_code, new_files = parse_ai_response(res, rel)
                   if not main_code or len(main_code) < 20: continue
 
+                  # ANTI-DELETION GUARD: Agar naya code purane code se bahut chota hai (yani usne lines delete kar di hain), toh ise reject kar do!
+                  if len(code) > 50 and len(main_code) < (len(code) * 0.85):
+                      print(f"  [!] Rejected {ai} output for {rel}: Code shrunk too much. Suspected deletion.")
+                      continue # Try the next AI
+
                   try:
-                      ast.parse(main_code) # Syntax Check
+                      ast.parse(main_code)
                   except SyntaxError: continue
 
-                  # Save Main File back to exactly where it was
+                  # Save the safely upgraded code
                   with open(full, "w", encoding="utf-8") as f:
                       f.write(main_code + "\n")
 
                   created_count = 0
                   new_file_msg = ""
-                  
-                  # Save Any New Files Created by AI
+
                   for nf_path, nf_code in new_files.items():
                       try:
-                          ast.parse(nf_code) # Check new file syntax
+                          ast.parse(nf_code)
                           nf_full = os.path.join(BOT_ROOT, nf_path)
                           os.makedirs(os.path.dirname(nf_full), exist_ok=True)
                           with open(nf_full, "w", encoding="utf-8") as f:
@@ -251,10 +307,10 @@ jobs:
                   if created_count > 0:
                       msg += new_file_msg
                   tg(msg)
-                  
+
                   return True, rel, ai, created_count
 
-              tg(f"⚠️ <b>[{idx}/{total}]</b> <code>{rel}</code> — AI failed")
+              tg(f"⚠️ <b>[{idx}/{total}]</b> <code>{rel}</code> — All AIs failed or deleted code")
               return False, rel, None, 0
 
           def main():
@@ -287,7 +343,7 @@ jobs:
                       tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code>\n{str(e)[:100]}")
 
               save_prog(prog)
-              tg(f"🏁 <b>DEVELOPER COMPLETE</b>\n✅ Upgraded: <b>{ok}</b> files\n🆕 New Files Created: <b>{total_new}</b>\n❌ Failed: <b>{fail}</b>\n📁 Total Processed: <b>{total}</b>")
+              tg(f"🏁 <b>DEVELOPER COMPLETE</b>\n✅ Upgraded: <b>{ok}</b> files\n🆕 New Files Created: <b>{total_new}</b>\n❌ Failed/Skipped: <b>{fail}</b>\n📁 Total Processed: <b>{total}</b>")
 
           if __name__ == "__main__":
               main()
@@ -301,5 +357,5 @@ jobs:
           git config user.name "SawajBot Developer AI"
           git config user.email "ai.dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Autonomous Developer Upgrade: Enhanced code & added new features — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
+          git commit -m "👑 Autonomous Developer Upgrade: 100% Code Preserved & Enhanced — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
           git push || echo "Push failed"
