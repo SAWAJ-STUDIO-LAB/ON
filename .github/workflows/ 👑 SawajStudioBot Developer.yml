@@ -1,4 +1,4 @@
-name: 👑 SawajStudioBot_Developer
+name: 👑 SawajStudioBot Autonomous Developer
 
 on:
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
         run: |
-          cat > /tmp/dev.py << 'EOFPY'
+          cat << 'EOFPY' > /tmp/dev.py
           import os, re, ast, json, time, requests
           from datetime import datetime
 
@@ -232,7 +232,6 @@ jobs:
               siblings = get_siblings(rel, folders)
               siblings_str = ", ".join(siblings[:15])
               
-              # ZERO DELETION PROMPT
               prompt = f"""You are the AUTONOMOUS LEAD DEVELOPER & ARCHITECT for "SawajStudioBot".
           You fully own this project. You write the code, you control the structure, and you upgrade it to WORLD-CLASS standards.
 
@@ -276,16 +275,14 @@ jobs:
                   main_code, new_files = parse_ai_response(res, rel)
                   if not main_code or len(main_code) < 20: continue
 
-                  # ANTI-DELETION GUARD: Agar naya code purane code se bahut chota hai (yani usne lines delete kar di hain), toh ise reject kar do!
                   if len(code) > 50 and len(main_code) < (len(code) * 0.85):
                       print(f"  [!] Rejected {ai} output for {rel}: Code shrunk too much. Suspected deletion.")
-                      continue # Try the next AI
+                      continue
 
                   try:
                       ast.parse(main_code)
                   except SyntaxError: continue
 
-                  # Save the safely upgraded code
                   with open(full, "w", encoding="utf-8") as f:
                       f.write(main_code + "\n")
 
@@ -348,7 +345,6 @@ jobs:
           if __name__ == "__main__":
               main()
           EOFPY
-          sed -i 's/^          //' /tmp/dev.py
           python /tmp/dev.py
 
       - name: 📤 Commit and Push Changes
