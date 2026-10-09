@@ -1,4 +1,4 @@
-name: 👍🟢GitHub Cleaner🧹
+name: 👍🟢GitHub🗑️Cleaner🧹
 
 on:
   workflow_dispatch: # Agar aap kabhi manual run karna chahein (bina kisi prompt ke direct chalega)
