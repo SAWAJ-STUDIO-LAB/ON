@@ -1,18 +1,16 @@
-name: 👑 Bot Update Upgrade — KING (Fixed + Debug)
+name: 👑 KING — One File At A Time (Full Upgrade)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '30 2 * * *'
 
 permissions:
   contents: write
 
 jobs:
   king:
-    name: 👑 King Working
+    name: 👑 King Working (One File Mode)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 360          # 6 hours (759 files ke liye)
 
     steps:
       - name: 📥 Checkout
@@ -30,7 +28,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: 👑 Run King (Embedded + Debug + Telegram File)
+      - name: 👑 Run King (One File At A Time)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -59,8 +57,8 @@ jobs:
           LOG_DIR = "bot update upgrade/_logs"
           ROOT_SKIP = "bot update upgrade"
           TEXT_EXT = {".py", ".txt", ".md", ".json", ".yml", ".yaml", ".toml", ".cfg", ".ini", ".env", ".example"}
-          TIMEOUT = 600
-          MAX_TOKENS = 16000
+          TIMEOUT = 180
+          MAX_TOKENS = 8000
 
           ALL_AIS = [
               "OpenRouter", "Groq", "Gemini", "Mistral",
@@ -82,30 +80,6 @@ jobs:
                       timeout=15)
                   return r.status_code == 200
               except Exception:
-                  return False
-
-          def tg_send_document(file_path, caption=""):
-              token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-              chat = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-              if not token or not chat:
-                  print("   ⚠️ Telegram token/chat missing")
-                  return False
-              try:
-                  with open(file_path, "rb") as f:
-                      r = requests.post(
-                          f"https://api.telegram.org/bot{token}/sendDocument",
-                          data={"chat_id": chat, "caption": caption[:1024], "parse_mode": "HTML"},
-                          files={"document": f},
-                          timeout=90
-                      )
-                  if r.status_code == 200:
-                      print("   ✅ Single file Telegram par bhej diya")
-                      return True
-                  else:
-                      print(f"   ⚠️ Telegram document failed: {r.status_code}")
-                      return False
-              except Exception as e:
-                  print(f"   ⚠️ Telegram document error: {str(e)[:80]}")
                   return False
 
           def is_skipped(full_path):
@@ -137,32 +111,17 @@ jobs:
                           files.append(rel)
               return sorted(files), sorted(folders)
 
-          def build_single_file(files, folders):
-              os.makedirs(WORK, exist_ok=True)
-              path = f"{WORK}/all_code.txt"
-              with open(path, "w", encoding="utf-8") as out:
-                  out.write("# ═══════════════════════════════════════════\n")
-                  out.write("# SAWAJSTUDIOBOT — FULL CODE (SINGLE FILE)\n")
-                  out.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                  out.write(f"# Files: {len(files)} | Folders: {len(folders)}\n")
-                  out.write("# ═══════════════════════════════════════════\n\n")
-                  out.write("═══ FOLDER STRUCTURE ═══\n")
-                  for f in folders:
-                      out.write(f"{f}/\n")
-                  out.write("═══ END FOLDERS ═══\n\n")
-                  for rel in files:
-                      full = os.path.join(BOT_ROOT, rel)
-                      try:
-                          with open(full, "r", encoding="utf-8") as f:
-                              code = f.read()
-                      except Exception:
-                          code = ""
-                      out.write(f"═══ FILE: {rel} ═══\n")
-                      out.write(code)
-                      out.write(f"\n═══ END ═══\n\n")
-              size_kb = os.path.getsize(path) // 1024
-              print(f"  📦 Single file: {size_kb} KB")
-              return path, size_kb
+          def build_structure_text(folders, files):
+              lines = []
+              lines.append("═══ FULL FOLDER STRUCTURE ═══")
+              for f in folders:
+                  lines.append(f"{f}/")
+              lines.append("")
+              lines.append("═══ ALL FILES LIST ═══")
+              for f in files:
+                  lines.append(f)
+              lines.append("═══ END STRUCTURE ═══")
+              return "\n".join(lines)
 
           def _post(url, headers, payload, timeout=TIMEOUT, retries=2):
               for attempt in range(1, retries + 1):
@@ -171,15 +130,11 @@ jobs:
                       if r.status_code == 200:
                           return r.json()
                       if r.status_code in (429, 500, 502, 503, 504):
-                          time.sleep(attempt * 3)
+                          time.sleep(attempt * 4)
                           continue
-                      print(f"      HTTP {r.status_code}: {r.text[:150]}")
                       return None
-                  except requests.exceptions.Timeout:
+                  except Exception:
                       time.sleep(3)
-                  except Exception as e:
-                      print(f"      Exception: {str(e)[:100]}")
-                      time.sleep(2)
               return None
 
           def call_ai(ai_name, prompt, max_tokens=MAX_TOKENS):
@@ -190,7 +145,7 @@ jobs:
                             {"Authorization": f"Bearer {key}"},
                             {"model": "openai/gpt-4o-mini",
                              "messages": [{"role": "user", "content": prompt}],
-                             "max_tokens": max_tokens, "temperature": 0.3})
+                             "max_tokens": max_tokens, "temperature": 0.25})
                   return d["choices"][0]["message"]["content"] if d else None
 
               if ai_name == "Groq":
@@ -201,7 +156,7 @@ jobs:
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.3})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
@@ -213,7 +168,7 @@ jobs:
                           f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
                           {},
                           {"contents": [{"parts": [{"text": prompt}]}],
-                           "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.3}})
+                           "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.25}})
                       if d:
                           try:
                               return d["candidates"][0]["content"]["parts"][0]["text"]
@@ -223,31 +178,31 @@ jobs:
               if ai_name == "Mistral":
                   key = os.environ.get("MISTRAL_API_KEY", "").strip()
                   if not key: return None
-                  for model in ["mistral-small-latest", "open-mistral-7b", "mistral-tiny"]:
+                  for model in ["mistral-small-latest", "open-mistral-7b"]:
                       d = _post("https://api.mistral.ai/v1/chat/completions",
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.3})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
               if ai_name == "Cerebras":
                   key = os.environ.get("CEREBRAS_API_KEY", "").strip()
                   if not key: return None
-                  for model in ["llama-3.3-70b", "llama3.1-70b", "llama3.1-8b"]:
+                  for model in ["llama-3.3-70b", "llama3.1-70b"]:
                       d = _post("https://api.cerebras.ai/v1/chat/completions",
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.3})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
               if ai_name == "Cohere":
                   key = os.environ.get("COHERE_API_KEY", "").strip()
                   if not key: return None
-                  for model in ["command-r-plus-08-2024", "command-r-plus", "command-r"]:
+                  for model in ["command-r-plus-08-2024", "command-r-plus"]:
                       d = _post("https://api.cohere.com/v1/chat",
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model, "message": prompt})
@@ -262,7 +217,7 @@ jobs:
                                 {"Authorization": f"Bearer {key}"},
                                 {"model": model,
                                  "messages": [{"role": "user", "content": prompt}],
-                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.3})
+                                 "max_tokens": min(max_tokens, 8000), "temperature": 0.25})
                       if d: return d["choices"][0]["message"]["content"]
                   return None
 
@@ -275,44 +230,48 @@ jobs:
                           {"Authorization": f"Bearer {key}"},
                           {"model": model,
                            "messages": [{"role": "user", "content": prompt}],
-                           "max_tokens": 4000, "temperature": 0.3})
+                           "max_tokens": 4000, "temperature": 0.25})
                       if d:
                           try: return d["choices"][0]["message"]["content"]
                           except: continue
                   return None
               return None
 
-          PROMPT = """You are a WORLD #1 senior Python engineer.
+          def make_prompt(structure, filepath, code):
+              return f"""You are a WORLD #1 senior Python engineer.
 
-          UPGRADE the following complete bot code to WORLD #1 quality.
+          Your job is to UPGRADE this single file to WORLD #1 quality.
 
-          INPUT FORMAT:
-          - Section "FOLDER STRUCTURE" contains the project folders
-          - Each "═══ FILE: path ═══" contains one file's full code
+          FULL PROJECT STRUCTURE (for context only):
+          {structure}
 
-          RULES:
-          1. Return ALL files in EXACT SAME FORMAT
-          2. Do NOT skip any file
-          3. Keep folder structure intact
-          4. FORMAT for each file:
-             ═══ FILE: path ═══
-             <full code>
+          CURRENT FILE TO UPGRADE:
+          ═══ FILE: {filepath} ═══
+          {code}
+          ═══ END ═══
+
+          STRICT RULES:
+          1. Return ONLY the upgraded code of this one file
+          2. Use EXACT format:
+             ═══ FILE: {filepath} ═══
+             <full upgraded code>
              ═══ END ═══
-          5. To CREATE a new file:
-             ═══ NEW FILE: path ═══
+          3. You may also create new helper files if needed using:
+             ═══ NEW FILE: path/to/newfile.py ═══
              <code>
              ═══ END ═══
-          6. NEVER DELETE any file
-          7. Fix ALL bugs, add error handling, add fallbacks
-          8. Add docstrings, comments, type hints
-          9. Remove any copyright text
-          10. Make code production-ready, WORLD #1
-          11. Return ONLY the code, no explanations
+          4. Fix all bugs, add proper error handling, type hints, docstrings
+          5. Make it production ready and world-class
+          6. Do NOT delete any functionality
+          7. Return ONLY the code blocks, no explanations
 
-          CODE:
-          """
+          UPGRADE THIS FILE NOW:"""
 
-          def apply_response(text):
+          def apply_response(text, original_file):
+              modified = 0
+              new_files = 0
+
+              # New files
               for rel, code in re.findall(r"═══ NEW FILE: (.+?) ═══\n(.*?)\n═══ END ═══", text, re.DOTALL):
                   rel = rel.strip()
                   if not rel or ".." in rel: continue
@@ -320,8 +279,9 @@ jobs:
                   os.makedirs(os.path.dirname(full) or ".", exist_ok=True)
                   with open(full, "w", encoding="utf-8") as f:
                       f.write(code.rstrip() + "\n")
+                  new_files += 1
 
-              modified = 0
+              # Modified files
               for rel, code in re.findall(r"═══ FILE: (.+?) ═══\n(.*?)\n═══ END ═══", text, re.DOTALL):
                   rel = rel.strip()
                   if not rel or ".." in rel: continue
@@ -330,7 +290,8 @@ jobs:
                   with open(full, "w", encoding="utf-8") as f:
                       f.write(code.rstrip() + "\n")
                   modified += 1
-              return modified
+
+              return modified, new_files
 
           def backup():
               ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -342,177 +303,121 @@ jobs:
               except Exception:
                   return None
 
-          def check_syntax(files):
-              failed = []
-              for rel in files:
-                  if not rel.endswith(".py"): continue
-                  full = os.path.join(BOT_ROOT, rel)
-                  try:
-                      with open(full, "r", encoding="utf-8") as f:
-                          ast.parse(f.read())
-                  except SyntaxError as e:
-                      failed.append({"file": rel, "error": str(e)[:80]})
-                  except Exception:
-                      pass
-              return failed
-
-          def send_report(data):
-              ts = data["time"]
-              files_total = data["files_total"]
-              modified = data["modified"]
-              ai_used = data["ai_used"]
-              ai_all = data["ai_all"]
-              size_kb = data["size_kb"]
-              score = data["score"]
-              backup_path = data["backup"] or "N/A"
-              syntax_failed = data["syntax_failed"]
-
-              bar = "█" * score + "░" * (10 - score)
-              ai_lines = []
-              for a in ai_all:
-                  icon = "🏆" if a["name"] == ai_used else "✅"
-                  ai_lines.append(f"   {icon} {a['name']}: {a['files']} files")
-              ai_text = "\n".join(ai_lines) if ai_lines else "   (none)"
-
-              msg = (
-                  "👑 <b>KING REPORT — SINGLE FILE MODE</b>\n"
-                  "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  f"📅 <code>{ts}</code>\n\n"
-                  "📁 <b>SCAN:</b>\n"
-                  f"   • Files: <b>{files_total}</b>\n"
-                  f"   • Combined size: <b>{size_kb} KB</b>\n\n"
-                  "🤖 <b>AI RESPONSES:</b>\n"
-                  f"{ai_text}\n\n"
-                  f"🏆 <b>Best:</b> <b>{ai_used}</b>\n\n"
-                  "🔧 <b>APPLIED:</b>\n"
-                  f"   ✏️ Modified: <b>{modified}</b>\n"
-                  f"   🗑️ Deleted: <b>0</b>\n\n"
-                  f"⚠️ Syntax fail: {len(syntax_failed)}\n"
-                  f"💾 Backup: <code>{backup_path}</code>\n\n"
-                  "📈 <b>SCORE:</b>\n"
-                  f"   {bar} <b>{score}/10</b>\n\n"
-                  "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  "👑 <b>World #1 in progress</b>"
-              )
-              tg_send(msg)
-              if syntax_failed:
-                  s = "⚠️ <b>SYNTAX FAILURES:</b>\n"
-                  for x in syntax_failed[:15]:
-                      s += f"• <code>{x['file']}</code>\n"
-                  tg_send(s)
-
-          def rate_bot(files, changes, syntax_failed):
-              if changes == 0: return 3
-              ratio = changes / max(files, 1)
-              base = int(4 + min(ratio, 1.0) * 6)
-              if syntax_failed > 0:
-                  base -= min(2, syntax_failed // 10)
-              return min(10, max(1, base))
+          def check_syntax(filepath):
+              full = os.path.join(BOT_ROOT, filepath)
+              if not filepath.endswith(".py"):
+                  return True
+              try:
+                  with open(full, "r", encoding="utf-8") as f:
+                      ast.parse(f.read())
+                  return True
+              except SyntaxError:
+                  return False
+              except Exception:
+                  return True
 
           def main():
               ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               print("═" * 60)
-              print("👑 KING — SINGLE FILE MODE (Debug Version)")
+              print("👑 KING — ONE FILE AT A TIME MODE")
               print("═" * 60)
 
-              tg_send(f"👑 <b>KING ACTIVATED</b>\n🕐 {ts}\nDebug + Telegram Document mode...", silent=True)
+              tg_send(f"👑 <b>KING STARTED</b>\n🕐 {ts}\nMode: One File At A Time\nTarget: Full World #1 Upgrade", silent=True)
 
               os.makedirs(WORK, exist_ok=True)
               os.makedirs(LOG_DIR, exist_ok=True)
 
-              print("\n📁 SCAN...")
+              print("\n📁 SCANNING...")
               files, folders = scan_all()
-              print(f"   Files: {len(files)}")
-              print(f"   Folders: {len(folders)}")
+              print(f"   Total Files: {len(files)}")
+              print(f"   Total Folders: {len(folders)}")
 
               if not files:
-                  tg_send("⚠️ No files found in sawajstudiobot")
+                  tg_send("⚠️ No files found")
                   return
 
               print("\n💾 BACKUP...")
               backup_path = backup()
-              print(f"   {backup_path}")
+              print(f"   Backup: {backup_path}")
 
-              print("\n📦 BUILDING SINGLE FILE...")
-              single_path, size_kb = build_single_file(files, folders)
+              structure = build_structure_text(folders, files)
 
-              if size_kb > 400:
-                  print(f"   ⚠️ WARNING: File is very large ({size_kb} KB). Most AIs will fail due to context limit.")
+              total = len(files)
+              success = 0
+              failed = 0
+              new_created = 0
 
-              print("\n📤 SENDING SINGLE FILE TO TELEGRAM...")
-              caption = (
-                  f"👑 <b>SAWAJSTUDIOBOT — FULL CODE</b>\n"
-                  f"📅 {ts}\n"
-                  f"📁 Files: {len(files)}\n"
-                  f"📦 Size: {size_kb} KB"
-              )
-              tg_send_document(single_path, caption)
+              for idx, rel in enumerate(files, 1):
+                  print(f"\n[{idx}/{total}] Processing: {rel}")
 
-              with open(single_path, "r", encoding="utf-8") as f:
-                  combined = f.read()
-
-              print("\n🤖 CALLING 8 AI...")
-              all_responses = []
-              for ai in ALL_AIS:
-                  print(f"  🤖 {ai}...")
+                  full = os.path.join(BOT_ROOT, rel)
                   try:
-                      res = call_ai(ai, PROMPT + combined)
-                      if res and "═══ FILE:" in res:
-                          fcount = res.count("═══ FILE:")
-                          all_responses.append({"name": ai, "code": res, "files": fcount})
-                          print(f"     ✅ {fcount} files, {len(res)} chars")
-                      else:
-                          print(f"     ⚠️ invalid")
-                          if res:
-                              print(f"     📝 Response start: {res[:400].replace(chr(10), ' ')}")
-                          else:
-                              print(f"     📝 Response was None / empty")
+                      with open(full, "r", encoding="utf-8") as f:
+                          code = f.read()
                   except Exception as e:
-                      print(f"     ❌ {str(e)[:80]}")
+                      print(f"   ❌ Cannot read: {e}")
+                      failed += 1
+                      continue
 
-              if not all_responses:
-                  tg_send("⚠️ All AI failed (mostly due to large file size 973KB)")
-                  print("\n❌ All AI failed. Main reason is almost certainly the large prompt size.")
-                  return
+                  prompt = make_prompt(structure, rel, code)
 
-              best = max(all_responses, key=lambda r: r["files"] * 10000 + len(r["code"]))
-              print(f"\n🏆 Best: {best['name']} ({best['files']} files)")
+                  upgraded = False
+                  used_ai = None
 
-              print("\n🔧 APPLYING...")
-              modified = apply_response(best["code"])
-              print(f"   Modified: {modified}")
+                  for ai in ALL_AIS:
+                      print(f"   🤖 Trying {ai}...")
+                      try:
+                          res = call_ai(ai, prompt)
+                          if res and ("═══ FILE:" in res or "═══ NEW FILE:" in res):
+                              modified, newf = apply_response(res, rel)
+                              if modified > 0 or newf > 0:
+                                  # Syntax check
+                                  if check_syntax(rel):
+                                      success += 1
+                                      new_created += newf
+                                      used_ai = ai
+                                      upgraded = True
+                                      print(f"   ✅ Upgraded by {ai} | New files: {newf}")
+                                      tg_send(
+                                          f"✅ <b>[{idx}/{total}]</b> <code>{rel}</code>\n"
+                                          f"🤖 AI: <b>{ai}</b>\n"
+                                          f"🆕 New files: {newf}"
+                                      )
+                                      break
+                                  else:
+                                      print(f"   ⚠️ Syntax error after {ai}, trying next...")
+                              else:
+                                  print(f"   ⚠️ No change from {ai}")
+                          else:
+                              print(f"   ⚠️ Invalid response from {ai}")
+                      except Exception as e:
+                          print(f"   ❌ {ai} error: {str(e)[:60]}")
 
-              print("\n🧪 TEST...")
-              syntax_failed = check_syntax(files)
-              print(f"   Syntax fail: {len(syntax_failed)}")
+                  if not upgraded:
+                      failed += 1
+                      print(f"   ❌ Failed to upgrade: {rel}")
+                      tg_send(f"❌ <b>[{idx}/{total}]</b> Failed: <code>{rel}</code>")
 
-              score = rate_bot(len(files), modified, len(syntax_failed))
+                  # Thoda delay taaki rate limit na aaye
+                  time.sleep(1.5)
 
-              send_report({
-                  "time": ts,
-                  "files_total": len(files),
-                  "modified": modified,
-                  "ai_used": best["name"],
-                  "ai_all": all_responses,
-                  "size_kb": size_kb,
-                  "score": score,
-                  "backup": backup_path,
-                  "syntax_failed": syntax_failed,
-              })
-
-              log_file = f"{LOG_DIR}/run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-              with open(log_file, "w", encoding="utf-8") as f:
-                  json.dump({
-                      "time": ts,
-                      "files": len(files),
-                      "modified": modified,
-                      "best_ai": best["name"],
-                      "score": score,
-                      "syntax_failed": len(syntax_failed),
-                  }, f, indent=2)
+              # Final Report
+              final_msg = (
+                  "👑 <b>KING FULL UPGRADE COMPLETE</b>\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                  f"📅 {ts}\n\n"
+                  f"📁 Total Files: <b>{total}</b>\n"
+                  f"✅ Successfully Upgraded: <b>{success}</b>\n"
+                  f"❌ Failed: <b>{failed}</b>\n"
+                  f"🆕 New Files Created: <b>{new_created}</b>\n"
+                  f"💾 Backup: <code>{backup_path or 'N/A'}</code>\n\n"
+                  "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                  "👑 <b>World #1 Upgrade Session Finished</b>"
+              )
+              tg_send(final_msg)
 
               print("\n" + "═" * 60)
-              print(f"👑 DONE: {modified} modified — Score {score}/10")
+              print(f"👑 DONE | Success: {success} | Failed: {failed} | New: {new_created}")
               print("═" * 60)
 
           if __name__ == "__main__":
@@ -522,18 +427,17 @@ jobs:
           python /tmp/king.py
           rm -f /tmp/king.py
 
-      - name: 📤 Commit
+      - name: 📤 Commit All Changes
         if: always()
         run: |
           git config user.name "SawajBot King"
           git config user.email "king@sawajstudio.com"
           git add -A
-          git commit -m "👑 King upgraded the bot — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
-          git push || echo "Push failed or nothing to push"
+          git commit -m "👑 King One-File Full Upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
+          git push || echo "Push failed"
 
       - name: ✅ Summary
         if: always()
         run: |
-          echo "## 👑 King Working Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- Check Telegram for report + Single File" >> $GITHUB_STEP_SUMMARY
-          echo "- Check Actions log for detailed AI responses" >> $GITHUB_STEP_SUMMARY
+          echo "## 👑 King One-File Mode Complete" >> $GITHUB_STEP_SUMMARY
+          echo "Check Telegram for live updates of every file." >> $GITHUB_STEP_SUMMARY
