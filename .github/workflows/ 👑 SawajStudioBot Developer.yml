@@ -11,9 +11,9 @@ permissions:
 
 jobs:
   developer:
-    name: 👑 Fast Developer
+    name: 👑 Developer Working
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 1440
 
     steps:
       - name: 📥 Checkout
@@ -29,7 +29,7 @@ jobs:
       - name: 📦 Install
         run: pip install requests
 
-      - name: 👑 Run Fast Developer
+      - name: 👑 Run Developer
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -45,17 +45,15 @@ jobs:
           cat << 'EOFPY' > /tmp/dev.py
           import os, re, ast, json, time, requests
           from datetime import datetime
-          from concurrent.futures import ThreadPoolExecutor, as_completed
 
           BOT_ROOT = "sawajstudiobot"
           PROGRESS = "bot update upgrade/_king_progress.json"
           SKIP = ("__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv", "node_modules",
                   "bot update upgrade", "Code editor", "_temp_builder")
-          TIMEOUT = 45
-          WORKERS = 8
+          TIMEOUT = 300
           AIS = ["Groq", "Gemini", "OpenRouter", "Mistral", "Cerebras", "Cohere", "NVIDIA", "HuggingFace"]
 
-          def tg(msg, silent=True):
+          def tg(msg, silent=False):
               t = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
               c = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
               if not t or not c: return
@@ -63,7 +61,7 @@ jobs:
                   requests.post(f"https://api.telegram.org/bot{t}/sendMessage",
                                 json={"chat_id": c, "text": msg[:4000], "parse_mode": "HTML",
                                       "disable_web_page_preview": True, "disable_notification": silent},
-                                timeout=10)
+                                timeout=15)
               except: pass
 
           def skip(path):
@@ -74,21 +72,29 @@ jobs:
 
           def scan():
               files = []
+              folders = {}
               for root, dirs, fnames in os.walk(BOT_ROOT):
                   dirs[:] = [d for d in dirs if not skip(os.path.join(root, d))]
+                  rel_dir = os.path.relpath(root, BOT_ROOT)
+                  if rel_dir != ".":
+                      folders[rel_dir] = 0
                   for fn in fnames:
                       full = os.path.join(root, fn)
                       if skip(full): continue
                       if fn.endswith(".py"):
-                          files.append(os.path.relpath(full, BOT_ROOT))
-              return sorted(files)
+                          rel = os.path.relpath(full, BOT_ROOT)
+                          files.append(rel)
+                          parent = os.path.dirname(rel)
+                          if parent in folders:
+                              folders[parent] += 1
+              return sorted(files), folders
 
           def load_prog():
               if os.path.exists(PROGRESS):
                   try:
                       with open(PROGRESS) as f: return json.load(f)
                   except: pass
-              return {"upgraded": {}}
+              return {"upgraded": {}, "new_files": []}
 
           def save_prog(d):
               os.makedirs(os.path.dirname(PROGRESS), exist_ok=True)
@@ -179,41 +185,120 @@ jobs:
               except: pass
               return None
 
-          def upgrade(rel, idx, total):
+          def build_folder_tree(folders):
+              lines = []
+              for f, count in sorted(folders.items()):
+                  lines.append(f"{f}/ ({count} files)")
+              return "\n".join(lines)
+
+          def upgrade_one(rel, idx, total, folders):
               full = os.path.join(BOT_ROOT, rel)
               try:
-                  with open(full, "r", encoding="utf-8") as f: code = f.read()
-              except: return False, rel, None
+                  with open(full, "r", encoding="utf-8") as f:
+                      code = f.read()
+              except Exception as e:
+                  tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code>\nRead error: {str(e)[:100]}")
+                  return False, rel, None, 0
 
-              prompt = f"""You are the MASTER AI DEVELOPER of SawajStudioBot.
-          Upgrade this file: add error handling, logging, docstrings, fix bugs, remove copyright text.
-          Never remove core logic.
-          Keep format: ═══ FILE: {rel} ═══  <code>  ═══ END ═══
-          Return ONLY the code.
+              folder_tree = build_folder_tree(folders)
+              parent_folder = os.path.dirname(rel)
 
-          FILE: {rel}
-          CODE:
-          {code}"""
+              prompt = f"""You are the MASTER AI DEVELOPER of SawajStudioBot — a WORLD #1 Islamic video automation bot.
+
+          FULL PROJECT STRUCTURE:
+          {folder_tree}
+
+          THIS FILE:
+          Path: {rel}
+          Folder: {parent_folder}
+          Size: {len(code)} chars
+
+          TASK:
+          1. Analyze this file
+          2. Tell me WHAT needs upgrading (be specific)
+          3. Provide the UPGRADED version
+
+          RULES:
+          - Keep ALL existing functionality (never remove logic)
+          - Add error handling, logging, docstrings, type hints
+          - Remove any copyright text
+          - Add new features if helpful
+          - If a new file is needed, say: ═══ NEW FILE: path ═══ <code> ═══ END ═══
+          - NEVER DELETE anything
+
+          RETURN FORMAT:
+          ═══ FILE: {rel} ═══
+          <upgraded code>
+          ═══ END ═══
+
+          === CURRENT CODE ===
+          {code}
+          """
 
               start = (idx - 1) % len(AIS)
-              for ai in AIS[start:] + AIS[:start]:
+              ordered = AIS[start:] + AIS[:start]
+
+              for ai in ordered:
+                  print(f"  [{idx}/{total}] Trying {ai} for {rel}")
                   res = call_ai(ai, prompt)
-                  if res and "═══ FILE:" in res:
-                      m = re.search(r"═══ FILE: .+? ═══\s*\n(.*?)\n═══ END ═══", res, re.DOTALL)
-                      if m:
-                          new_code = m.group(1).strip()
-                          try:
-                              ast.parse(new_code)
-                              with open(full, "w", encoding="utf-8") as f:
-                                  f.write(new_code + "\n")
-                              tg(f"⚡ <b>[{idx}/{total}]</b> ✅ <code>{rel}</code>\n🤖 {ai}")
-                              return True, rel, ai
-                          except: pass
-              tg(f"⚠️ <b>[{idx}/{total}]</b> ❌ <code>{rel}</code>", silent=True)
-              return False, rel, None
+                  if not res:
+                      continue
+
+                  if "═══ FILE:" not in res:
+                      continue
+
+                  m = re.search(r"═══ FILE: .+? ═══\s*\n(.*?)\n═══ END ═══", res, re.DOTALL)
+                  if not m:
+                      continue
+
+                  new_code = m.group(1).strip()
+
+                  try:
+                      ast.parse(new_code)
+                  except SyntaxError:
+                      continue
+
+                  with open(full, "w", encoding="utf-8") as f:
+                      f.write(new_code + "\n")
+
+                  new_files = re.findall(r"═══ NEW FILE: (.+?) ═══\s*\n(.*?)\n═══ END ═══", res, re.DOTALL)
+                  created = 0
+                  for nf_path, nf_code in new_files:
+                      nf_path = nf_path.strip()
+                      if not nf_path or ".." in nf_path: continue
+                      nf_full = os.path.join(BOT_ROOT, nf_path)
+                      os.makedirs(os.path.dirname(nf_full) or ".", exist_ok=True)
+                      try:
+                          ast.parse(nf_code.strip())
+                          with open(nf_full, "w", encoding="utf-8") as f:
+                              f.write(nf_code.strip() + "\n")
+                          created += 1
+                          tg(f"🆕 <b>NEW FILE</b>: <code>{nf_path}</code>")
+                      except: pass
+
+                  size_before = len(code)
+                  size_after = len(new_code)
+                  diff = size_after - size_before
+                  sign = "+" if diff >= 0 else ""
+
+                  tg(
+                      f"✅ <b>[{idx}/{total}] UPGRADED</b>\n"
+                      f"📄 <code>{rel}</code>\n"
+                      f"🤖 AI: <b>{ai}</b>\n"
+                      f"📊 {size_before}→{size_after} ({sign}{diff})\n"
+                      f"🆕 New files: {created}"
+                  )
+                  return True, rel, ai, created
+
+              tg(
+                  f"⚠️ <b>[{idx}/{total}] SKIPPED</b>\n"
+                  f"📄 <code>{rel}</code>\n"
+                  f"🤖 All 8 AI failed"
+              )
+              return False, rel, None, 0
 
           def main():
-              files = scan()
+              files, folders = scan()
               if not files:
                   tg("⚠️ No files in sawajstudiobot")
                   return
@@ -221,23 +306,41 @@ jobs:
               prog = load_prog()
               files = sorted(files, key=lambda f: prog["upgraded"].get(f, {}).get("time", "0"))
               total = len(files)
-              tg(f"👑 <b>FAST RUN</b> — {total} files, {WORKERS} workers, 8 AI")
+              tg(
+                  f"👑 <b>DEVELOPER STARTED</b>\n"
+                  f"📁 {total} files to upgrade\n"
+                  f"🎯 One-by-one, no limit\n"
+                  f"🚫 No delete, only add/modify"
+              )
 
-              ok, fail = 0, 0
-              with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-                  futures = {ex.submit(upgrade, f, i, total): f for i, f in enumerate(files, 1)}
-                  for fut in as_completed(futures):
-                      try:
-                          status, rel, ai = fut.result()
-                          if status:
-                              ok += 1
-                              prog["upgraded"][rel] = {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ai": ai}
-                              if ok % 10 == 0:
-                                  save_prog(prog)
-                          else: fail += 1
-                      except: fail += 1
+              ok, fail, new_total = 0, 0, 0
+
+              for idx, rel in enumerate(files, 1):
+                  try:
+                      status, r, ai, created = upgrade_one(rel, idx, total, folders)
+                      if status:
+                          ok += 1
+                          new_total += created
+                          prog["upgraded"][rel] = {
+                              "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                              "ai": ai
+                          }
+                          if ok % 5 == 0:
+                              save_prog(prog)
+                      else:
+                          fail += 1
+                  except Exception as e:
+                      fail += 1
+                      tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code>\n{str(e)[:100]}")
+
               save_prog(prog)
-              tg(f"🏁 <b>DONE</b> — ✅ {ok} upgraded, ⏳ {fail} pending")
+              tg(
+                  f"🏁 <b>DEVELOPER COMPLETE</b>\n"
+                  f"✅ Upgraded: <b>{ok}</b>\n"
+                  f"❌ Failed: <b>{fail}</b>\n"
+                  f"🆕 New files: <b>{new_total}</b>\n"
+                  f"📁 Total processed: <b>{total}</b>"
+              )
 
           if __name__ == "__main__":
               main()
@@ -250,7 +353,7 @@ jobs:
           git config user.name "SawajBot Dev"
           git config user.email "dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Fast upgrade — $(date -u '+%H:%M UTC')" || echo "No changes"
+          git commit -m "👑 Developer upgrade — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes"
           git push || echo "Push failed"
 
       - name: 🔄 Self-Trigger
