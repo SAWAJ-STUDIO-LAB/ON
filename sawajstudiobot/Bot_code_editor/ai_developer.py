@@ -1,6 +1,6 @@
 """
-Sawaj AI Developer — Single File
-Folder-by-folder AI upgrade system
+Sawaj AI Developer — Single File System
+Folder-by-folder AI upgrade
 """
 import os
 import re
@@ -627,19 +627,37 @@ def parse_response(text: str) -> Dict[str, List]:
 # MAIN
 # ═══════════════════════════════════════════════════════════
 def main():
+    print("=" * 60)
+    print("SAWAJ AI DEVELOPER STARTED")
+    print("=" * 60)
+
+    # Check API keys
+    print("\n[CHECK] API Keys:")
+    for name, key in KEYS.items():
+        print(f"  {name}: {'SET' if key else 'MISSING'}")
+
+    print("\n[CHECK] Telegram:")
+    print(f"  TOKEN: {'SET' if os.environ.get('TELEGRAM_BOT_TOKEN') else 'MISSING'}")
+    print(f"  CHAT_ID: {'SET' if os.environ.get('TELEGRAM_CHAT_ID') else 'MISSING'}")
+
     start = time.time()
     tg(f"👑 <b>Sawaj AI Developer Started</b>\n"
        f"📂 Folder-by-folder mode\n"
        f"🕐 {datetime.now().strftime('%H:%M:%S')}", silent=True)
 
+    # Scan
+    print("\n[SCAN] Scanning folders...")
     all_files, tree_view = scan_all()
+    print(f"  Files found: {len(all_files)}")
 
     if not all_files:
+        print("  NO FILES FOUND - EXITING")
         tg("⚠️ No files found")
         return
 
     folder_batches = get_folder_batches(all_files)
     total_batches = len(folder_batches)
+    print(f"  Folders: {total_batches}")
 
     bot_count = sum(1 for k in all_files if k.startswith(ROOT_FOLDER + "/"))
     wf_count = sum(1 for k in all_files if k.startswith(WORKFLOW_FOLDER + "/"))
@@ -660,23 +678,33 @@ def main():
     ai_used = {}
     failed_batches = []
 
+    print(f"\n[PROCESS] Starting {total_batches} folders...\n")
+
     for bnum, (folder_name, batch) in enumerate(folder_batches, 1):
         print(f"\n[Batch {bnum}/{total_batches}] Folder: {folder_name}/")
+        print(f"  Files: {len(batch)}")
 
         group = AI_GROUPS[(bnum - 1) % len(AI_GROUPS)]
+        print(f"  AI Group: {group}")
+
         prompt = build_prompt(batch, folder_name, tree_view, bnum, total_batches)
 
         response, used_ai = call_ai(group, prompt)
 
         if not response:
-            print(f"  ❌ Batch {bnum} failed")
+            print(f"  BATCH {bnum} FAILED - all AIs returned empty")
             failed_batches.append(bnum)
             continue
 
         ai_used[used_ai] = ai_used.get(used_ai, 0) + 1
-        print(f"  ✅ {used_ai} responded")
+        print(f"  SUCCESS via {used_ai} ({len(response)} chars)")
 
         ops = parse_response(response)
+        print(f"  Parsed: {len(ops['updates'])} updates, "
+              f"{len(ops['creates'])} creates, "
+              f"{len(ops['folders'])} folders, "
+              f"{len(ops['deletes'])} deletes, "
+              f"{len(ops['splits'])} splits")
 
         for path, code in ops["updates"]:
             orig = find_original_path(path, all_files)
@@ -727,6 +755,10 @@ def main():
     ai_summary = "\n".join(
         f"   • {ai}: {cnt} folders"
         for ai, cnt in sorted(ai_used.items(), key=lambda x: -x[1]))
+
+    print("\n" + "=" * 60)
+    print(f"DONE in {mins}m {secs}s")
+    print("=" * 60)
 
     tg(f"""🏁 <b>Sawaj AI Developer Complete</b>
 
