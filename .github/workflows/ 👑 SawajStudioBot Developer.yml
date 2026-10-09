@@ -1,4 +1,4 @@
-name: 👑 SawajStudioBot Autonomous Code Developer
+name: 👑 SawajStudioBot Autonomous Developer
 
 on:
   workflow_dispatch:
@@ -8,10 +8,11 @@ permissions:
   actions: write
 
 jobs:
-  autonomous-code-builder:
-    name: 🚀 Strict Full-Folder Autonomous Upgrader
+  developer:
+    name: 👑 Autonomous Developer Working (Fast Batch Mode)
     runs-on: ubuntu-latest
     timeout-minutes: 1440
+
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -26,7 +27,7 @@ jobs:
       - name: 📦 Install Requirements
         run: pip install requests
 
-      - name: 👑 Run Full-Folder Strict Upgrader
+      - name: 👑 Run Autonomous Developer Engine
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -40,14 +41,14 @@ jobs:
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
         run: |
           cat << 'EOFPY' > /tmp/dev.py
-          import os, re, json, requests
+          import os, re, ast, json, time, requests
           from datetime import datetime
 
           BOT_ROOT = "sawajstudiobot"
           PROGRESS = "bot update upgrade/_king_progress.json"
           SKIP = ("__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv", "node_modules",
                   "bot update upgrade", "Code editor", "_temp_builder")
-          TIMEOUT = 600
+          TIMEOUT = 400
           AIS = ["Gemini", "Groq", "OpenRouter", "Mistral", "Cerebras", "NVIDIA"]
 
           def tg(msg, silent=False):
@@ -171,82 +172,77 @@ jobs:
                   return
 
               tree = build_tree(folders)
-              tg(f"👑 <b>STRICT AUTONOMOUS UPGRADER STARTED</b>\n📁 Total Files Loaded: <b>{len(files_data)}</b>\n\n<b>PROJECT STRUCTURE:</b>\n<pre>{tree[:3000]}</pre>")
+              tg(f"👑 <b>AUTONOMOUS DEVELOPER STARTED (FAST BATCH)</b>\n📁 Total Files: <b>{len(files_data)}</b>\n\n<b>STRUCTURE:</b>\n<pre>{tree[:3000]}</pre>")
 
-              bundled_code = ""
-              for rel_path, code in files_data.items():
-                  bundled_code += f"\n\n═══ FILE: {rel_path} ═══\n{code if code.strip() else '# [EMPTY FILE - PLEASE WRITE COMPLETE PYTHON CODE HERE]'}\n═══ END FILE ═══"
+              # Group files into batches of 4-5 files so it's super fast, doesn't hit token limits, and processes everything accurately!
+              file_items = list(files_data.items())
+              batch_size = 5
+              total_updated = 0
 
-              prompt = f"""You are the SUPER-INTELLIGENT LEAD ARCHITECT & MASTER CODE DEVELOPER for "SawajStudioBot".
-          You receive the ENTIRE project folder structure and ALL python source code files together in bulk.
-          Your mandatory task is to analyze, fix, optimize, and upgrade EVERY SINGLE FILE to world-class production standards.
+              for i in range(0, len(file_items), batch_size):
+                  batch = file_items[i:i + batch_size]
+                  bundled_code = ""
+                  for rel_path, code in batch:
+                      bundled_code += f"\n\n═══ FILE: {rel_path} ═══\n{code if code.strip() else '# [EMPTY FILE - WRITE PRODUCTION CODE]'}\n═══ END FILE ═══"
 
-          CRITICAL ENFORCEMENT RULES (STRICTLY OBEY):
-          1. 🚫 NO SKIPPING OR OMITTING: You MUST return code for EVERY SINGLE FILE provided in the source code bundle below. Do not skip any file under any circumstance.
-          2. 🚫 ZERO DELETION POLICY: Do not delete any existing logic, functions, classes, or imports. Only enhance, upgrade, and optimize them.
-          3. 📂 EMPTY FILES GENERATION: If any file content above is empty or marked as [EMPTY FILE], you MUST write complete, fully functional, world-class production Python code for it based on its file path and name.
-          4. 📦 FULL CODE RETURN: Return every single file using the exact wrapper format given below.
+                  prompt = f"""You are the LEAD ARCHITECT for "SawajStudioBot".
+          Upgrade the following batch of files to world-class standards.
+
+          CRITICAL RULES:
+          1. ZERO DELETION: Keep all existing logic, classes, and functions intact. Enhance them with error handling, type hints, and logging.
+          2. NO SKIPPING: You must return all files in this batch.
+          3. EMPTY FILES: If any file is empty, write full production code for it.
 
           PROJECT STRUCTURE:
           {tree}
 
-          SOURCE CODE OF ALL FILES:
+          FILES IN THIS BATCH:
           {bundled_code}
 
-          RESPONSE FORMAT (MANDATORY FOR EVERY FILE):
+          RESPONSE FORMAT (MANDATORY FOR EACH FILE):
           ═══ FILE: relative/path/to/file.py ═══
           <complete python code>
           ═══ END FILE ═══
           """
 
-              success = False
-              used_ai = None
-              response_text = None
+                  success = False
+                  response_text = None
+                  used_ai = None
 
-              for ai in AIS:
-                  print(f"Sending entire project bundle to {ai}...")
-                  res = call_ai(ai, prompt)
-                  if res and len(res) > 200:
-                      response_text = res
-                      used_ai = ai
-                      success = True
-                      break
+                  for ai in AIS:
+                      res = call_ai(ai, prompt)
+                      if res and len(res) > 50:
+                          response_text = res
+                          used_ai = ai
+                          success = True
+                          break
 
-              if not success or not response_text:
-                  tg("❌ Strict AI upgrade failed. All AIs failed to respond.")
-                  return
+                  if success and response_text:
+                      matches = re.findall(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END FILE", response_text, re.DOTALL)
+                      for path, code in matches:
+                          path = path.strip()
+                          code = code.strip()
+                          if path and code and ".." not in path:
+                              full_path = os.path.join(BOT_ROOT, path)
+                              os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                              try:
+                                  with open(full_path, "w", encoding="utf-8") as f:
+                                      f.write(code + "\n")
+                                  total_updated += 1
+                              except: pass
 
-              matches = re.findall(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END FILE", response_text, re.DOTALL)
-              if not matches:
-                  tg("⚠️ AI response format error: Could not parse files.")
-                  return
-
-              updated_count = 0
-              for path, code in matches:
-                  path = path.strip()
-                  code = code.strip()
-                  if path and code and ".." not in path:
-                      full_path = os.path.join(BOT_ROOT, path)
-                      os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                      try:
-                          with open(full_path, "w", encoding="utf-8") as f:
-                              f.write(code + "\n")
-                          updated_count += 1
-                      except Exception as e:
-                          print(f"Error writing {path}: {e}")
-
-              tg(f"🏁 <b>STRICT UPGRADE COMPLETE</b>\n🤖 AI Used: <b>{used_ai}</b>\n✅ Successfully Upgraded & Saved: <b>{updated_count}/{len(files_data)}</b> files!")
+              tg(f"🏁 <b>DEVELOPER COMPLETE</b>\n✅ Total Files Upgraded & Saved: <b>{total_updated}</b>")
 
           if __name__ == "__main__":
               main()
           EOFPY
           python /tmp/dev.py
 
-      - name: 📤 Commit and Push Upgraded Code
+      - name: 📤 Commit and Push Changes
         if: always()
         run: |
           git config user.name "SawajBot Developer AI"
           git config user.email "ai.dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Strict Autonomous Upgrader: All Files Enhanced without Skipping — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
+          git commit -m "👑 Autonomous Developer Batch Upgrade: All Files Enhanced — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
           git push || echo "Push failed"
