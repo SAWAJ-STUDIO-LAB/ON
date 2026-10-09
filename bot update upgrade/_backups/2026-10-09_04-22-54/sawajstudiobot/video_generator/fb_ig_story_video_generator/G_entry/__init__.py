@@ -1,1 +1,0 @@
-"""G_entry package."""

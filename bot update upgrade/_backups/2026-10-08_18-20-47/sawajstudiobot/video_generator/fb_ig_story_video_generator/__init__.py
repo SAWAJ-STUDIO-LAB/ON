@@ -1,1 +1,0 @@
-"""Story generator package."""
