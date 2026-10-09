@@ -1,29 +1,15 @@
-name: 👑 Sawaj Studio Ultimate Master System
+name: 👑 SawajStudioBot Autonomous Code Developer
 
 on:
   workflow_dispatch:
-    inputs:
-      action_type:
-        description: 'Confirm karo: Kya run karna hai?'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - autonomous_upgrade
-          - story
-          - short
-          - long
 
 permissions:
   contents: write
   actions: write
 
 jobs:
-  # 1. Autonomous Developer Engine (Batch Mode - Poora folder ek sath process hoga)
-  autonomous-developer:
-    if: github.event.inputs.action_type == 'autonomous_upgrade' || github.event.inputs.action_type == 'all'
-    name: 👑 Autonomous Developer Engine (Fast Batch)
+  autonomous-code-builder:
+    name: 🚀 Strict Full-Folder Autonomous Upgrader
     runs-on: ubuntu-latest
     timeout-minutes: 1440
     steps:
@@ -40,7 +26,7 @@ jobs:
       - name: 📦 Install Requirements
         run: pip install requests
 
-      - name: 👑 Run Autonomous Developer (Batch Mode)
+      - name: 👑 Run Full-Folder Strict Upgrader
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -96,9 +82,10 @@ jobs:
                           rel = os.path.relpath(full, BOT_ROOT)
                           try:
                               with open(full, "r", encoding="utf-8") as f:
-                                  files_data[rel] = f.read()
+                                  code_content = f.read()
                           except:
-                              files_data[rel] = "# Error reading file"
+                              code_content = ""
+                          files_data[rel] = code_content
                           parent = os.path.dirname(rel)
                           if parent in folders:
                               folders[parent].append(fn)
@@ -184,21 +171,21 @@ jobs:
                   return
 
               tree = build_tree(folders)
-              tg(f"👑 <b>BATCH AUTONOMOUS DEVELOPER STARTED</b>\n📁 Total Files Loaded: <b>{len(files_data)}</b>\n\n<b>PROJECT STRUCTURE:</b>\n<pre>{tree[:3000]}</pre>")
+              tg(f"👑 <b>STRICT AUTONOMOUS UPGRADER STARTED</b>\n📁 Total Files Loaded: <b>{len(files_data)}</b>\n\n<b>PROJECT STRUCTURE:</b>\n<pre>{tree[:3000]}</pre>")
 
-              # Package all files into a single master prompt context
               bundled_code = ""
               for rel_path, code in files_data.items():
-                  bundled_code += f"\n\n═══ FILE: {rel_path} ═══\n{code}\n═══ END FILE ═══"
+                  bundled_code += f"\n\n═══ FILE: {rel_path} ═══\n{code if code.strip() else '# [EMPTY FILE - PLEASE WRITE COMPLETE PYTHON CODE HERE]'}\n═══ END FILE ═══"
 
-              prompt = f"""You are the SUPER-INTELLIGENT LEAD ARCHITECT for "SawajStudioBot".
-          You receive the ENTIRE project folder and all its python source code in one go.
-          Your job is to analyze the entire system, upgrade every file to WORLD-CLASS standards, add robust error handling, type hints, and fix any bugs.
+              prompt = f"""You are the SUPER-INTELLIGENT LEAD ARCHITECT & MASTER CODE DEVELOPER for "SawajStudioBot".
+          You receive the ENTIRE project folder structure and ALL python source code files together in bulk.
+          Your mandatory task is to analyze, fix, optimize, and upgrade EVERY SINGLE FILE to world-class production standards.
 
-          CRITICAL RULES:
-          1. 🚫 ZERO DELETION POLICY: Do not delete any existing logic, imports, or functions. Only enhance and expand them.
-          2. 🚫 FULL CODE RETURN: Return the updated code for ALL files using the exact format specified below. Do not omit any file.
-          3. NEW FILES: If needed, you can create new files using the same format.
+          CRITICAL ENFORCEMENT RULES (STRICTLY OBEY):
+          1. 🚫 NO SKIPPING OR OMITTING: You MUST return code for EVERY SINGLE FILE provided in the source code bundle below. Do not skip any file under any circumstance.
+          2. 🚫 ZERO DELETION POLICY: Do not delete any existing logic, functions, classes, or imports. Only enhance, upgrade, and optimize them.
+          3. 📂 EMPTY FILES GENERATION: If any file content above is empty or marked as [EMPTY FILE], you MUST write complete, fully functional, world-class production Python code for it based on its file path and name.
+          4. 📦 FULL CODE RETURN: Return every single file using the exact wrapper format given below.
 
           PROJECT STRUCTURE:
           {tree}
@@ -206,8 +193,7 @@ jobs:
           SOURCE CODE OF ALL FILES:
           {bundled_code}
 
-          RESPONSE FORMAT:
-          For every file you update or create, use this exact wrapper:
+          RESPONSE FORMAT (MANDATORY FOR EVERY FILE):
           ═══ FILE: relative/path/to/file.py ═══
           <complete python code>
           ═══ END FILE ═══
@@ -227,10 +213,9 @@ jobs:
                       break
 
               if not success or not response_text:
-                  tg("❌ Batch AI upgrade failed. All AIs failed to respond.")
+                  tg("❌ Strict AI upgrade failed. All AIs failed to respond.")
                   return
 
-              # Parse all files from single response
               matches = re.findall(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END FILE", response_text, re.DOTALL)
               if not matches:
                   tg("⚠️ AI response format error: Could not parse files.")
@@ -250,82 +235,18 @@ jobs:
                       except Exception as e:
                           print(f"Error writing {path}: {e}")
 
-              tg(f"🏁 <b>BATCH DEVELOPER COMPLETE</b>\n🤖 AI Used: <b>{used_ai}</b>\n✅ Successfully Upgraded & Saved: <b>{updated_count}</b> files in a single pass!")
+              tg(f"🏁 <b>STRICT UPGRADE COMPLETE</b>\n🤖 AI Used: <b>{used_ai}</b>\n✅ Successfully Upgraded & Saved: <b>{updated_count}/{len(files_data)}</b> files!")
 
           if __name__ == "__main__":
               main()
           EOFPY
           python /tmp/dev.py
 
-  # 2. Facebook & Instagram Story Video Pipeline
-  run-story-video:
-    if: github.event.inputs.action_type == 'story' || github.event.inputs.action_type == 'all'
-    name: 📱 FB & IG Story Video Developer
-    runs-on: ubuntu-latest
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: 📦 Install Requirements
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f "sawajstudiobot/video_requirement/requirements.txt" ]; then pip install -r sawajstudiobot/video_requirement/requirements.txt; fi
-      - name: 🚀 Run Story Video Generator
-        run: python sawajstudiobot/video_generator/fb_ig_story_video_generator.py
-
-  # 3. Facebook, Instagram & YouTube Short Video Pipeline
-  run-short-video:
-    if: github.event.inputs.action_type == 'short' || github.event.inputs.action_type == 'all'
-    name: ⚡ FB, IG & YT Short Video Developer
-    runs-on: ubuntu-latest
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: 📦 Install Requirements
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f "sawajstudiobot/video_requirement/requirements.txt" ]; then pip install -r sawajstudiobot/video_requirement/requirements.txt; fi
-      - name: 🚀 Run Short Video Generator
-        run: python sawajstudiobot/video_generator/fb_ig_yt_short_video_generator.py
-
-  # 4. Facebook & YouTube Long Video Pipeline
-  run-long-video:
-    if: github.event.inputs.action_type == 'long' || github.event.inputs.action_type == 'all'
-    name: 🎬 FB & YT Long Video Developer
-    runs-on: ubuntu-latest
-    steps:
-      - name: 📥 Checkout Repository
-        uses: actions/checkout@v4
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: 📦 Install Requirements
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f "sawajstudiobot/video_requirement/requirements.txt" ]; then pip install -r sawajstudiobot/video_requirement/requirements.txt; fi
-      - name: 🚀 Run Long Video Generator
-        run: python sawajstudiobot/video_generator/fb_yt_long_video_generator.py
-
-  # 5. Commit and Push Changes for Code Upgrades
-  commit-changes:
-    if: always() && (github.event.inputs.action_type == 'autonomous_upgrade' || github.event.inputs.action_type == 'all')
-    needs: [autonomous-developer]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Git Config & Push
+      - name: 📤 Commit and Push Upgraded Code
+        if: always()
         run: |
           git config user.name "SawajBot Developer AI"
           git config user.email "ai.dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Autonomous Batch Upgrade: All Files Enhanced — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
+          git commit -m "👑 Strict Autonomous Upgrader: All Files Enhanced without Skipping — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
           git push || echo "Push failed"
