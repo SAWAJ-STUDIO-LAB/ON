@@ -1,0 +1,1 @@
+"""Short generator package."""
