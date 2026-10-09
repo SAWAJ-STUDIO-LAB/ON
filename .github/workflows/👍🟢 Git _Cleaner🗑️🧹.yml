@@ -30,7 +30,7 @@ jobs:
           if [ -z "$RUN_IDS" ]; then
             echo "✅ Repository ekdum clean hai!"
             exit 0
-          }
+          fi
           
           SUCCESS_COUNT=0
           
