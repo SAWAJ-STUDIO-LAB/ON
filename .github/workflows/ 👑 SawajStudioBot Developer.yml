@@ -1,18 +1,31 @@
-name: 👑 SawajStudioBot Autonomous Developer
+name: 👑 Sawaj Studio Ultimate Master System
 
 on:
   workflow_dispatch:
+    inputs:
+      action_type:
+        description: 'Confirm karo: Kya run karna hai?'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - autonomous_upgrade
+          - story
+          - short
+          - long
 
 permissions:
   contents: write
   actions: write
 
 jobs:
-  developer:
-    name: 👑 Autonomous Developer Working
+  # 1. Autonomous Developer Engine (Batch Mode - Poora folder ek sath process hoga)
+  autonomous-developer:
+    if: github.event.inputs.action_type == 'autonomous_upgrade' || github.event.inputs.action_type == 'all'
+    name: 👑 Autonomous Developer Engine (Fast Batch)
     runs-on: ubuntu-latest
     timeout-minutes: 1440
-
     steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
@@ -27,7 +40,7 @@ jobs:
       - name: 📦 Install Requirements
         run: pip install requests
 
-      - name: 👑 Run Autonomous Developer Engine
+      - name: 👑 Run Autonomous Developer (Batch Mode)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -41,15 +54,15 @@ jobs:
           HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
         run: |
           cat << 'EOFPY' > /tmp/dev.py
-          import os, re, ast, json, time, requests
+          import os, re, json, requests
           from datetime import datetime
 
           BOT_ROOT = "sawajstudiobot"
           PROGRESS = "bot update upgrade/_king_progress.json"
           SKIP = ("__pycache__", ".git", "output", "_work", "_backups", "_logs", "venv", "node_modules",
                   "bot update upgrade", "Code editor", "_temp_builder")
-          TIMEOUT = 300
-          AIS = ["Groq", "Gemini", "OpenRouter", "Mistral", "Cerebras", "Cohere", "NVIDIA", "HuggingFace"]
+          TIMEOUT = 600
+          AIS = ["Gemini", "Groq", "OpenRouter", "Mistral", "Cerebras", "NVIDIA"]
 
           def tg(msg, silent=False):
               t = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -69,7 +82,7 @@ jobs:
               return False
 
           def scan():
-              files = []
+              files_data = {}
               folders = {}
               for root, dirs, fnames in os.walk(BOT_ROOT):
                   dirs[:] = [d for d in dirs if not skip(os.path.join(root, d))]
@@ -81,22 +94,15 @@ jobs:
                       if skip(full): continue
                       if fn.endswith(".py"):
                           rel = os.path.relpath(full, BOT_ROOT)
-                          files.append(rel)
+                          try:
+                              with open(full, "r", encoding="utf-8") as f:
+                                  files_data[rel] = f.read()
+                          except:
+                              files_data[rel] = "# Error reading file"
                           parent = os.path.dirname(rel)
                           if parent in folders:
                               folders[parent].append(fn)
-              return sorted(files), folders
-
-          def load_prog():
-              if os.path.exists(PROGRESS):
-                  try:
-                      with open(PROGRESS) as f: return json.load(f)
-                  except: pass
-              return {"upgraded": {}, "new_files": []}
-
-          def save_prog(d):
-              os.makedirs(os.path.dirname(PROGRESS), exist_ok=True)
-              with open(PROGRESS, "w") as f: json.dump(d, f, indent=2)
+              return files_data, folders
 
           def post(url, headers, payload, timeout=TIMEOUT):
               try:
@@ -107,33 +113,31 @@ jobs:
 
           def call_ai(ai, prompt):
               try:
-                  if ai == "Groq":
-                      k = os.environ.get("GROQ_API_KEY", "").strip()
-                      if not k: return None
-                      for m in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
-                          d = post("https://api.groq.com/openai/v1/chat/completions",
-                                   {"Authorization": f"Bearer {k}"},
-                                   {"model": m, "messages": [{"role": "user", "content": prompt}],
-                                    "max_tokens": 8000, "temperature": 0.2})
-                          if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "Gemini":
+                  if ai == "Gemini":
                       k = os.environ.get("GEMINI_API_KEY", "").strip()
                       if not k: return None
                       for m in ["gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"]:
                           d = post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={k}",
                                    {"Content-Type": "application/json"},
                                    {"contents": [{"parts": [{"text": prompt}]}],
-                                    "generationConfig": {"maxOutputTokens": 8000, "temperature": 0.2}})
+                                    "generationConfig": {"maxOutputTokens": 16384, "temperature": 0.2}})
                           if d and "candidates" in d:
                               try: return d["candidates"][0]["content"]["parts"][0]["text"]
                               except: pass
+                  elif ai == "Groq":
+                      k = os.environ.get("GROQ_API_KEY", "").strip()
+                      if not k: return None
+                      d = post("https://api.groq.com/openai/v1/chat/completions",
+                               {"Authorization": f"Bearer {k}"},
+                               {"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": prompt}],
+                                "max_tokens": 8000, "temperature": 0.2})
+                      if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   elif ai == "OpenRouter":
                       k = os.environ.get("OPENROUTER_API_KEY", "").strip()
                       if not k: return None
                       d = post("https://openrouter.ai/api/v1/chat/completions",
                                {"Authorization": f"Bearer {k}"},
-                               {"model": "openai/gpt-4o-mini",
-                                "messages": [{"role": "user", "content": prompt}],
+                               {"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": prompt}],
                                 "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   elif ai == "Mistral":
@@ -141,8 +145,7 @@ jobs:
                       if not k: return None
                       d = post("https://api.mistral.ai/v1/chat/completions",
                                {"Authorization": f"Bearer {k}"},
-                               {"model": "mistral-small-latest",
-                                "messages": [{"role": "user", "content": prompt}],
+                               {"model": "mistral-small-latest", "messages": [{"role": "user", "content": prompt}],
                                 "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
                   elif ai == "Cerebras":
@@ -150,208 +153,179 @@ jobs:
                       if not k: return None
                       d = post("https://api.cerebras.ai/v1/chat/completions",
                                {"Authorization": f"Bearer {k}"},
-                               {"model": "llama-3.3-70b",
-                                "messages": [{"role": "user", "content": prompt}],
+                               {"model": "llama-3.3-70b", "messages": [{"role": "user", "content": prompt}],
                                 "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "Cohere":
-                      k = os.environ.get("COHERE_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://api.cohere.com/v1/chat",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "command-r-plus-08-2024", "message": prompt})
-                      if d and "text" in d: return d["text"]
                   elif ai == "NVIDIA":
                       k = os.environ.get("NVIDIA_API_KEY", "").strip()
                       if not k: return None
-                      d = post("https://integrate.api.nvidia.com/v1/chat/completions",
+                      d = post("https://api.nvidia.com/v1/chat/completions",
                                {"Authorization": f"Bearer {k}"},
-                               {"model": "meta/llama-3.3-70b-instruct",
-                                "messages": [{"role": "user", "content": prompt}],
+                               {"model": "meta/llama-3.3-70b-instruct", "messages": [{"role": "user", "content": prompt}],
                                 "max_tokens": 8000, "temperature": 0.2})
                       if d and "choices" in d: return d["choices"][0]["message"]["content"]
-                  elif ai == "HuggingFace":
-                      k = os.environ.get("HUGGINGFACE_API_KEY", "").strip()
-                      if not k: return None
-                      d = post("https://api-inference.huggingface.co/models/meta-llama/Meta-Llama-3.1-8B-Instruct/v1/chat/completions",
-                               {"Authorization": f"Bearer {k}"},
-                               {"model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-                                "messages": [{"role": "user", "content": prompt}],
-                                "max_tokens": 4000, "temperature": 0.2})
-                      if d and "choices" in d:
-                          try: return d["choices"][0]["message"]["content"]
-                          except: pass
               except Exception as e:
                   print(f"Error calling {ai}: {e}")
               return None
 
-          def build_tree(folders, files):
+          def build_tree(folders):
               lines = [f"{BOT_ROOT}/"]
               for folder in sorted(folders.keys()):
                   depth = folder.count(os.sep)
                   indent = "  " * depth
                   name = os.path.basename(folder)
-                  fcount = len(folders[folder])
-                  lines.append(f"{indent}├── {name}/ ({fcount} files)")
+                  lines.append(f"{indent}├── {name}/")
               return "\n".join(lines)
 
-          def get_siblings(rel, folders):
-              parent = os.path.dirname(rel)
-              return folders.get(parent, [])
-
-          def parse_ai_response(response, current_file_rel):
-              main_code = None
-              main_match = re.search(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END", response, re.DOTALL)
-              if main_match:
-                  main_code = main_match.group(2).strip()
-              else:
-                  code_blocks = re.findall(r"```(?:python)?\n(.*?)\n```", response, re.DOTALL)
-                  if code_blocks: main_code = code_blocks[0].strip()
-
-              new_files = {}
-              new_matches = re.findall(r"═══ NEW FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END", response, re.DOTALL)
-              for path, code in new_matches:
-                  path = path.strip()
-                  code = code.strip()
-                  if path and code and ".." not in path:
-                      new_files[path] = code
-
-              return main_code, new_files
-
-          def upgrade_one(rel, idx, total, folders):
-              full = os.path.join(BOT_ROOT, rel)
-              try:
-                  with open(full, "r", encoding="utf-8") as f:
-                      code = f.read()
-              except Exception:
-                  tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code> — read error")
-                  return False, rel, None, 0
-
-              tree = build_tree(folders, [])
-              parent = os.path.dirname(rel)
-              siblings = get_siblings(rel, folders)
-              siblings_str = ", ".join(siblings[:15])
-              
-              prompt = f"""You are the AUTONOMOUS LEAD DEVELOPER & ARCHITECT for "SawajStudioBot".
-          You fully own this project. You write the code, you control the structure, and you upgrade it to WORLD-CLASS standards.
-
-          1️⃣ PROJECT ARCHITECTURE (FOLDER STRUCTURE):
-          {tree}
-
-          2️⃣ CURRENT TASK:
-          - Current File Location: {rel}
-          - Folder: {parent}/
-          - Siblings in this folder: {siblings_str}
-
-          3️⃣ CRITICAL RULES (STRICTLY FOLLOW - ZERO DELETION POLICY):
-          1. 🚫 DO NOT DELETE ANY EXISTING CODE. You MUST KEEP ALL existing imports, variables, functions, classes, and logic exactly as they are. 
-          2. UPGRADE & ENHANCE: Add robust error handling (try-except), type hints, logging, and professional docstrings. Make the code production-ready.
-          3. 🚫 DO NOT SUMMARIZE. Write the FULL, complete code. Do not write "rest of the code here". You must return the FULL upgraded file code.
-          4. CREATE NEW FILES IF NEEDED: If you want to add new features, utilities, or split code for better architecture, you CAN create new files.
-
-          RETURN FORMAT (EXACT):
-          You must return the updated code for the current file:
-          ═══ FILE: {rel} ═══
-          <full upgraded python code here (old code + your new improvements)>
-          ═══ END ═══
-
-          (Optional) If you want to add NEW files to the project, use this format for each new file:
-          ═══ NEW FILE: folder/path/new_feature.py ═══
-          <new python code here>
-          ═══ END ═══
-
-          CURRENT CODE OF {rel}:
-          {code if code.strip() else "# Empty file - Please generate world-class boilerplate for this file based on its name and location."}
-          """
-
-              start = (idx - 1) % len(AIS)
-              ordered = AIS[start:] + AIS[:start]
-
-              for ai in ordered:
-                  print(f"  [{idx}/{total}] {ai} processing {rel}...")
-                  res = call_ai(ai, prompt)
-                  if not res: continue
-
-                  main_code, new_files = parse_ai_response(res, rel)
-                  if not main_code or len(main_code) < 20: continue
-
-                  if len(code) > 50 and len(main_code) < (len(code) * 0.85):
-                      print(f"  [!] Rejected {ai} output for {rel}: Code shrunk too much. Suspected deletion.")
-                      continue
-
-                  try:
-                      ast.parse(main_code)
-                  except SyntaxError: continue
-
-                  with open(full, "w", encoding="utf-8") as f:
-                      f.write(main_code + "\n")
-
-                  created_count = 0
-                  new_file_msg = ""
-
-                  for nf_path, nf_code in new_files.items():
-                      try:
-                          ast.parse(nf_code)
-                          nf_full = os.path.join(BOT_ROOT, nf_path)
-                          os.makedirs(os.path.dirname(nf_full), exist_ok=True)
-                          with open(nf_full, "w", encoding="utf-8") as f:
-                              f.write(nf_code + "\n")
-                          created_count += 1
-                          new_file_msg += f"\n🆕 Created: <code>{nf_path}</code>"
-                      except: pass
-
-                  msg = f"✅ <b>[{idx}/{total}]</b>\n📄 <code>{rel}</code>\n🤖 {ai}\n📊 Size: {len(code)} → {len(main_code)}"
-                  if created_count > 0:
-                      msg += new_file_msg
-                  tg(msg)
-
-                  return True, rel, ai, created_count
-
-              tg(f"⚠️ <b>[{idx}/{total}]</b> <code>{rel}</code> — All AIs failed or deleted code")
-              return False, rel, None, 0
-
           def main():
-              files, folders = scan()
-              if not files:
+              files_data, folders = scan()
+              if not files_data:
                   tg("⚠️ No files found to process.")
                   return
 
-              tree = build_tree(folders, files)
-              tg(f"👑 <b>AUTONOMOUS DEVELOPER STARTED</b>\n📁 Target Files: <b>{len(files)}</b>\n📂 Folders: <b>{len(folders)}</b>\n\n<b>PROJECT STRUCTURE:</b>\n<pre>{tree[:3500]}</pre>")
+              tree = build_tree(folders)
+              tg(f"👑 <b>BATCH AUTONOMOUS DEVELOPER STARTED</b>\n📁 Total Files Loaded: <b>{len(files_data)}</b>\n\n<b>PROJECT STRUCTURE:</b>\n<pre>{tree[:3000]}</pre>")
 
-              prog = load_prog()
-              files = sorted(files, key=lambda f: prog["upgraded"].get(f, {}).get("time", "0"))
-              total = len(files)
+              # Package all files into a single master prompt context
+              bundled_code = ""
+              for rel_path, code in files_data.items():
+                  bundled_code += f"\n\n═══ FILE: {rel_path} ═══\n{code}\n═══ END FILE ═══"
 
-              ok, fail, total_new = 0, 0, 0
+              prompt = f"""You are the SUPER-INTELLIGENT LEAD ARCHITECT for "SawajStudioBot".
+          You receive the ENTIRE project folder and all its python source code in one go.
+          Your job is to analyze the entire system, upgrade every file to WORLD-CLASS standards, add robust error handling, type hints, and fix any bugs.
 
-              for idx, rel in enumerate(files, 1):
-                  try:
-                      status, r, ai, new_count = upgrade_one(rel, idx, total, folders)
-                      if status:
-                          ok += 1
-                          total_new += new_count
-                          prog["upgraded"][rel] = {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "ai": ai}
-                          if ok % 5 == 0: save_prog(prog)
-                      else:
-                          fail += 1
-                  except Exception as e:
-                      fail += 1
-                      tg(f"❌ <b>[{idx}/{total}]</b> <code>{rel}</code>\n{str(e)[:100]}")
+          CRITICAL RULES:
+          1. 🚫 ZERO DELETION POLICY: Do not delete any existing logic, imports, or functions. Only enhance and expand them.
+          2. 🚫 FULL CODE RETURN: Return the updated code for ALL files using the exact format specified below. Do not omit any file.
+          3. NEW FILES: If needed, you can create new files using the same format.
 
-              save_prog(prog)
-              tg(f"🏁 <b>DEVELOPER COMPLETE</b>\n✅ Upgraded: <b>{ok}</b> files\n🆕 New Files Created: <b>{total_new}</b>\n❌ Failed/Skipped: <b>{fail}</b>\n📁 Total Processed: <b>{total}</b>")
+          PROJECT STRUCTURE:
+          {tree}
+
+          SOURCE CODE OF ALL FILES:
+          {bundled_code}
+
+          RESPONSE FORMAT:
+          For every file you update or create, use this exact wrapper:
+          ═══ FILE: relative/path/to/file.py ═══
+          <complete python code>
+          ═══ END FILE ═══
+          """
+
+              success = False
+              used_ai = None
+              response_text = None
+
+              for ai in AIS:
+                  print(f"Sending entire project bundle to {ai}...")
+                  res = call_ai(ai, prompt)
+                  if res and len(res) > 200:
+                      response_text = res
+                      used_ai = ai
+                      success = True
+                      break
+
+              if not success or not response_text:
+                  tg("❌ Batch AI upgrade failed. All AIs failed to respond.")
+                  return
+
+              # Parse all files from single response
+              matches = re.findall(r"═══ FILE:\s*(.+?)\s*═══\s*\n(.*?)\n\s*═══ END FILE", response_text, re.DOTALL)
+              if not matches:
+                  tg("⚠️ AI response format error: Could not parse files.")
+                  return
+
+              updated_count = 0
+              for path, code in matches:
+                  path = path.strip()
+                  code = code.strip()
+                  if path and code and ".." not in path:
+                      full_path = os.path.join(BOT_ROOT, path)
+                      os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                      try:
+                          with open(full_path, "w", encoding="utf-8") as f:
+                              f.write(code + "\n")
+                          updated_count += 1
+                      except Exception as e:
+                          print(f"Error writing {path}: {e}")
+
+              tg(f"🏁 <b>BATCH DEVELOPER COMPLETE</b>\n🤖 AI Used: <b>{used_ai}</b>\n✅ Successfully Upgraded & Saved: <b>{updated_count}</b> files in a single pass!")
 
           if __name__ == "__main__":
               main()
           EOFPY
           python /tmp/dev.py
 
-      - name: 📤 Commit and Push Changes
-        if: always()
+  # 2. Facebook & Instagram Story Video Pipeline
+  run-story-video:
+    if: github.event.inputs.action_type == 'story' || github.event.inputs.action_type == 'all'
+    name: 📱 FB & IG Story Video Developer
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 📦 Install Requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "sawajstudiobot/video_requirement/requirements.txt" ]; then pip install -r sawajstudiobot/video_requirement/requirements.txt; fi
+      - name: 🚀 Run Story Video Generator
+        run: python sawajstudiobot/video_generator/fb_ig_story_video_generator.py
+
+  # 3. Facebook, Instagram & YouTube Short Video Pipeline
+  run-short-video:
+    if: github.event.inputs.action_type == 'short' || github.event.inputs.action_type == 'all'
+    name: ⚡ FB, IG & YT Short Video Developer
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 📦 Install Requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "sawajstudiobot/video_requirement/requirements.txt" ]; then pip install -r sawajstudiobot/video_requirement/requirements.txt; fi
+      - name: 🚀 Run Short Video Generator
+        run: python sawajstudiobot/video_generator/fb_ig_yt_short_video_generator.py
+
+  # 4. Facebook & YouTube Long Video Pipeline
+  run-long-video:
+    if: github.event.inputs.action_type == 'long' || github.event.inputs.action_type == 'all'
+    name: 🎬 FB & YT Long Video Developer
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 📦 Install Requirements
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "sawajstudiobot/video_requirement/requirements.txt" ]; then pip install -r sawajstudiobot/video_requirement/requirements.txt; fi
+      - name: 🚀 Run Long Video Generator
+        run: python sawajstudiobot/video_generator/fb_yt_long_video_generator.py
+
+  # 5. Commit and Push Changes for Code Upgrades
+  commit-changes:
+    if: always() && (github.event.inputs.action_type == 'autonomous_upgrade' || github.event.inputs.action_type == 'all')
+    needs: [autonomous-developer]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Git Config & Push
         run: |
           git config user.name "SawajBot Developer AI"
           git config user.email "ai.dev@sawajstudio.com"
           git add -A
-          git commit -m "👑 Autonomous Developer Upgrade: 100% Code Preserved & Enhanced — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
+          git commit -m "👑 Autonomous Batch Upgrade: All Files Enhanced — $(date -u '+%Y-%m-%d %H:%M UTC')" || echo "No changes to commit"
           git push || echo "Push failed"
