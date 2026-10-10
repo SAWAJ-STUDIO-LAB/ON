@@ -38,6 +38,8 @@ jobs:
           MISTRAL_API_KEY_AI:    ${{ secrets.MISTRAL_API_KEY_AI }}
           CEREBRAS_API_KEY_AI:   ${{ secrets.CEREBRAS_API_KEY_AI }}
           GEMINI_API_KEY_AI:     ${{ secrets.GEMINI_API_KEY_AI }}
+          TELEGRAM_BOT_TOKEN:    ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:      ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python3 - << 'PYEOF'
           import os, re, sys, time, shutil
@@ -123,13 +125,37 @@ jobs:
           def log(msg: str):
               print(msg, flush=True)
 
+          def send_telegram(message: str):
+              token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+              chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+              if not token or not chat_id:
+                  log("⚠️  Telegram credentials missing — skipping notification")
+                  return
+              try:
+                  url = f"https://api.telegram.org/bot{token}/sendMessage"
+                  payload = {
+                      "chat_id": chat_id,
+                      "text": message,
+                      "parse_mode": "HTML",
+                      "disable_web_page_preview": True,
+                  }
+                  r = requests.post(url, json=payload, timeout=15)
+                  if r.status_code == 200:
+                      log("📲 Telegram report sent successfully")
+                  else:
+                      log(f"⚠️  Telegram failed: {r.text}")
+              except Exception as e:
+                  log(f"⚠️  Telegram error: {e}")
+
           def is_sensitive(rel: str) -> bool:
               return any(re.search(p, rel.lower()) for p in SENSITIVE)
 
           def is_code(p: Path) -> bool:
               return p.name in SPECIAL or p.suffix.lower() in CODE_EXT
 
+          # -------------------------------------------------
           # 1. Collect files
+          # -------------------------------------------------
           files = {}
           total = 0
           stop = False
@@ -176,10 +202,14 @@ jobs:
           log(f"📂 Collected {len(files)} files ({total/1024:.1f} KB)")
 
           if not files:
+              msg = "❌ <b>All-AI Fixer</b>\n\nNo suitable files found to process."
+              send_telegram(msg)
               log("❌ No suitable files found.")
               sys.exit(1)
 
+          # -------------------------------------------------
           # 2. Prompt
+          # -------------------------------------------------
           system = (
               "You are a senior software architect fixing bugs in a full project.\n\n"
               "STRICT OUTPUT RULES:\n"
@@ -199,7 +229,9 @@ jobs:
           body = "\n".join(f"--- FILE: {k} ---\n{v}\n" for k, v in files.items())
           user = "Full project codebase below:\n\n" + body
 
+          # -------------------------------------------------
           # 3. Call providers
+          # -------------------------------------------------
           def call_openai(provider, key):
               r = requests.post(
                   provider["url"],
@@ -259,14 +291,28 @@ jobs:
                   log(f"❌ {p['name']} failed: {e}")
 
           if not resp:
+              msg = (
+                  "❌ <b>All-AI Fixer Failed</b>\n\n"
+                  "All AI providers failed.\n"
+                  f"Branch: <code>{os.environ.get('GITHUB_REF_NAME', 'unknown')}</code>"
+              )
+              send_telegram(msg)
               log("❌ All AI providers failed.")
               sys.exit(1)
 
-          # 4. Parse
+          # -------------------------------------------------
+          # 4. Parse response
+          # -------------------------------------------------
           markers = list(FILE_RE.finditer(resp))
           skips = {m.group(1).strip() for m in SKIP_RE.finditer(resp)}
 
           if not markers and not skips:
+              msg = (
+                  "❌ <b>All-AI Fixer Failed</b>\n\n"
+                  f"Provider: <b>{used_provider}</b>\n"
+                  "No FILE/SKIP markers found in response."
+              )
+              send_telegram(msg)
               log("❌ No FILE/SKIP markers found. Aborting.")
               sys.exit(2)
 
@@ -288,31 +334,41 @@ jobs:
 
               returned[rel] = chunk.strip("\n").rstrip()
 
+          # -------------------------------------------------
           # 5. Validate
+          # -------------------------------------------------
           sent = set(files)
           got = set(returned) | skips
           missing = sent - got
 
           if missing:
-              log(f"❌ Missing {len(missing)} files in response:")
-              for f in sorted(missing)[:12]:
-                  log(f"   - {f}")
-              log("Aborting — no writes.")
+              msg = (
+                  "❌ <b>All-AI Fixer Failed</b>\n\n"
+                  f"Provider: <b>{used_provider}</b>\n"
+                  f"Missing {len(missing)} files in response."
+              )
+              send_telegram(msg)
+              log(f"❌ Missing {len(missing)} files. Aborting.")
               sys.exit(2)
 
           for rel, code in returned.items():
               if rel not in sent:
-                  log(f"❌ Unexpected file: {rel}")
+                  msg = f"❌ Unexpected file returned: {rel}"
+                  send_telegram(msg)
                   sys.exit(2)
               if not code.strip():
-                  log(f"❌ Empty content for {rel}")
+                  msg = f"❌ Empty content for {rel}"
+                  send_telegram(msg)
                   sys.exit(2)
               orig = files[rel]
               if len(orig) > 400 and len(code) < len(orig) * 0.10:
-                  log(f"❌ Truncated: {rel}")
+                  msg = f"❌ Truncated file: {rel}"
+                  send_telegram(msg)
                   sys.exit(2)
 
+          # -------------------------------------------------
           # 6. Backup
+          # -------------------------------------------------
           backup_dir = ROOT / ".ai_backup"
           if backup_dir.exists():
               shutil.rmtree(backup_dir)
@@ -325,8 +381,10 @@ jobs:
 
           log(f"💾 Backup created → .ai_backup/")
 
-          # 7. Apply
-          changed = 0
+          # -------------------------------------------------
+          # 7. Apply changes
+          # -------------------------------------------------
+          changed_files = []
           for rel, code in returned.items():
               if code == files[rel]:
                   continue
@@ -334,15 +392,46 @@ jobs:
               path.parent.mkdir(parents=True, exist_ok=True)
               path.write_text(code, encoding="utf-8")
               log(f"✏️  Updated: {rel}")
-              changed += 1
+              changed_files.append(rel)
 
+          changed = len(changed_files)
           log(f"✨ {changed} file(s) updated by {used_provider}")
 
+          # -------------------------------------------------
+          # 8. Telegram Report
+          # -------------------------------------------------
+          branch = os.environ.get("GITHUB_REF_NAME", "unknown")
+
           if changed == 0:
-              log("🎉 No changes needed.")
+              report = (
+                  f"✅ <b>All-AI Fixer Report</b>\n\n"
+                  f"🔹 <b>Provider:</b> {used_provider}\n"
+                  f"🔹 <b>Branch:</b> <code>{branch}</code>\n"
+                  f"🔹 <b>Status:</b> No changes needed\n"
+                  f"🔹 <b>Files scanned:</b> {len(files)}"
+              )
+              if skips:
+                  report += f"\n🔹 <b>Skipped:</b> {len(skips)} file(s)"
               (ROOT / ".ai_changed").write_text("0")
           else:
+              files_list = "\n".join([f"• <code>{f}</code>" for f in changed_files[:25]])
+              if len(changed_files) > 25:
+                  files_list += f"\n... +{len(changed_files)-25} more"
+
+              report = (
+                  f"✅ <b>All-AI Fixer Report</b>\n\n"
+                  f"🔹 <b>Provider:</b> {used_provider}\n"
+                  f"🔹 <b>Branch:</b> <code>{branch}</code>\n"
+                  f"🔹 <b>Files Updated:</b> {changed}\n"
+                  f"🔹 <b>Files Scanned:</b> {len(files)}\n\n"
+                  f"<b>Updated Files:</b>\n{files_list}"
+              )
+              if skips:
+                  report += f"\n\n🔹 <b>Skipped:</b> {len(skips)} file(s)"
+
               (ROOT / ".ai_changed").write_text(str(changed))
+
+          send_telegram(report)
 
           PYEOF
 
