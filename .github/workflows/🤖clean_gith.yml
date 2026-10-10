@@ -5,7 +5,7 @@
 # ⚡ TRIGGER:   Manual only
 # ============================================================
 
-name: "🤖🧹cle_git.yml"
+name: "🤖🧹clene_git.yml"
 
 on:
   workflow_dispatch:
