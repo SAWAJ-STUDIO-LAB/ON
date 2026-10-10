@@ -1,4 +1,4 @@
-name: 🤖👍Send_repo📁🔒
+name: 🤖Send_repo TG
 
 on:
   workflow_dispatch:
