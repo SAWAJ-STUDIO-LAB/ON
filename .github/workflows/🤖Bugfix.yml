@@ -78,8 +78,8 @@ jobs:
 
           SPECIAL = {"Dockerfile", "Makefile", "Procfile", "Gemfile"}
 
-          MAX_FILE = 200 * 1024
-          MAX_TOTAL = 600 * 1024
+          MAX_FILE = 120 * 1024
+          MAX_TOTAL = 280 * 1024   # Reduced for reliability
 
           FILE_RE = re.compile(r"^---\s*FILE:\s*(.+?)\s*---\s*$", re.MULTILINE)
           SKIP_RE = re.compile(r"^---\s*SKIP:\s*(.+?)\s*---\s*$", re.MULTILINE)
@@ -89,15 +89,22 @@ jobs:
                   "name": "Groq",
                   "env": "GROQ_API_KEY_AI",
                   "url": "https://api.groq.com/openai/v1/chat/completions",
-                  "model": "llama-3.3-70b-versatile",
+                  "model": "llama-3.1-8b-instant",
                   "kind": "openai",
               },
               {
-                  "name": "OpenRouter",
-                  "env": "OPENROUTER_API_KEY_AI",
-                  "url": "https://openrouter.ai/api/v1/chat/completions",
-                  "model": "openai/gpt-4o-mini",
+                  "name": "Cerebras",
+                  "env": "CEREBRAS_API_KEY_AI",
+                  "url": "https://api.cerebras.ai/v1/chat/completions",
+                  "model": "qwen-3.8-27b",
                   "kind": "openai",
+              },
+              {
+                  "name": "Gemini",
+                  "env": "GEMINI_API_KEY_AI",
+                  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+                  "model": "gemini-2.5-flash",
+                  "kind": "gemini",
               },
               {
                   "name": "Mistral",
@@ -107,18 +114,11 @@ jobs:
                   "kind": "openai",
               },
               {
-                  "name": "Cerebras",
-                  "env": "CEREBRAS_API_KEY_AI",
-                  "url": "https://api.cerebras.ai/v1/chat/completions",
-                  "model": "llama3.1-8b",
+                  "name": "OpenRouter",
+                  "env": "OPENROUTER_API_KEY_AI",
+                  "url": "https://openrouter.ai/api/v1/chat/completions",
+                  "model": "openai/gpt-4o-mini",
                   "kind": "openai",
-              },
-              {
-                  "name": "Gemini",
-                  "env": "GEMINI_API_KEY_AI",
-                  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
-                  "model": "gemini-2.0-flash",
-                  "kind": "gemini",
               },
           ]
 
@@ -129,7 +129,7 @@ jobs:
               token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
               chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
               if not token or not chat_id:
-                  log("⚠️  Telegram credentials missing — skipping notification")
+                  log("⚠️  Telegram credentials missing")
                   return
               try:
                   url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -141,7 +141,7 @@ jobs:
                   }
                   r = requests.post(url, json=payload, timeout=15)
                   if r.status_code == 200:
-                      log("📲 Telegram report sent successfully")
+                      log("📲 Telegram report sent")
                   else:
                       log(f"⚠️  Telegram failed: {r.text}")
               except Exception as e:
@@ -153,9 +153,7 @@ jobs:
           def is_code(p: Path) -> bool:
               return p.name in SPECIAL or p.suffix.lower() in CODE_EXT
 
-          # -------------------------------------------------
           # 1. Collect files
-          # -------------------------------------------------
           files = {}
           total = 0
           stop = False
@@ -202,14 +200,10 @@ jobs:
           log(f"📂 Collected {len(files)} files ({total/1024:.1f} KB)")
 
           if not files:
-              msg = "❌ <b>All-AI Fixer</b>\n\nNo suitable files found to process."
-              send_telegram(msg)
-              log("❌ No suitable files found.")
+              send_telegram("❌ <b>All-AI Fixer</b>\n\nNo suitable files found.")
               sys.exit(1)
 
-          # -------------------------------------------------
           # 2. Prompt
-          # -------------------------------------------------
           system = (
               "You are a senior software architect fixing bugs in a full project.\n\n"
               "STRICT OUTPUT RULES:\n"
@@ -229,9 +223,7 @@ jobs:
           body = "\n".join(f"--- FILE: {k} ---\n{v}\n" for k, v in files.items())
           user = "Full project codebase below:\n\n" + body
 
-          # -------------------------------------------------
           # 3. Call providers
-          # -------------------------------------------------
           def call_openai(provider, key):
               r = requests.post(
                   provider["url"],
@@ -247,7 +239,7 @@ jobs:
                           {"role": "user", "content": user},
                       ],
                       "temperature": 0.05,
-                      "max_tokens": 16000,
+                      "max_tokens": 12000,
                       "stream": False,
                   },
               )
@@ -263,7 +255,7 @@ jobs:
                       "contents": [{"role": "user", "parts": [{"text": user}]}],
                       "generationConfig": {
                           "temperature": 0.05,
-                          "maxOutputTokens": 16000,
+                          "maxOutputTokens": 12000,
                       },
                   },
               )
@@ -278,7 +270,7 @@ jobs:
               if not key:
                   continue
               try:
-                  log(f"🤖 Trying {p['name']}...")
+                  log(f"🤖 Trying {p['name']} ({p['model']})...")
                   t0 = time.time()
                   if p["kind"] == "gemini":
                       resp = call_gemini(p, key)
@@ -291,29 +283,20 @@ jobs:
                   log(f"❌ {p['name']} failed: {e}")
 
           if not resp:
-              msg = (
+              send_telegram(
                   "❌ <b>All-AI Fixer Failed</b>\n\n"
                   "All AI providers failed.\n"
-                  f"Branch: <code>{os.environ.get('GITHUB_REF_NAME', 'unknown')}</code>"
+                  "Check API keys & credits."
               )
-              send_telegram(msg)
               log("❌ All AI providers failed.")
               sys.exit(1)
 
-          # -------------------------------------------------
-          # 4. Parse response
-          # -------------------------------------------------
+          # 4. Parse
           markers = list(FILE_RE.finditer(resp))
           skips = {m.group(1).strip() for m in SKIP_RE.finditer(resp)}
 
           if not markers and not skips:
-              msg = (
-                  "❌ <b>All-AI Fixer Failed</b>\n\n"
-                  f"Provider: <b>{used_provider}</b>\n"
-                  "No FILE/SKIP markers found in response."
-              )
-              send_telegram(msg)
-              log("❌ No FILE/SKIP markers found. Aborting.")
+              send_telegram(f"❌ <b>All-AI Fixer</b>\n\nProvider: {used_provider}\nNo FILE markers found.")
               sys.exit(2)
 
           returned = {}
@@ -334,41 +317,26 @@ jobs:
 
               returned[rel] = chunk.strip("\n").rstrip()
 
-          # -------------------------------------------------
           # 5. Validate
-          # -------------------------------------------------
           sent = set(files)
           got = set(returned) | skips
           missing = sent - got
 
           if missing:
-              msg = (
-                  "❌ <b>All-AI Fixer Failed</b>\n\n"
-                  f"Provider: <b>{used_provider}</b>\n"
-                  f"Missing {len(missing)} files in response."
-              )
-              send_telegram(msg)
-              log(f"❌ Missing {len(missing)} files. Aborting.")
+              send_telegram(f"❌ <b>All-AI Fixer</b>\n\nProvider: {used_provider}\nMissing {len(missing)} files.")
+              log(f"❌ Missing {len(missing)} files.")
               sys.exit(2)
 
           for rel, code in returned.items():
-              if rel not in sent:
-                  msg = f"❌ Unexpected file returned: {rel}"
-                  send_telegram(msg)
-                  sys.exit(2)
-              if not code.strip():
-                  msg = f"❌ Empty content for {rel}"
-                  send_telegram(msg)
+              if rel not in sent or not code.strip():
+                  send_telegram(f"❌ Invalid response for {rel}")
                   sys.exit(2)
               orig = files[rel]
               if len(orig) > 400 and len(code) < len(orig) * 0.10:
-                  msg = f"❌ Truncated file: {rel}"
-                  send_telegram(msg)
+                  send_telegram(f"❌ Truncated: {rel}")
                   sys.exit(2)
 
-          # -------------------------------------------------
           # 6. Backup
-          # -------------------------------------------------
           backup_dir = ROOT / ".ai_backup"
           if backup_dir.exists():
               shutil.rmtree(backup_dir)
@@ -379,11 +347,9 @@ jobs:
               dest.parent.mkdir(parents=True, exist_ok=True)
               dest.write_text(content, encoding="utf-8")
 
-          log(f"💾 Backup created → .ai_backup/")
+          log("💾 Backup created")
 
-          # -------------------------------------------------
-          # 7. Apply changes
-          # -------------------------------------------------
+          # 7. Apply
           changed_files = []
           for rel, code in returned.items():
               if code == files[rel]:
@@ -397,9 +363,7 @@ jobs:
           changed = len(changed_files)
           log(f"✨ {changed} file(s) updated by {used_provider}")
 
-          # -------------------------------------------------
           # 8. Telegram Report
-          # -------------------------------------------------
           branch = os.environ.get("GITHUB_REF_NAME", "unknown")
 
           if changed == 0:
@@ -410,13 +374,11 @@ jobs:
                   f"🔹 <b>Status:</b> No changes needed\n"
                   f"🔹 <b>Files scanned:</b> {len(files)}"
               )
-              if skips:
-                  report += f"\n🔹 <b>Skipped:</b> {len(skips)} file(s)"
               (ROOT / ".ai_changed").write_text("0")
           else:
-              files_list = "\n".join([f"• <code>{f}</code>" for f in changed_files[:25]])
-              if len(changed_files) > 25:
-                  files_list += f"\n... +{len(changed_files)-25} more"
+              files_list = "\n".join([f"• <code>{f}</code>" for f in changed_files[:20]])
+              if len(changed_files) > 20:
+                  files_list += f"\n... +{len(changed_files)-20} more"
 
               report = (
                   f"✅ <b>All-AI Fixer Report</b>\n\n"
@@ -426,9 +388,6 @@ jobs:
                   f"🔹 <b>Files Scanned:</b> {len(files)}\n\n"
                   f"<b>Updated Files:</b>\n{files_list}"
               )
-              if skips:
-                  report += f"\n\n🔹 <b>Skipped:</b> {len(skips)} file(s)"
-
               (ROOT / ".ai_changed").write_text(str(changed))
 
           send_telegram(report)
