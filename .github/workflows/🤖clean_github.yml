@@ -1,0 +1,98 @@
+# ============================================================
+# 📄 FILE:      clean_github.yml
+# 📁 PATH:      .github/workflows/clean_github.yml
+# 🎯 PURPOSE:   Permanent Deep Clean (Caches + Runs + Artifacts)
+# ⚡ TRIGGER:   Manual only
+# ============================================================
+
+name: "🤖🧹cle_git.yml"
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '✅ Tick karo — Sab kuch jad se khatm karne ke liye'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  deep-clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔍 Verify Tick Mark
+        run: |
+          if [ "${{ inputs.confirm }}" != "true" ]; then
+            echo "❌ Tick mark nahi lagaya — workflow cancel!"
+            exit 1
+          fi
+          echo "✅ Confirmed: Permanent deep clean shuru ho raha hai..."
+
+      - name: 🔧 Install GitHub CLI
+        run: |
+          type -p gh || (
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
+            sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg && \
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
+            sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
+            sudo apt-get update && \
+            sudo apt-get install gh -y
+          )
+
+      - name: 🔥 Purge All Caches
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧹 Purging all caches..."
+          gh cache delete --all --repo ${{ github.repository }} || true
+          echo "✅ Caches completely wiped."
+
+      - name: 🔥 Purge All Workflow Runs
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧹 Purging all workflow runs history..."
+          runs=$(gh api repos/${{ github.repository }}/actions/runs --paginate -q '.workflow_runs[].id')
+          count=0
+          for run_id in $runs; do
+            if gh api -X DELETE repos/${{ github.repository }}/actions/runs/$run_id 2>/dev/null; then
+              count=$((count + 1))
+            fi
+          done
+          echo "✅ Total runs permanently deleted: $count"
+
+      - name: 🔥 Purge All Artifacts
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧹 Purging all stored artifacts..."
+          artifacts=$(gh api repos/${{ github.repository }}/actions/artifacts --paginate -q '.artifacts[].id')
+          art_count=0
+          for art_id in $artifacts; do
+            if gh api -X DELETE repos/${{ github.repository }}/actions/artifacts/$art_id 2>/dev/null; then
+              art_count=$((art_count + 1))
+            fi
+          done
+          echo "✅ Total artifacts permanently deleted: $art_count"
+
+      - name: 📋 Final Deep Clean Summary
+        if: always()
+        run: |
+          echo "============================================"
+          echo "🔥 ULTIMATE DEEP CLEAN COMPLETED SUCCESSFULLY"
+          echo "============================================"
+          echo "✓ All Caches -> Eradicated"
+          echo "✓ All Workflow Runs -> Wiped out completely"
+          echo "✓ All Artifacts -> Deleted from roots"
+          echo "GitHub storage is now fully clean!"
+          echo "============================================"
