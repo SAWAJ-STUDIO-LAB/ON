@@ -1,0 +1,81 @@
+name: 🔄 Delayed Auto Send Changes to Telegram
+
+on:
+  push:
+    branches:
+      - main  # Ya aapka jo bhi default branch naam ho (jaise main/master)
+
+jobs:
+  notify-changes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Wait for final changes to settle (2 Minutes Delay)
+        run: |
+          echo "Changes detected! Waiting for 2 minutes to ensure everything is final..."
+          sleep 120
+          echo "Wait over. Generating final update report..."
+
+      - name: Generate Detailed Change Log & Combined File
+        run: |
+          python3 - << 'EOF'
+          import os
+          import subprocess
+
+          output_file = "repo_changes_summary.txt"
+
+          def get_git_changes():
+              try:
+                  commit_msg = subprocess.check_output(["git", "log", "-1", "--pretty=format:%s (%an)"]).decode('utf-8')
+                  changed_files = subprocess.check_output(["git", "diff-tree", "--no-commit-id", "--name-status", "-r", "HEAD"]).decode('utf-8')
+                  return commit_msg, changed_files
+              except Exception as e:
+                  return "Error fetching git log", str(e)
+
+          commit_msg, changed_files = get_git_changes()
+
+          with open(output_file, "w", encoding="utf-8") as outfile:
+              outfile.write("================================================================================\n")
+              outfile.write("         SAWAJ STUDIO BOT - FINALIZED REPOSITORY UPDATE REPORT          \n")
+              outfile.write("================================================================================\n\n")
+              outfile.write(f"📌 COMMIT MESSAGE: {commit_msg}\n\n")
+              outfile.write("📝 CHANGED FILES & STATUS:\n")
+              outfile.write("--------------------------------------------------------------------------------\n")
+              outfile.write("(A = Added, M = Modified, D = Deleted)\n\n")
+              outfile.write(changed_files if changed_files else "No specific file changes detected.\n")
+              outfile.write("\n" + "="*80 + "\n\n")
+
+          print("Change log generated successfully!")
+          EOF
+
+      - name: Send Detailed Summary to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] \vert{}\vert{} [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets missing!"
+            exit 0
+          fi
+
+          COMMIT_MSG=$(git log -1 --pretty=format:"%s")
+          CHANGED_LIST=$(git diff-tree --no-commit-id --name-status -r HEAD)
+
+          CAPTION="✅ *FINALIZED CHANGES REPORT* ✅
+          
+          📝 *Commit:* $COMMIT_MSG
+          
+          📁 *Changed Files:*
+          \`\`\`
+          $CHANGED_LIST
+          \`\`\`"
+
+          curl -s -F chat_id="$TELEGRAM_CHAT_ID" \
+               -F document=@repo_changes_summary.txt \
+               -F parse_mode="Markdown" \
+               -F caption="$CAPTION" \
+               https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument
