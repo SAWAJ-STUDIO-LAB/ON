@@ -1,7 +1,0 @@
-"""Long Video Pipeline
-Yahan long video ka pura code aayega.
-Abhi placeholder hai.
-"""
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-print("Long pipeline placeholder")
