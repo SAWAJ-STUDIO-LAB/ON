@@ -1,4 +1,4 @@
-"""
+"""""
 SawajStudioBot Main Package
 Automated Islamic Video Generation & Social Media Automation Engine.
 """
