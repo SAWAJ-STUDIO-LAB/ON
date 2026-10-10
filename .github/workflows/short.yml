@@ -1,0 +1,105 @@
+name: 🎬 FB+IG+YT Short Video
+
+on:
+  schedule:
+    # 6:00 AM IST → Short Video
+    - cron: '30 0 * * *'
+    # 12:00 PM IST → Short Video
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run Mode चुनें'
+        required: true
+        default: 'Full Test (Google Drive Only)'
+        type: choice
+        options:
+          - 'Full Test (Google Drive Only)'
+          - 'Normal Run (All Platforms)'
+
+jobs:
+  generate-short-video:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 🔧 Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-noto fonts-noto-cjk fonts-noto-color-emoji
+
+      - name: 📦 Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r sawajstudiobot/video_requirement/requirements.txt
+
+      - name: 🚀 Run Short Pipeline
+        env:
+          # ───── Telegram ─────
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          # ───── Facebook ─────
+          FACEBOOK_META_TOKEN: ${{ secrets.FACEBOOK_META_TOKEN }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+
+          # ───── Instagram ─────
+          FACEBOOK_INSTAGRAM_META_TOKEN: ${{ secrets.FACEBOOK_INSTAGRAM_META_TOKEN }}
+          INSTAGRAM_BUSINESS_ACCOUNT_ID: ${{ secrets.INSTAGRAM_BUSINESS_ACCOUNT_ID }}
+
+          # ───── YouTube ─────
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          DAILY_HADEES_YT_PLAYLIST_ID: ${{ secrets.DAILY_HADEES_YT_PLAYLIST_ID }}
+
+          # ───── Google Drive ─────
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          GDRIVE_SHORT_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_SHORT_VIDEO_FOLDER_ID }}
+
+          # ───── AI Providers ─────
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY_AI }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY_AI }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_AI }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY_AI }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY_AI }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY_AI }}
+          HUGGINGFACE_API_KEY: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
+
+          # ───── TTS / Translation ─────
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+
+          # ───── Media APIs ─────
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+
+          # ───── Hadith ─────
+          HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
+
+          # ───── Runtime ─────
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          UPLOAD_MODE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.test_mode == 'Full Test (Google Drive Only)') && 'offline' || 'online' }}
+          UPLOAD_CONFIRMED: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.test_mode == 'Full Test (Google Drive Only)') && 'false' || 'true' }}
+        run: |
+          cd sawajstudiobot/video_generator/fb_ig_yt_short_video_generator
+          python3 G_entry/G2_run.py
+
+      - name: 📤 Upload Output (Optional Backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: short-video-output
+          path: sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/output/final/
+          retention-days: 3
+          if-no-files-found: ignore
