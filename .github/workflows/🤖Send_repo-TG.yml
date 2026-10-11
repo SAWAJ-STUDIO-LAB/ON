@@ -1,4 +1,4 @@
-name: 🤖Send_repo TG
+Name: 🤖Send_repo TG
 
 on:
   workflow_dispatch:
@@ -7,8 +7,10 @@ jobs:
   bundle-and-send:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Latest Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # Sirf latest commit fetch karega
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,10 +25,14 @@ jobs:
 
           output_file = "all_code_combined.txt"
 
-          IGNORE_DIRS = {".git", "__pycache__", "node_modules", "venv", "env"}
-          IGNORE_FILES = {output_file}
+          # Clean up existing output file if present
+          if os.path.exists(output_file):
+              os.remove(output_file)
 
-          # 1. Folder Tree View Generator
+          IGNORE_DIRS = {".git", "__pycache__", "node_modules", "venv", "env", ".pytest_cache", ".idea", ".vscode"}
+          IGNORE_FILES = {output_file, ".DS_Store"}
+
+          # 1. Folder Tree View Generator (Sirf current files ke liye)
           def build_tree(start_dir="."):
               lines = ["📂 REPOSITORY FOLDER STRUCTURE", "==================================================", "."]
               
@@ -70,7 +76,7 @@ jobs:
               except UnicodeDecodeError:
                   return True
 
-          # 3. Collect All Files
+          # 3. Collect All Current Files
           all_files = []
           for root, dirs, files in os.walk("."):
               dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not (d.startswith(".") and d != ".github")]
@@ -99,7 +105,6 @@ jobs:
                   outfile.write("─"*80 + "\n\n")
                   
                   if is_binary_file(filepath):
-                      # Photo/Image/Binary ko Base64 banakar include karega
                       try:
                           with open(filepath, "rb") as bfile:
                               encoded = base64.b64encode(bfile.read()).decode('utf-8')
@@ -109,7 +114,6 @@ jobs:
                       except Exception as e:
                           outfile.write(f"# [Error reading binary file]: {e}\n\n")
                   else:
-                      # Normal Code/Text/YML files
                       try:
                           with open(filepath, "r", encoding="utf-8", errors="ignore") as infile:
                               outfile.write(infile.read())
@@ -133,5 +137,5 @@ jobs:
 
           curl -s -F chat_id="$TELEGRAM_CHAT_ID" \
                -F document=@all_code_combined.txt \
-               -F caption="📦 Complete Repository Note (Code + Workflows + Embedded Photos) Delivered!" \
+               -F caption="📦 Updated Repository Note (Latest Code + Structure) Delivered!" \
                https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument
