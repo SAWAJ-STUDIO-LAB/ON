@@ -1,4 +1,4 @@
-name: 🤖 All-AI Project Auto Fixer
+name: 🤖 All-AI Project Auto Fixer F
 
 on:
   workflow_dispatch:
