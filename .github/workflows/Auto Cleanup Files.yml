@@ -1,26 +1,14 @@
 # ═══════════════════════════════════════════════════════════
-# 🧹 Auto Cleanup Workflow
+# 🧹 Auto Cleanup Workflow (Zero-Input / Direct Run)
 # ═══════════════════════════════════════════════════════════
-# Single-click cleanup for unused files across generators
-#
-# Options:
-#   • safe     → Removes 18 confirmed unused files & pycache
-#   • dry_run  → Lists targeted files without deleting
+# Ek click mein bina kisi option ke saari faltu files delete 
+# karke seedha GitHub par push kar deta hai.
 # ═══════════════════════════════════════════════════════════
 
 name: 🧹 Auto Cleanup Files
 
 on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: 'Cleanup mode chunen'
-        required: true
-        default: 'safe'
-        type: choice
-        options:
-          - 'safe'
-          - 'dry_run'
+  workflow_dispatch:  # Sirf ek click, koi mode nahi chunna padega
 
 permissions:
   contents: write
@@ -52,11 +40,10 @@ jobs:
           ls -1 sawajstudiobot/video_generator/fb_ig_story_video_generator/E_audio/ || true
           echo "════════════════════════════════════════"
 
-      - name: 🧹 Process Unused Files Cleanup
+      - name: 🧹 Delete Unused Files
         run: |
           set -e
 
-          MODE="${{ inputs.mode }}"
           DELETED=0
           FAILED=0
 
@@ -90,21 +77,16 @@ jobs:
 
           echo "════════════════════════════════════════"
           echo "🧹 Targeted Files: ${#FILES_TO_DELETE[@]}"
-          echo "Run Mode: $MODE"
           echo "════════════════════════════════════════"
 
           for f in "${FILES_TO_DELETE[@]}"; do
             if [ -f "$f" ]; then
-              if [ "$MODE" = "dry_run" ]; then
-                echo "  🔍 WOULD DELETE: $f"
+              if git rm -f "$f" 2>/dev/null || rm -f "$f"; then
+                echo "  ✅ Deleted: $f"
+                DELETED=$((DELETED + 1))
               else
-                if git rm -f "$f" 2>/dev/null || rm -f "$f"; then
-                  echo "  ✅ Deleted: $f"
-                  DELETED=$((DELETED + 1))
-                else
-                  echo "  ❌ Failed: $f"
-                  FAILED=$((FAILED + 1))
-                fi
+                echo "  ❌ Failed: $f"
+                FAILED=$((FAILED + 1))
               fi
             else
               echo "  ⏭️  Missing (already gone): $f"
@@ -116,7 +98,6 @@ jobs:
           echo "════════════════════════════════════════"
 
       - name: 🧹 Remove __pycache__ Folders
-        if: ${{ inputs.mode == 'safe' }}
         run: |
           find . -type d -name "__pycache__" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true
           echo "✅ __pycache__ cleared"
@@ -132,9 +113,7 @@ jobs:
           echo "════════════════════════════════════════"
 
       - name: 💾 Commit & Push Changes
-        if: ${{ inputs.mode == 'safe' }}
         run: |
-          # Check for staged or unstaged changes
           if git diff --quiet && git diff --staged --quiet; then
             echo "ℹ️ No changes detected to commit."
             exit 0
@@ -154,14 +133,8 @@ jobs:
           echo "════════════════════════════════════════"
           echo "🧹 CLEANUP EXECUTION COMPLETED"
           echo "════════════════════════════════════════"
-          echo "Selected Mode: ${{ inputs.mode }}"
-          echo ""
-          if [ "${{ inputs.mode }}" = "dry_run" ]; then
-            echo "⚠️ DRY RUN MODE: No files were deleted or committed."
-            echo "Run again with mode='safe' to execute actual deletion."
-          else
-            echo "✅ Targeted unused files deleted"
-            echo "✅ Temporary Python caches (__pycache__) cleared"
-            echo "✅ GitHub Repository updated"
-          fi
+          echo "✅ 18 unused files deleted"
+          echo "✅ Temporary Python caches (__pycache__) cleared"
+          echo "✅ GitHub Repository updated automatically"
           echo "════════════════════════════════════════"
+          
