@@ -1,12 +1,11 @@
 # ═══════════════════════════════════════════════════════════
 # 🧹 Auto Cleanup Workflow
 # ═══════════════════════════════════════════════════════════
-# Ek click mein saari faltu files delete kar deta hai
+# Single-click cleanup for unused files across generators
 #
 # Options:
-#   • safe     → Sirf unused files (18 files, kuch nahi tootega)
-#   • medium   → Unused + duplicate graphics
-#   • dry_run  → Sirf list dikhata hai, delete nahi karta
+#   • safe     → Removes 18 confirmed unused files & pycache
+#   • dry_run  → Lists targeted files without deleting
 # ═══════════════════════════════════════════════════════════
 
 name: 🧹 Auto Cleanup Files
@@ -15,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Cleanup mode chunें'
+        description: 'Cleanup mode chunen'
         required: true
         default: 'safe'
         type: choice
@@ -38,7 +37,7 @@ jobs:
           token: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: 🔧 Configure Git
+      - name: 🔧 Configure Git User
         run: |
           git config user.name "SawajBot Cleanup"
           git config user.email "cleanup@sawajstudio.local"
@@ -53,59 +52,59 @@ jobs:
           ls -1 sawajstudiobot/video_generator/fb_ig_story_video_generator/E_audio/ || true
           echo "════════════════════════════════════════"
 
-      - name: 🧹 Delete Truly Useless Files (SAFE mode)
-        if: ${{ inputs.mode == 'safe' || inputs.mode == 'dry_run' }}
+      - name: 🧹 Process Unused Files Cleanup
         run: |
           set -e
 
+          MODE="${{ inputs.mode }}"
           DELETED=0
           FAILED=0
 
-          # ─── B_graphics: unused modules (3 generators × 6 files = 18) ───
-          declare -a FILES_TO_DELETE=(
-            # B8_arabesque - no D_video imports it
+          # Array of target files across 3 generators
+          FILES_TO_DELETE=(
+            # B8_arabesque
             "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B8_arabesque.py"
             "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B8_arabesque.py"
             "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B8_arabesque.py"
-            # B9_god_rays - no D_video imports it
+            # B9_god_rays
             "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B9_god_rays.py"
             "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B9_god_rays.py"
             "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B9_god_rays.py"
-            # B10_star_field - unused
+            # B10_star_field
             "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B10_star_field.py"
             "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B10_star_field.py"
             "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B10_star_field.py"
-            # B11_ember - unused
+            # B11_ember
             "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B11_ember.py"
             "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B11_ember.py"
             "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B11_ember.py"
-            # B12_vignette - FFmpeg handles vignette, this is unused
+            # B12_vignette
             "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B12_vignette.py"
             "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B12_vignette.py"
             "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B12_vignette.py"
-            # E2_sfx - unused in all 3
+            # E2_sfx
             "sawajstudiobot/video_generator/fb_ig_story_video_generator/E_audio/E2_sfx.py"
             "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/E_audio/E2_sfx.py"
             "sawajstudiobot/video_generator/fb_yt_long_video_generator/E_audio/E2_sfx.py"
           )
 
           echo "════════════════════════════════════════"
-          echo "🧹 Processing ${#FILES_TO_DELETE[@]} files"
-          echo "Mode: ${{ inputs.mode }}"
+          echo "🧹 Targeted Files: ${#FILES_TO_DELETE[@]}"
+          echo "Run Mode: $MODE"
           echo "════════════════════════════════════════"
 
           for f in "${FILES_TO_DELETE[@]}"; do
             if [ -f "$f" ]; then
-              if [ "${{ inputs.mode }}" = "dry_run" ]; then
+              if [ "$MODE" = "dry_run" ]; then
                 echo "  🔍 WOULD DELETE: $f"
               else
-                git rm -f "$f" 2>/dev/null && {
+                if git rm -f "$f" 2>/dev/null || rm -f "$f"; then
                   echo "  ✅ Deleted: $f"
                   DELETED=$((DELETED + 1))
-                } || {
+                else
                   echo "  ❌ Failed: $f"
                   FAILED=$((FAILED + 1))
-                }
+                fi
               fi
             else
               echo "  ⏭️  Missing (already gone): $f"
@@ -120,7 +119,7 @@ jobs:
         if: ${{ inputs.mode == 'safe' }}
         run: |
           find . -type d -name "__pycache__" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true
-          echo "✅ __pycache__ removed"
+          echo "✅ __pycache__ cleared"
 
       - name: 📋 List Files (After)
         run: |
@@ -135,44 +134,34 @@ jobs:
       - name: 💾 Commit & Push Changes
         if: ${{ inputs.mode == 'safe' }}
         run: |
-          git config user.name "SawajBot Cleanup"
-          git config user.email "cleanup@sawajstudio.local"
-
-          if git diff --cached --quiet; then
-            echo "ℹ️ No changes to commit"
+          # Check for staged or unstaged changes
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "ℹ️ No changes detected to commit."
             exit 0
           fi
 
-          git commit -m "🧹 Auto cleanup: removed unused files
+          git add -A
+          git commit -m "🧹 Auto cleanup: removed 18 unused files and __pycache__"
 
-- B8_arabesque, B9_god_rays, B10_star_field, B11_ember, B12_vignette (3×5=15)
-- E2_sfx (3)
-- Removed __pycache__ folders
+          git pull --rebase origin ${{ github.ref_name }} || true
+          git push origin HEAD:${{ github.ref_name }}
 
-Total: 18 files removed
-Triggered by: manual cleanup workflow"
-
-          git push origin HEAD:${{ github.ref_name }} || {
-            echo "⚠️ Push failed — trying force"
-            git push origin HEAD:${{ github.ref_name }} --force-with-lease
-          }
-
-          echo "✅ Pushed to ${{ github.ref_name }}"
+          echo "✅ Changes successfully committed and pushed to ${{ github.ref_name }}"
 
       - name: 📊 Final Summary
         if: always()
         run: |
           echo "════════════════════════════════════════"
-          echo "🧹 CLEANUP COMPLETE"
+          echo "🧹 CLEANUP EXECUTION COMPLETED"
           echo "════════════════════════════════════════"
-          echo "Mode: ${{ inputs.mode }}"
+          echo "Selected Mode: ${{ inputs.mode }}"
           echo ""
           if [ "${{ inputs.mode }}" = "dry_run" ]; then
-            echo "⚠️ DRY RUN — nothing was deleted"
-            echo "Re-run with mode='safe' to actually delete"
+            echo "⚠️ DRY RUN MODE: No files were deleted or committed."
+            echo "Run again with mode='safe' to execute actual deletion."
           else
-            echo "✅ 18 unused files removed"
-            echo "✅ __pycache__ folders removed"
-            echo "✅ Changes pushed to GitHub"
+            echo "✅ Targeted unused files deleted"
+            echo "✅ Temporary Python caches (__pycache__) cleared"
+            echo "✅ GitHub Repository updated"
           fi
           echo "════════════════════════════════════════"
