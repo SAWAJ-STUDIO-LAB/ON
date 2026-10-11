@@ -2,29 +2,8 @@
 # ║  📄 FILE:      D4_frames.py                              ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                D_video/D4_frames.py                      ║
-# ║  🎯 PURPOSE:   Combine intro + main + outro into frames  ║
-# ║  📖 FOLDER:    D_video                                   ║
+# ║  ✅ FIXED:     Transparent RGBA background (was black!)  ║
 # ╚══════════════════════════════════════════════════════════╝
-
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎬 FRAMES MODULE (LONG)                                ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      16:9 landscape frames generate karna (1920x1080)    ║
-║                                                          ║
-║   ⏱️  Timing:                                             ║
-║      • Intro:  3.0 seconds                               ║
-║      • Main:   voice_dur (300-900s for Long)             ║
-║      • Outro:  3.0 seconds                               ║
-║      • Total:  5-15 minutes                              ║
-║                                                          ║
-║   📁 Output:                                             ║
-║      l_frames/frame_00000.png                            ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
 import os
 from PIL import Image, ImageDraw
@@ -50,7 +29,7 @@ class Frames:
     def generate(self, voice_dur, has_logo, sections,
                  hadith_label="", out_dir="l_frames"):
         """
-        Generate all frames.
+        Generate all frames (RGBA — transparent so background video shows through).
 
         Args:
             voice_dur:    voice duration in seconds
@@ -66,15 +45,20 @@ class Frames:
 
         total = self.intro_dur + voice_dur + self.outro_dur
         log_step("D4_frames.py",
-                 f"generate: intro={self.intro_dur}s + voice={voice_dur:.1f}s + outro={self.outro_dur}s = {total:.1f}s",
+                 f"generate: intro={self.intro_dur}s + "
+                 f"voice={voice_dur:.1f}s + outro={self.outro_dur}s "
+                 f"= {total:.1f}s",
                  "ok")
 
         frames_count = int(total * self.fps)
-        log_step("D4_frames.py", f"Generating {frames_count} frames (16:9)", "info")
+        log_step("D4_frames.py",
+                 f"Generating {frames_count} frames (16:9 RGBA)", "info")
 
         for fi in range(frames_count):
             t = fi / self.fps
-            img = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 255))
+
+            # ✅ FIXED: transparent background so bg video shows through
+            img = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
 
             # ───────── INTRO ─────────
