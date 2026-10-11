@@ -1,48 +1,135 @@
 # ╔══════════════════════════════════════════════════════════╗
-# ║  📄 FILE:      E1_voice_ducking.py                       ║
-# ║  📁 PATH:      .../fb_ig_yt_short_video_generator/       ║
-# ║                E_audio/E1_voice_ducking.py               ║
-# ║  🎯 PURPOSE:   Mix voice + music with ducking (SHORT)    ║
-# ║  📖 FOLDER:    E_audio                                   ║
+# ║  📄 FILE:      F1_drive.py                               ║
+# ║  📁 PATH:      .../fb_ig_story_video_generator/          ║
+# ║                F_drive/F1_drive.py                       ║
+# ║  ✅ FIXED:     Retry (3x) + size check + chunksize       ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎚️  VOICE DUCKING MODULE (SHORT)                       ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   📖 Settings:                                            ║
-║      • Voice: 100% | Music: 20%                          ║
-║      • Fade in: 2s | Fade out: 3s                        ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
-
-from A_core.A2_logger import log_file_start, log_file_end, log_step
+import os
+import time
+from A_core.A2_logger import log_file_start, log_file_end, log_step, log_api
 
 
-class VoiceDucking:
-    """Mix voice over music with volume ducking (Short version)."""
+class Drive:
+    """Upload video to Google Drive (Story)."""
 
     def __init__(self, base):
-        log_file_start("E1_voice_ducking.py", "Voice + music mix")
+        log_file_start("F1_drive.py", "Google Drive upload")
         self.base = base
-        log_file_end("E1_voice_ducking.py", "success", "Ready")
+        log_file_end("F1_drive.py", "success", "Ready")
 
-    def mix(self, voice_file, music_file, out_file, voice_dur,
-            music_vol=0.20):
-        """Mix voice over music with fade in/out."""
-        log_step("E1_voice_ducking.py", "mix() starting", "ok")
+    def upload(self, path, prefix="Story", max_retries=3):
+        """
+        Upload video to Google Drive with retry.
 
-        fade = max(voice_dur - 3.0, 1.0)
+        Args:
+            path:        video file path
+            prefix:      filename prefix
+            max_retries: attempts (default 3)
 
-        self.base.run_cmd(
-            f'ffmpeg -y -i {voice_file} -i {music_file} '
-            f'-filter_complex '
-            f'"[1:a]volume={music_vol},afade=t=in:st=0:d=2,'
-            f'afade=t=out:st={fade:.2f}:d=3[bg];'
-            f'[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2[aout]" '
-            f'-map "[aout]" -c:a libmp3lame -b:a 192k {out_file}')
+        Returns:
+            (link, direct) tuple or (None, None)
+        """
+        log_step("F1_drive.py", f"upload({path})", "ok")
 
-        log_step("E1_voice_ducking.py", "Mixed", "ok")
-        return out_file
+        # ─── Validate input ───
+        if not path or not os.path.exists(path):
+            log_api("F1_drive.py", "Drive", "failed", "file not found")
+            return None, None
+
+        size_mb = os.path.getsize(path) / 1024 / 1024
+        if size_mb < 0.01:
+            log_api("F1_drive.py", "Drive", "failed",
+                    f"file too small ({size_mb:.3f} MB)")
+            return None, None
+        log_step("F1_drive.py", f"File size {size_mb:.1f} MB", "info")
+
+        # ─── Retry loop ───
+        for attempt in range(1, max_retries + 1):
+            try:
+                result = self._do_upload(path, prefix)
+                if result[0]:
+                    return result
+                log_step("F1_drive.py",
+                         f"Attempt {attempt}/{max_retries} failed", "warn")
+            except Exception as e:
+                log_step("F1_drive.py",
+                         f"Attempt {attempt}/{max_retries} error",
+                         "warn", str(e)[:80])
+
+            if attempt < max_retries:
+                wait = 2 ** attempt  # 2s, 4s
+                log_step("F1_drive.py", f"Waiting {wait}s before retry",
+                         "info")
+                time.sleep(wait)
+
+        log_api("F1_drive.py", "Drive", "failed",
+                f"all {max_retries} attempts failed")
+        return None, None
+
+    def _do_upload(self, path, prefix):
+        """Single upload attempt."""
+        try:
+            from google.oauth2.credentials import Credentials
+            from googleapiclient.discovery import build
+            from googleapiclient.http import MediaFileUpload
+
+            # ─── Authenticate ───
+            creds = Credentials(
+                None,
+                refresh_token=os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN"),
+                client_id=os.environ.get("GOOGLE_DRIVE_CLIENT_ID"),
+                client_secret=os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET"),
+                token_uri="https://oauth2.googleapis.com/token")
+            service = build("drive", "v3", credentials=creds,
+                            cache_discovery=False)
+
+            # ─── Metadata ───
+            meta = {"name": f"{prefix}_{int(time.time())}.mp4"}
+            folder_id = os.environ.get("GDRIVE_STORY_VIDEO_FOLDER_ID")
+            if folder_id:
+                meta["parents"] = [folder_id]
+
+            # ─── Upload (chunked for reliability) ───
+            media = MediaFileUpload(
+                path,
+                mimetype="video/mp4",
+                resumable=True,
+                chunksize=5 * 1024 * 1024)  # 5 MB chunks
+
+            request = service.files().create(
+                body=meta,
+                media_body=media,
+                fields="id")
+
+            response = None
+            while response is None:
+                _, response = request.next_chunk()
+
+            did = response.get("id")
+            if not did:
+                return None, None
+
+            # ─── Make public ───
+            try:
+                service.permissions().create(
+                    fileId=did,
+                    body={"type": "anyone", "role": "reader"}).execute()
+            except Exception as e:
+                log_step("F1_drive.py",
+                         "Public permission failed (ignored)", "warn",
+                         str(e)[:60])
+
+            link = f"https://drive.google.com/file/d/{did}/view"
+            direct = f"https://drive.google.com/uc?export=download&id={did}"
+
+            self.base.api_status["Drive"]["Google Drive"] = "success"
+            log_api("F1_drive.py", "Google Drive", "success", did)
+            return link, direct
+
+        except Exception as e:
+            self.base.api_status["Drive"]["Google Drive"] = \
+                f"failed ({str(e)[:50]})"
+            log_api("F1_drive.py", "Google Drive", "failed",
+                    str(e)[:150])
+            return None, None
