@@ -2,29 +2,8 @@
 # ║  📄 FILE:      D2_main_content.py                        ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                D_video/D2_main_content.py                ║
-# ║  🎯 PURPOSE:   Main content frames (multi-section)       ║
-# ║  📖 FOLDER:    D_video                                   ║
+# ║  ✅ FIXED:     Arabic/Hindi/Latin fonts per section      ║
 # ╚══════════════════════════════════════════════════════════╝
-
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎬 MAIN CONTENT MODULE (LONG)                          ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎨 Sections (each with own visual):                    ║
-║      1. Arabic recitation (big Arabic text)              ║
-║      2. Hindi translation (word-by-word)                 ║
-║      3. Detailed Tashreeh (scrollable)                   ║
-║      4. Key bullets (3 languages)                        ║
-║                                                          ║
-║   🎨 Elements:                                            ║
-║      • Hadith badge (top-left)                           ║
-║      • Watermark (top-right)                             ║
-║      • Progress bar (bottom)                             ║
-║      • Sparkles                                          ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
 from B_graphics.B3_sparkles import draw_sparkles
 from B_graphics.B4_progress_bar import draw_progress
@@ -34,46 +13,20 @@ from B_graphics.B1_fonts import FontManager
 from B_graphics.B2_text_wrap import wrap_text
 
 
-# ═══════════════════════════════════════════════════════════
-# ① DRAW MAIN CONTENT
-# ═══════════════════════════════════════════════════════════
-
 def draw_main(img, draw, mt, voice_dur, sections, hadith_label, has_logo,
               W=1920, H=1080):
-    """
-    Draw main content with dynamic sections.
-
-    Args:
-        img:          PIL Image (1920x1080)
-        draw:         PIL ImageDraw
-        mt:           elapsed seconds in main content
-        voice_dur:    total main content duration
-        sections:     list of dicts:
-                      [
-                        {"type": "arabic", "text": "...", "dur": 60},
-                        {"type": "hindi", "text": "...", "dur": 90},
-                        {"type": "tashreeh", "text": "...", "dur": 300},
-                        {"type": "bullets", "data": {...}, "dur": 90},
-                      ]
-        hadith_label: e.g. "#1 · Sahih al-Bukhari"
-        has_logo:     whether logo available
-    """
     alpha = min(1.0, mt / 0.5)
 
-    # ═══════════ Find current section ═══════════
     current_section, section_elapsed, section_idx = _find_section(sections, mt)
     if not current_section:
         return
 
-    # ═══════════ Top overlays ═══════════
     if hadith_label:
         draw_badge(draw, hadith_label, y=60)
-
     if has_logo:
         draw_watermark(img, "avatar.png", size=(200, 90),
                        pos="top-right", opacity=0.55)
 
-    # ═══════════ Dispatch by type ═══════════
     stype = current_section.get("type", "")
     if stype == "arabic":
         _draw_arabic(draw, current_section, section_elapsed, section_idx, alpha)
@@ -84,19 +37,11 @@ def draw_main(img, draw, mt, voice_dur, sections, hadith_label, has_logo,
     elif stype == "bullets":
         _draw_bullets(draw, current_section, section_elapsed, alpha)
 
-    # ═══════════ Progress bar ═══════════
     draw_progress(draw, mt, voice_dur)
-
-    # ═══════════ Sparkles ═══════════
     draw_sparkles(draw, mt)
 
 
-# ═══════════════════════════════════════════════════════════
-# ② SECTION FINDER
-# ═══════════════════════════════════════════════════════════
-
 def _find_section(sections, mt):
-    """Return (section, elapsed_in_section, index)."""
     acc = 0.0
     for i, sec in enumerate(sections):
         d = sec.get("dur", 0)
@@ -106,20 +51,14 @@ def _find_section(sections, mt):
     return None, 0, -1
 
 
-# ═══════════════════════════════════════════════════════════
-# ③ SECTION DRAWERS
-# ═══════════════════════════════════════════════════════════
-
 def _draw_arabic(draw, sec, elapsed, idx, alpha, W=1920):
-    """Big Arabic text center."""
     text = sec.get("text", "")
     if not text:
         return
-
-    font = FontManager.get_font(None, 88)
+    # ✅ FIXED: Arabic font
+    font = FontManager.get_font(None, 88, script="arabic")
     lines = wrap_text(text, font, max_width=1700)
 
-    # Auto-scroll: show only a few lines based on elapsed
     total_lines = len(lines)
     sec_dur = max(sec.get("dur", 60), 1)
     progress = min(1.0, elapsed / sec_dur)
@@ -140,12 +79,11 @@ def _draw_arabic(draw, sec, elapsed, idx, alpha, W=1920):
 
 
 def _draw_hindi(draw, sec, elapsed, idx, alpha, W=1920):
-    """Hindi translation, word-by-word appearance."""
     text = sec.get("text", "")
     if not text:
         return
-
-    font = FontManager.get_font(None, 64)
+    # ✅ FIXED: Devanagari font
+    font = FontManager.get_font(None, 64, script="devanagari")
     sec_dur = max(sec.get("dur", 90), 1)
     words = text.split()
     total = len(words)
@@ -154,7 +92,6 @@ def _draw_hindi(draw, sec, elapsed, idx, alpha, W=1920):
     visible = " ".join(words[:shown])
 
     lines = wrap_text(visible, font, max_width=1700)
-    # Show last 8 lines (scrolling)
     lines = lines[-8:]
 
     y = 400
@@ -170,12 +107,11 @@ def _draw_hindi(draw, sec, elapsed, idx, alpha, W=1920):
 
 
 def _draw_tashreeh(draw, sec, elapsed, alpha, W=1920):
-    """Scrollable detailed Tashreeh text."""
     text = sec.get("text", "")
     if not text:
         return
-
-    font = FontManager.get_font(None, 42)
+    # ✅ FIXED: Devanagari font
+    font = FontManager.get_font(None, 42, script="devanagari")
     lines = wrap_text(text, font, max_width=1700)
 
     sec_dur = max(sec.get("dur", 300), 1)
@@ -197,20 +133,19 @@ def _draw_tashreeh(draw, sec, elapsed, alpha, W=1920):
 
 
 def _draw_bullets(draw, sec, elapsed, alpha, W=1920):
-    """3-language bullets — word by word."""
     data = sec.get("data", {})
     hindi = data.get("hindi", [])
     arabic = data.get("arabic", [])
     english = data.get("english", [])
 
-    font_h = FontManager.get_font(None, 56)
-    font_a = FontManager.get_font(None, 56)
-    font_e = FontManager.get_font(None, 56)
+    # ✅ FIXED: script-specific fonts
+    font_h = FontManager.get_font(None, 56, script="devanagari")
+    font_a = FontManager.get_font(None, 56, script="arabic")
+    font_e = FontManager.get_font(None, 56, script="latin")
 
     sec_dur = max(sec.get("dur", 90), 1)
     progress = min(1.0, elapsed / sec_dur)
 
-    # Show all 3 lines, highlight current based on progress
     y = 280
     gap = 130
 
