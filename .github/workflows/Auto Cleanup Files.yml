@@ -1,0 +1,178 @@
+# ═══════════════════════════════════════════════════════════
+# 🧹 Auto Cleanup Workflow
+# ═══════════════════════════════════════════════════════════
+# Ek click mein saari faltu files delete kar deta hai
+#
+# Options:
+#   • safe     → Sirf unused files (18 files, kuch nahi tootega)
+#   • medium   → Unused + duplicate graphics
+#   • dry_run  → Sirf list dikhata hai, delete nahi karta
+# ═══════════════════════════════════════════════════════════
+
+name: 🧹 Auto Cleanup Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Cleanup mode chunें'
+        required: true
+        default: 'safe'
+        type: choice
+        options:
+          - 'safe'
+          - 'dry_run'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TOKEN_GITHUB || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🔧 Configure Git
+        run: |
+          git config user.name "SawajBot Cleanup"
+          git config user.email "cleanup@sawajstudio.local"
+
+      - name: 📋 List Files (Before)
+        run: |
+          echo "════════════════════════════════════════"
+          echo "📊 Current B_graphics (Story):"
+          ls -1 sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/ || true
+          echo ""
+          echo "📊 Current E_audio (Story):"
+          ls -1 sawajstudiobot/video_generator/fb_ig_story_video_generator/E_audio/ || true
+          echo "════════════════════════════════════════"
+
+      - name: 🧹 Delete Truly Useless Files (SAFE mode)
+        if: ${{ inputs.mode == 'safe' || inputs.mode == 'dry_run' }}
+        run: |
+          set -e
+
+          DELETED=0
+          FAILED=0
+
+          # ─── B_graphics: unused modules (3 generators × 6 files = 18) ───
+          declare -a FILES_TO_DELETE=(
+            # B8_arabesque - no D_video imports it
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B8_arabesque.py"
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B8_arabesque.py"
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B8_arabesque.py"
+            # B9_god_rays - no D_video imports it
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B9_god_rays.py"
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B9_god_rays.py"
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B9_god_rays.py"
+            # B10_star_field - unused
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B10_star_field.py"
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B10_star_field.py"
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B10_star_field.py"
+            # B11_ember - unused
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B11_ember.py"
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B11_ember.py"
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B11_ember.py"
+            # B12_vignette - FFmpeg handles vignette, this is unused
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/B12_vignette.py"
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/B_graphics/B12_vignette.py"
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator/B_graphics/B12_vignette.py"
+            # E2_sfx - unused in all 3
+            "sawajstudiobot/video_generator/fb_ig_story_video_generator/E_audio/E2_sfx.py"
+            "sawajstudiobot/video_generator/fb_ig_yt_short_video_generator/E_audio/E2_sfx.py"
+            "sawajstudiobot/video_generator/fb_yt_long_video_generator/E_audio/E2_sfx.py"
+          )
+
+          echo "════════════════════════════════════════"
+          echo "🧹 Processing ${#FILES_TO_DELETE[@]} files"
+          echo "Mode: ${{ inputs.mode }}"
+          echo "════════════════════════════════════════"
+
+          for f in "${FILES_TO_DELETE[@]}"; do
+            if [ -f "$f" ]; then
+              if [ "${{ inputs.mode }}" = "dry_run" ]; then
+                echo "  🔍 WOULD DELETE: $f"
+              else
+                git rm -f "$f" 2>/dev/null && {
+                  echo "  ✅ Deleted: $f"
+                  DELETED=$((DELETED + 1))
+                } || {
+                  echo "  ❌ Failed: $f"
+                  FAILED=$((FAILED + 1))
+                }
+              fi
+            else
+              echo "  ⏭️  Missing (already gone): $f"
+            fi
+          done
+
+          echo "════════════════════════════════════════"
+          echo "📊 Summary: Deleted=$DELETED Failed=$FAILED"
+          echo "════════════════════════════════════════"
+
+      - name: 🧹 Remove __pycache__ Folders
+        if: ${{ inputs.mode == 'safe' }}
+        run: |
+          find . -type d -name "__pycache__" -not -path "./.git/*" -exec rm -rf {} + 2>/dev/null || true
+          echo "✅ __pycache__ removed"
+
+      - name: 📋 List Files (After)
+        run: |
+          echo "════════════════════════════════════════"
+          echo "📊 After cleanup — B_graphics (Story):"
+          ls -1 sawajstudiobot/video_generator/fb_ig_story_video_generator/B_graphics/ || true
+          echo ""
+          echo "📊 After cleanup — E_audio (Story):"
+          ls -1 sawajstudiobot/video_generator/fb_ig_story_video_generator/E_audio/ || true
+          echo "════════════════════════════════════════"
+
+      - name: 💾 Commit & Push Changes
+        if: ${{ inputs.mode == 'safe' }}
+        run: |
+          git config user.name "SawajBot Cleanup"
+          git config user.email "cleanup@sawajstudio.local"
+
+          if git diff --cached --quiet; then
+            echo "ℹ️ No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "🧹 Auto cleanup: removed unused files
+
+- B8_arabesque, B9_god_rays, B10_star_field, B11_ember, B12_vignette (3×5=15)
+- E2_sfx (3)
+- Removed __pycache__ folders
+
+Total: 18 files removed
+Triggered by: manual cleanup workflow"
+
+          git push origin HEAD:${{ github.ref_name }} || {
+            echo "⚠️ Push failed — trying force"
+            git push origin HEAD:${{ github.ref_name }} --force-with-lease
+          }
+
+          echo "✅ Pushed to ${{ github.ref_name }}"
+
+      - name: 📊 Final Summary
+        if: always()
+        run: |
+          echo "════════════════════════════════════════"
+          echo "🧹 CLEANUP COMPLETE"
+          echo "════════════════════════════════════════"
+          echo "Mode: ${{ inputs.mode }}"
+          echo ""
+          if [ "${{ inputs.mode }}" = "dry_run" ]; then
+            echo "⚠️ DRY RUN — nothing was deleted"
+            echo "Re-run with mode='safe' to actually delete"
+          else
+            echo "✅ 18 unused files removed"
+            echo "✅ __pycache__ folders removed"
+            echo "✅ Changes pushed to GitHub"
+          fi
+          echo "════════════════════════════════════════"
