@@ -10,14 +10,14 @@ jobs:
       - name: Checkout Latest Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # Sirf latest commit fetch karega
+          fetch-depth: 1
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Combine All Files into Single File (Including Photos & Media)
+      - name: Combine All Files into Single File (Without Folder Tree)
         run: |
           python3 - << 'EOF'
           import os
@@ -32,42 +32,7 @@ jobs:
           IGNORE_DIRS = {".git", "__pycache__", "node_modules", "venv", "env", ".pytest_cache", ".idea", ".vscode"}
           IGNORE_FILES = {output_file, ".DS_Store"}
 
-          # 1. Folder Tree View Generator (Sirf current files ke liye)
-          def build_tree(start_dir="."):
-              lines = ["📂 REPOSITORY FOLDER STRUCTURE", "==================================================", "."]
-              
-              def _walk(directory, prefix=""):
-                  try:
-                      entries = sorted(os.listdir(directory))
-                  except Exception:
-                      return
-                  
-                  filtered = []
-                  for e in entries:
-                      if e in IGNORE_FILES:
-                          continue
-                      path = os.path.join(directory, e)
-                      if os.path.isdir(path):
-                          if e in IGNORE_DIRS or (e.startswith(".") and e != ".github"):
-                              continue
-                      filtered.append(e)
-
-                  count = len(filtered)
-                  for i, entry in enumerate(filtered):
-                      path = os.path.join(directory, entry)
-                      is_last = (i == count - 1)
-                      connector = "└── " if is_last else "├── "
-                      if os.path.isdir(path):
-                          lines.append(f"{prefix}{connector}{entry}/")
-                          new_prefix = prefix + ("    " if is_last else "│   ")
-                          _walk(path, new_prefix)
-                      else:
-                          lines.append(f"{prefix}{connector}{entry}")
-
-              _walk(start_dir)
-              return "\n".join(lines)
-
-          # 2. Binary / Image File Checker
+          # Binary / Image File Checker
           def is_binary_file(filepath):
               try:
                   with open(filepath, 'tr', encoding='utf-8') as f:
@@ -76,7 +41,7 @@ jobs:
               except UnicodeDecodeError:
                   return True
 
-          # 3. Collect All Current Files
+          # Collect All Current Files
           all_files = []
           for root, dirs, files in os.walk("."):
               dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not (d.startswith(".") and d != ".github")]
@@ -85,17 +50,12 @@ jobs:
                       all_files.append(os.path.join(root, file))
 
           all_files.sort()
-          tree_view = build_tree(".")
 
-          # 4. Write Everything into a Single File Note
+          # Write Everything into a Single File (Direct Files with Paths)
           with open(output_file, "w", encoding="utf-8") as outfile:
               outfile.write("================================================================================\n")
-              outfile.write("           COMPLETE REPOSITORY CODEBASE, MEDIA & DIRECTORY NOTE                 \n")
+              outfile.write("                 COMPLETE REPOSITORY CODEBASE & MEDIA NOTE                      \n")
               outfile.write("================================================================================\n\n")
-              outfile.write(tree_view)
-              outfile.write("\n\n" + "="*80 + "\n")
-              outfile.write("                             FULL FILE CONTENTS                                 \n")
-              outfile.write("="*80 + "\n\n")
 
               success_count = 0
               for filepath in all_files:
@@ -137,5 +97,5 @@ jobs:
 
           curl -s -F chat_id="$TELEGRAM_CHAT_ID" \
                -F document=@all_code_combined.txt \
-               -F caption="📦 Updated Repository Note (Latest Code + Structure) Delivered!" \
+               -F caption="📦 Updated Repository Note (Direct Files with Paths) Delivered!" \
                https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument
