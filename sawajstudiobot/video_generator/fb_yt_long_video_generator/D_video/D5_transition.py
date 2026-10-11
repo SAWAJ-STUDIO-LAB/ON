@@ -2,21 +2,18 @@
 # ║  📄 FILE:      D5_transition.py                          ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                D_video/D5_transition.py                  ║
-# ║  🎯 PURPOSE:   Transition helpers (crossfade + easing)   ║
-# ║  📖 FOLDER:    D_video                                   ║
+# ║  ✅ FIXED:     Closed docstring (was syntax error)       ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
-╔══════════════════════════════════════════════════════════╗
-║   🎬 TRANSITION MODULE (LONG)                            ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   📖 Functions:                                          ║
-║      • crossfade_alpha() → Fade 0 to 1                   ║
-║      • ease_in_out()     → Smooth S-curve                ║
-║      • fade_in_out()     → Both ends fade                ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
+TRANSITION MODULE (LONG)
+========================
+
+Functions:
+  • crossfade_alpha() → Fade 0 to 1
+  • ease_in_out()     → Smooth S-curve
+  • fade_in_out()     → Both ends fade
+"""
 
 
 def crossfade_alpha(current_t, start, duration):
