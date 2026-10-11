@@ -2,48 +2,32 @@
 # ║  📄 FILE:      B4_progress_bar.py                        ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                B_graphics/B4_progress_bar.py             ║
-# ║  🎯 PURPOSE:   Bottom video progress bar generator       ║
-# ║  📖 FOLDER:    B_graphics                                ║
+# ║  ✅ FIXED:     draw_progress(draw, current, total, y)    ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   📊 PROGRESS BAR MODULE                                 ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      Bottom subtle gold progress bar overlay for long    ║
-║      video engagement tracking.                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
-from PIL import Image, ImageDraw
+def draw_progress(draw, current, total, y=1040):
+    """Draw gold progress bar at bottom of 1920x1080 frame."""
+    bar_x, bar_w, bar_h = 160, 1600, 6
 
+    # Track
+    draw.rectangle(
+        [bar_x, y, bar_x + bar_w, y + bar_h],
+        fill=(0, 0, 0, 150)
+    )
 
-def draw_progress_bar(
-    image: Image.Image,
-    progress: float,
-    bar_height: int = 8,
-    color: tuple = (212, 175, 55, 220),
-    bg_color: tuple = (30, 30, 30, 150)
-) -> Image.Image:
-    """Draws a progress bar at the bottom edge of the image canvas."""
-    progress = max(0.0, min(1.0, progress))
-    width, height = image.size
+    # Progress fill
+    pct = min(1.0, current / max(total, 1))
+    fill_w = int(bar_w * pct)
 
-    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    y0 = height - bar_height
-    y1 = height
-
-    # Background track
-    draw.rectangle([(0, y0), (width, y1)], fill=bg_color)
-
-    # Active progress track
-    progress_width = int(width * progress)
-    if progress_width > 0:
-        draw.rectangle([(0, y0), (progress_width, y1)], fill=color)
-
-    return Image.alpha_composite(image.convert("RGBA"), overlay)
-  
+    if fill_w > 0:
+        draw.rectangle(
+            [bar_x, y, bar_x + fill_w, y + bar_h],
+            fill=(212, 175, 55, 255)
+        )
+        # Glow dot at end
+        gx = bar_x + fill_w
+        draw.ellipse(
+            [gx - 8, y - 4, gx + 8, y + 10],
+            fill=(255, 220, 120, 220)
+        )
