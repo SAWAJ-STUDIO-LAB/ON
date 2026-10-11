@@ -3,58 +3,90 @@
 # ║  📁 PATH:      .../fb_ig_yt_short_video_generator/       ║
 # ║                B_graphics/B1_fonts.py                    ║
 # ║  🎯 PURPOSE:   Font loader for all scripts               ║
-# ║  📖 FOLDER:    B_graphics                                ║
+# ║  ✅ FIXED:     Robust paths (system + ~/.fonts)          ║
 # ╚══════════════════════════════════════════════════════════╝
-
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🔤 FONT LOADER MODULE                                  ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      3 languages ke fonts load karna:                    ║
-║        • Devanagari (Hindi)                              ║
-║        • Arabic (Urdu)                                   ║
-║        • Latin (English)                                 ║
-║                                                          ║
-║   📖 Usage:                                              ║
-║      from B_graphics.B1_fonts import FontLoader          ║
-║      font = FontLoader.load(72, "devanagari")            ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
 import os
 from PIL import ImageFont
 
 
 class FontLoader:
-    """Load fonts from ~/.fonts/ with fallback."""
+    """
+    Load fonts from system + ~/.fonts/ with fallback.
+
+    Supports 3 scripts:
+      - devanagari → Hindi
+      - arabic     → Urdu/Arabic
+      - latin      → English (default)
+    """
+
+    _cache = {}
+
+    PATHS = {
+        "devanagari": [
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+            "~/.fonts/NotoSansDevanagari-Bold.ttf",
+            "~/.fonts/NotoSansDevanagari-Regular.ttf",
+        ],
+        "arabic": [
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+            "~/.fonts/NotoNaskhArabic-Bold.ttf",
+            "~/.fonts/NotoNaskhArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+        ],
+        "latin": [
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "~/.fonts/NotoSans-Bold.ttf",
+            "~/.fonts/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ],
+    }
 
     @staticmethod
     def load(size, script="latin", bold=True):
-        """Load font for given script."""
-        # ───────── Devanagari (Hindi) ─────────
-        if script == "devanagari":
-            paths = [
-                "~/.fonts/NotoSansDevanagari-Bold.ttf" if bold
-                else "~/.fonts/NotoSansDevanagari-Regular.ttf",
-            ]
-        # ───────── Arabic (Urdu) ─────────
-        elif script == "arabic":
-            paths = [
-                "~/.fonts/NotoNaskhArabic-Bold.ttf" if bold
-                else "~/.fonts/NotoNaskhArabic-Regular.ttf",
-            ]
-        # ───────── Latin (English) ─────────
-        else:
-            paths = [
-                "~/.fonts/NotoSans-Bold.ttf" if bold
-                else "~/.fonts/NotoSans-Regular.ttf",
-            ]
+        """
+        Load font for given script.
+
+        Args:
+            size:   font size in pixels
+            script: devanagari / arabic / latin
+            bold:   True for bold, False for regular (kept for compat)
+
+        Returns:
+            PIL ImageFont object
+        """
+        cache_key = (size, script, bold)
+        if cache_key in FontLoader._cache:
+            return FontLoader._cache[cache_key]
+
+        paths = FontLoader.PATHS.get(script, FontLoader.PATHS["latin"])
+
         for p in paths:
-            try:
-                return ImageFont.truetype(os.path.expanduser(p), size)
-            except Exception:
+            expanded = os.path.expanduser(p)
+            if bold and "Regular" in expanded:
                 continue
+            if not bold and "Bold" in expanded:
+                continue
+            if os.path.exists(expanded):
+                try:
+                    fnt = ImageFont.truetype(expanded, size)
+                    FontLoader._cache[cache_key] = fnt
+                    return fnt
+                except Exception:
+                    continue
+
+        for p in paths:
+            expanded = os.path.expanduser(p)
+            if os.path.exists(expanded):
+                try:
+                    fnt = ImageFont.truetype(expanded, size)
+                    FontLoader._cache[cache_key] = fnt
+                    return fnt
+                except Exception:
+                    continue
+
         return ImageFont.load_default()
