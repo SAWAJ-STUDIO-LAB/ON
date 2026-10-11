@@ -2,27 +2,8 @@
 # ║  📄 FILE:      D1_intro.py                               ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                D_video/D1_intro.py                       ║
-# ║  🎯 PURPOSE:   Intro frames (Bismillah + Logo + Title)   ║
-# ║  📖 FOLDER:    D_video                                   ║
+# ║  ✅ FIXED:     Arabic font for Bismillah                 ║
 # ╚══════════════════════════════════════════════════════════╝
-
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎬 INTRO MODULE (LONG)                                 ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   ⏱️  Duration: 3 seconds                                 ║
-║                                                          ║
-║   🎨 Elements (16:9 landscape 1920x1080):                ║
-║      • Bismillah (Arabic) top center                     ║
-║      • Gold line sweep                                   ║
-║      • Logo scale-in                                     ║
-║      • Title "HADITH OF THE DAY"                         ║
-║      • Subtitle "Detailed Tashreeh"                      ║
-║      • Sparkles                                          ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
 import os
 from PIL import Image, ImageDraw
@@ -31,7 +12,6 @@ from B_graphics.B3_sparkles import draw_sparkles
 
 
 def _draw_centered(draw, text, y, font, fill, W=1920, shadow=True):
-    """Draw text centered horizontally."""
     if not text:
         return
     bbox = draw.textbbox((0, 0), text, font=font)
@@ -43,30 +23,22 @@ def _draw_centered(draw, text, y, font, fill, W=1920, shadow=True):
 
 
 def draw_intro(img, draw, t, intro_dur, has_logo):
-    """
-    Draw intro frame at time t (16:9 landscape).
-
-    Args:
-        img:       PIL Image (1920x1080)
-        draw:      PIL ImageDraw
-        t:         current time (0 to intro_dur)
-        intro_dur: total intro duration (3s)
-        has_logo:  whether logo available
-    """
+    """Draw intro frame at time t (16:9 landscape)."""
     p = t / intro_dur
     alpha = min(1.0, t / 0.7)
     W, H = 1920, 1080
     C_GOLD = (230, 200, 130)
 
-    font_arabic = FontManager.get_font(None, 72)
-    font_title = FontManager.get_font(None, 110)
-    font_sub = FontManager.get_font(None, 48)
+    # ✅ FIXED: script-specific fonts
+    font_arabic = FontManager.get_font(None, 72, script="arabic")
+    font_title = FontManager.get_font(None, 110, script="latin")
+    font_sub = FontManager.get_font(None, 48, script="latin")
 
-    # ═══════════ Bismillah (top) ═══════════
+    # Bismillah (Arabic)
     _draw_centered(draw, "بِسْمِ اللهِ الرَّحْمٰنِ الرَّحِيْمِ",
                    120, font_arabic, (*C_GOLD, int(255 * alpha)), W)
 
-    # ═══════════ Gold line sweep ═══════════
+    # Gold line sweep
     line_y = 260
     line_progress = min(1.0, max(0.0, (p - 0.2) / 0.4))
     if line_progress > 0:
@@ -75,7 +47,7 @@ def draw_intro(img, draw, t, intro_dur, has_logo):
         draw.rectangle([lx, line_y, lx + lw, line_y + 4],
                        fill=(*C_GOLD, int(255 * line_progress)))
 
-    # ═══════════ Logo scale-in ═══════════
+    # Logo scale-in
     if has_logo:
         logo_p = min(1.0, max(0.0, (p - 0.3) / 0.4))
         if logo_p > 0:
@@ -89,7 +61,7 @@ def draw_intro(img, draw, t, intro_dur, has_logo):
             except Exception:
                 pass
 
-    # ═══════════ Title fade-in ═══════════
+    # Title fade-in
     title_p = min(1.0, max(0.0, (p - 0.5) / 0.4))
     if title_p > 0:
         _draw_centered(draw, "HADITH OF THE DAY", 720, font_title,
@@ -99,5 +71,4 @@ def draw_intro(img, draw, t, intro_dur, has_logo):
                            880, font_sub,
                            (200, 180, 140, int(220 * title_p)), W)
 
-    # ═══════════ Sparkles ═══════════
     draw_sparkles(draw, t)
