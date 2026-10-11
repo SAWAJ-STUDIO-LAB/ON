@@ -2,20 +2,8 @@
 # ║  📄 FILE:      B1_fonts.py                               ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                B_graphics/B1_fonts.py                    ║
-# ║  🎯 PURPOSE:   System & custom font loader with fallbacks║
-# ║  📖 FOLDER:    B_graphics                                ║
+# ║  ✅ FIXED:     Robust font paths (system + ~/.fonts)     ║
 # ╚══════════════════════════════════════════════════════════╝
-
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🔤 FONT MANAGER MODULE                                 ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      Arabic, Hindi, English, and Decorative fonts load    ║
-║      karna fallback options ke saath.                    ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
 import os
 from PIL import ImageFont
@@ -23,42 +11,70 @@ from A_core.A2_logger import log_step
 
 
 class FontManager:
-    """Manages multi-lingual font selection and loading for Pillow rendering."""
+    """Manages multi-lingual font selection for Long (16:9) videos."""
 
     SYSTEM_FONT_PATHS = [
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+        # Devanagari (Hindi)
         "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+        "~/.fonts/NotoSansDevanagari-Bold.ttf",
+        "~/.fonts/NotoSansDevanagari-Regular.ttf",
+        # Arabic (Urdu)
+        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+        "~/.fonts/NotoNaskhArabic-Bold.ttf",
+        "~/.fonts/NotoNaskhArabic-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+        # Latin
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "~/.fonts/NotoSans-Bold.ttf",
+        "~/.fonts/NotoSans-Regular.ttf",
+        # DejaVu fallback
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
 
+    _cache = {}
+
     @staticmethod
-    def get_font(font_path_or_name: str, size: int) -> ImageFont.FreeTypeFont:
-        """Loads specific font or safely falls back to default if not found."""
-        if font_path_or_name and os.path.exists(font_path_or_name):
-            try:
-                return ImageFont.truetype(font_path_or_name, size)
-            except Exception:
-                pass
+    def get_font(font_path_or_name, size):
+        """Load specific font or fallback to system."""
+        cache_key = (font_path_or_name, size)
+        if cache_key in FontManager._cache:
+            return FontManager._cache[cache_key]
+
+        # Try specific path first
+        if font_path_or_name:
+            expanded = os.path.expanduser(font_path_or_name)
+            if os.path.exists(expanded):
+                try:
+                    f = ImageFont.truetype(expanded, size)
+                    FontManager._cache[cache_key] = f
+                    return f
+                except Exception:
+                    pass
 
         # Try system fallbacks
         for sys_path in FontManager.SYSTEM_FONT_PATHS:
-            if os.path.exists(sys_path):
+            expanded = os.path.expanduser(sys_path)
+            if os.path.exists(expanded):
                 try:
-                    return ImageFont.truetype(sys_path, size)
+                    f = ImageFont.truetype(expanded, size)
+                    FontManager._cache[cache_key] = f
+                    return f
                 except Exception:
                     continue
 
         # Ultimate fallback
-        log_step("B1_fonts.py", f"Fallback to default font for {font_path_or_name}", "warn")
+        log_step("B1_fonts.py", f"Fallback default font @ size={size}", "warn")
         return ImageFont.load_default()
 
     @staticmethod
-    def load_bundle(base_path: str, sizes: dict) -> dict:
-        """Loads a dict of fonts for Arabic, Hindi, English, and Titles."""
+    def load_bundle(base_path, sizes):
+        """Load dict of fonts."""
         fonts = {}
         for key, size in sizes.items():
-            path = os.path.join(base_path, f"{key}.ttf") if base_path else ""
+            path = os.path.join(base_path, f"{key}.ttf") if base_path else None
             fonts[key] = FontManager.get_font(path, size)
         return fonts
-      
