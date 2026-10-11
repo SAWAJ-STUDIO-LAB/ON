@@ -1,58 +1,53 @@
 # ╔══════════════════════════════════════════════════════════╗
 # ║  📄 FILE:      E3_mastering.py                           ║
-# ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
-# ║                E_audio/E3_mastering.py                   ║
-# ║  🎯 PURPOSE:   Audio mastering (normalize, tempo)        ║
-# ║  📖 FOLDER:    E_audio                                   ║
+# ║  🎯 PURPOSE:   Voice mastering (Long tuning)             ║
+# ║  ✅ FIXED:     Fallback filters (loudnorm-safe)          ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎚️  MASTERING MODULE (LONG)                            ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      Voice audio ko master karna                         ║
-║                                                          ║
-║   📖 Settings:                                            ║
-║      • Tempo:     0.92 (slightly slower)                 ║
-║      • Loudnorm:  I=-16 LUFS                             ║
-║      • Volume:    1.25x                                  ║
-║                                                          ║
-║   📝 Long mein tempo 0.92 (Story: 0.88) —                 ║
-║      Kyunki long video mein zyada words hain             ║
-║      Toh thoda faster rakhna better hai                  ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
-
+import os
+import subprocess
 from A_core.A2_logger import log_file_start, log_file_end, log_step
 
 
 class Mastering:
-    """Master voice audio (tempo + loudnorm + volume)."""
+    """Master voice audio — Long (tempo 0.92, slightly less loud)."""
 
     def __init__(self, base):
-        log_file_start("E3_mastering.py", "Audio mastering")
+        log_file_start("E3_mastering.py", "Audio mastering (Long)")
         self.base = base
         log_file_end("E3_mastering.py", "success", "Ready")
 
     def master_voice(self, in_file, out_file):
-        """
-        Apply mastering to voice (Long tuned).
-
-        Args:
-            in_file:  input mp3 path
-            out_file: output mp3 path
-
-        Returns:
-            out_file path
-        """
         log_step("E3_mastering.py", "master_voice()", "ok")
 
-        self.base.run_cmd(
-            f'ffmpeg -y -i {in_file} -af '
+        primary = (
+            f'ffmpeg -y -i "{in_file}" -af '
             f'"atempo=0.92,loudnorm=I=-16:TP=-1.5:LRA=11,volume=1.25" '
-            f'{out_file}')
+            f'"{out_file}"'
+        )
+        try:
+            subprocess.run(primary, shell=True, check=True,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
+                return out_file
+        except Exception as e:
+            log_step("E3_mastering.py", "Primary failed",
+                     "warn", str(e)[:60])
 
-        return out_file
+        fallback = (
+            f'ffmpeg -y -i "{in_file}" -af '
+            f'"atempo=0.92,volume=1.25" '
+            f'"{out_file}"'
+        )
+        try:
+            subprocess.run(fallback, shell=True, check=True,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            return out_file
+        except Exception as e:
+            log_step("E3_mastering.py", "Both failed", "fail",
+                     str(e)[:80])
+            import shutil
+            shutil.copy(in_file, out_file)
+            return out_file
