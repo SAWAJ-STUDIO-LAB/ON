@@ -2,61 +2,63 @@
 # ║  📄 FILE:      C3_translator.py                          ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                C_content/C3_translator.py                ║
-# ║  🎯 PURPOSE:   Multilingual Translation Engine           ║
-# ║  📖 FOLDER:    C_content                                 ║
+# ║  ✅ FIXED:     base, ai interface                        ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🌐 TRANSLATOR MODULE                                   ║
-║   ════════════════════                                   ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      DeepL / AI based high accuracy English to Hindi     ║
-║      and Arabic translation.                             ║
-╚══════════════════════════════════════════════════════════╝
-"""
-
-import requests
-from A_core.A1_config import Config
-from A_core.A2_logger import log_file_start, log_file_end, log_api, log_step
-from C_content.C2_ai_provider import AIProvider
+import os
+from A_core.A2_logger import log_file_start, log_file_end, log_step, log_api
 
 
 class Translator:
-    """Translates text between English, Hindi, and Arabic."""
+    """Translate English hadith to Hindi (Long)."""
 
-    def __init__(self, session=None):
+    def __init__(self, base, ai):
         log_file_start("C3_translator.py", "Init Translator")
-        self.cfg = Config()
-        self.session = session or requests.Session()
-        self.ai = AIProvider(session=self.session)
+        self.base = base
+        self.ai = ai
         log_file_end("C3_translator.py", "success")
 
-    def translate_to_hindi(self, text: str) -> str:
-        """Translates text to authentic Hindi."""
-        if not text:
-            return ""
+    def deepl(self, text):
+        key = os.environ.get("DEEPL_API_KEY")
+        if not key:
+            self.base.api_status["Translation"]["DeepL"] = "hold (no key)"
+            log_api("C3_translator.py", "DeepL", "skipped", "no key")
+            return None
+        try:
+            r = self.base.session.post(
+                "https://api-free.deepl.com/v2/translate",
+                headers={"Authorization": f"DeepL-Auth-Key {key}"},
+                data={"text": text, "target_lang": "HI"},
+                timeout=60)
+            if r.status_code == 200:
+                out = r.json()["translations"][0]["text"]
+                self.base.api_status["Translation"]["DeepL"] = "success"
+                log_api("C3_translator.py", "DeepL", "success", f"{len(out)} chars")
+                return out
+            self.base.api_status["Translation"]["DeepL"] = "failed"
+            log_api("C3_translator.py", "DeepL", "failed", f"HTTP {r.status_code}")
+        except Exception as e:
+            self.base.api_status["Translation"]["DeepL"] = "failed"
+            log_api("C3_translator.py", "DeepL", "failed", str(e)[:60])
+        return None
 
-        # 1. Try DeepL
-        if self.cfg.DEEPL_API_KEY:
-            try:
-                url = "https://api-free.deepl.com/v2/translate"
-                data = {
-                    "auth_key": self.cfg.DEEPL_API_KEY,
-                    "text": text,
-                    "target_lang": "HI",
-                }
-                r = self.session.post(url, data=data, timeout=15)
-                if r.status_code == 200:
-                    log_api("C3_translator.py", "DeepL Hindi", "success")
-                    return r.json()["translations"][0]["text"].strip()
-            except Exception as e:
-                log_api("C3_translator.py", "DeepL Hindi", "failed", str(e)[:50])
+    def to_hindi(self, english):
+        log_step("C3_translator.py", "to_hindi()", "ok")
 
-        # 2. AI Fallback
-        log_step("C3_translator.py", "Using AI for Hindi Translation", "info")
-        prompt = f"Translate the following English Islamic text into clear, respectful, natural Hindi in Devanagari script:\n\n{text}"
-        res = self.ai.generate(prompt, "You are a professional translator fluent in Hindi and Islamic terminology.")
-        return res if res else text
-      
+        hindi = self.deepl(english)
+        if hindi:
+            return hindi
+
+        log_step("C3_translator.py", "DeepL failed → AI fallback", "warn")
+        result = self.ai.generate(
+            f"Is English Hadith ka soft accurate COMPLETE Hindi tarjuma likho. "
+            f"Sirf tarjuma. Koi extra baat mat likho. "
+            f"Hadith ki har line ka tarjuma karo, kuch mat chhodo.\n\n{english}",
+            system_prompt="You are a professional Hindi translator for Islamic texts.",
+            max_tokens=1200)
+        if result:
+            log_step("C3_translator.py", "AI translation done", "ok")
+            return result
+
+        log_step("C3_translator.py", "Using hardcoded fallback", "warn")
+        return "अमल का दारोमदार नीयतों पर है।"
