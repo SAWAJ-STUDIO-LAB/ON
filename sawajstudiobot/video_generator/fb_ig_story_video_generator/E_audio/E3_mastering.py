@@ -1,27 +1,16 @@
 # ╔══════════════════════════════════════════════════════════╗
 # ║  📄 FILE:      E3_mastering.py                           ║
-# ║  📁 PATH:      .../fb_ig_yt_short_video_generator/       ║
-# ║                E_audio/E3_mastering.py                   ║
-# ║  🎯 PURPOSE:   Audio mastering (normalize, tempo)        ║
-# ║  📖 FOLDER:    E_audio                                   ║
+# ║  🎯 PURPOSE:   Voice mastering — Story + Short tuning    ║
+# ║  ✅ FIXED:     Fallback filters (loudnorm-safe)          ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎚️  MASTERING MODULE (SHORT)                           ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   📖 Settings:                                            ║
-║      • Tempo: 0.88 | Loudnorm: -16 LUFS | Volume: 1.35x  ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
-
+import os
+import subprocess
 from A_core.A2_logger import log_file_start, log_file_end, log_step
 
 
 class Mastering:
-    """Master voice audio (Short: slower tempo 0.88)."""
+    """Master voice audio — Story/Short (tempo 0.88, louder)."""
 
     def __init__(self, base):
         log_file_start("E3_mastering.py", "Audio mastering")
@@ -29,12 +18,43 @@ class Mastering:
         log_file_end("E3_mastering.py", "success", "Ready")
 
     def master_voice(self, in_file, out_file):
-        """Apply tempo + loudnorm + volume."""
+        """
+        Apply mastering. Tries best filter first, then simple fallback.
+        """
         log_step("E3_mastering.py", "master_voice()", "ok")
 
-        self.base.run_cmd(
-            f'ffmpeg -y -i {in_file} -af '
+        # Primary: full chain
+        primary = (
+            f'ffmpeg -y -i "{in_file}" -af '
             f'"atempo=0.88,loudnorm=I=-16:TP=-1.5:LRA=11,volume=1.35" '
-            f'{out_file}')
+            f'"{out_file}"'
+        )
+        try:
+            subprocess.run(primary, shell=True, check=True,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            if os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
+                return out_file
+        except Exception as e:
+            log_step("E3_mastering.py", "Primary filter failed",
+                     "warn", str(e)[:60])
 
-        return out_file
+        # Fallback: simple tempo + volume (no loudnorm)
+        fallback = (
+            f'ffmpeg -y -i "{in_file}" -af '
+            f'"atempo=0.88,volume=1.35" '
+            f'"{out_file}"'
+        )
+        try:
+            subprocess.run(fallback, shell=True, check=True,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            log_step("E3_mastering.py", "Fallback filter OK", "warn")
+            return out_file
+        except Exception as e:
+            log_step("E3_mastering.py", "Both filters failed",
+                     "fail", str(e)[:80])
+            # Last resort: just copy
+            import shutil
+            shutil.copy(in_file, out_file)
+            return out_file
