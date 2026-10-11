@@ -4,30 +4,18 @@
 # ║                D_video/D5_transition.py                  ║
 # ║  🎯 PURPOSE:   Transition helpers (crossfade + easing)   ║
 # ║  📖 FOLDER:    D_video                                   ║
+# ║  ✅ FIXED:     Closed docstring (was syntax error)       ║
 # ╚══════════════════════════════════════════════════════════╝
 
 """
-╔══════════════════════════════════════════════════════════╗
-║   🎬 TRANSITION MODULE                                   ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      Smooth transitions between scenes                   ║
-║                                                          ║
-║   📖 Functions:                                          ║
-║      • crossfade_alpha() → Fade 0 to 1                   ║
-║      • ease_in_out()     → Smooth S-curve                ║
-║                                                          ║
-║   📝 Note:                                                ║
-║      Yeh helpers hain — directly use nahi hote          ║
-║      D1/D2/D3 modules mein use hote hain                 ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
+TRANSITION MODULE (STORY)
+=========================
 
+Functions:
+  • crossfade_alpha() → Fade 0 to 1
+  • ease_in_out()     → Smooth S-curve
+"""
 
-# ═══════════════════════════════════════════════════════════
-# ① CROSSFADE ALPHA
-# ═══════════════════════════════════════════════════════════
 
 def crossfade_alpha(current_t, start, duration):
     """
@@ -48,10 +36,6 @@ def crossfade_alpha(current_t, start, duration):
     return (current_t - start) / duration
 
 
-# ═══════════════════════════════════════════════════════════
-# ② EASE IN OUT
-# ═══════════════════════════════════════════════════════════
-
 def ease_in_out(x):
     """
     Smooth easing function (S-curve).
@@ -62,4 +46,5 @@ def ease_in_out(x):
     Returns:
         eased value (0.0 to 1.0)
     """
+    x = max(0.0, min(1.0, x))
     return x * x * (3 - 2 * x)
