@@ -2,7 +2,7 @@
 # ║  📄 FILE:      C4_tts.py                                 ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                C_content/C4_tts.py                       ║
-# ║  ✅ FIXED:     base interface + edge-tts primary         ║
+# ║  ✅ FIXED:     __init__(self, base) + subprocess edge    ║
 # ╚══════════════════════════════════════════════════════════╝
 
 import os
@@ -12,7 +12,7 @@ from A_core.A4_utils import sanitize
 
 
 class TTSManager:
-    """Multi-engine TTS for Long videos."""
+    """Multi-engine TTS for Long videos (ElevenLabs → edge-tts → gTTS)."""
 
     VOICE_MAP = {
         "hi": "hi-IN-MadhurNeural",
@@ -25,34 +25,39 @@ class TTSManager:
         self.base = base
         log_file_end("C4_tts.py", "success")
 
+    # ─────────────────────────────────────────────────────
+    # GENERATE — main entry
+    # ─────────────────────────────────────────────────────
     def generate_audio(self, text, output_path, lang="hi"):
-        """ElevenLabs → edge-tts → gTTS fallback."""
         if not text or not text.strip():
             return False
 
         text = sanitize(text)
+        log_step("C4_tts.py", f"generate_audio({output_path})", "ok",
+                 f"{len(text)} chars, lang={lang}")
 
-        # 1. ElevenLabs (if key available)
+        # 1. ElevenLabs
         if os.environ.get("ELEVENLABS_API_KEY"):
             if self._try_elevenlabs(text, output_path):
                 return True
 
-        # 2. edge-tts (best free option)
+        # 2. edge-tts via subprocess
         if self._try_edge_tts(text, output_path, lang):
             return True
 
-        # 3. gTTS last resort
+        # 3. gTTS
         return self._try_gtts(text, output_path, lang)
 
+    # ─────────────────────────────────────────────────────
     def _try_elevenlabs(self, text, output_path):
         try:
-            el = os.environ["ELEVENLABS_API_KEY"]
+            log_step("C4_tts.py", "Trying ElevenLabs", "info")
             r = self.base.session.post(
                 "https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB",
                 headers={
                     "Accept": "audio/mpeg",
                     "Content-Type": "application/json",
-                    "xi-api-key": el,
+                    "xi-api-key": os.environ["ELEVENLABS_API_KEY"],
                 },
                 json={
                     "text": text,
@@ -82,15 +87,21 @@ class TTSManager:
     def _try_edge_tts(self, text, output_path, lang):
         try:
             voice = self.VOICE_MAP.get(lang, "hi-IN-MadhurNeural")
+            log_step("C4_tts.py", f"Trying edge-tts ({voice})", "info")
+
             tmp = output_path + ".txt"
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(text)
+
             subprocess.run(
                 f'edge-tts --file "{tmp}" --write-media "{output_path}" '
                 f'--voice {voice} --rate=-7% --pitch=-2Hz --volume=+8%',
-                shell=True, check=True)
+                shell=True, check=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
             if os.path.exists(tmp):
                 os.remove(tmp)
+
             if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
                 self.base.api_status["TTS"]["edge-tts"] = "success"
                 log_api("C4_tts.py", "edge-tts", "success",
@@ -104,7 +115,8 @@ class TTSManager:
     def _try_gtts(self, text, output_path, lang):
         try:
             from gtts import gTTS
-            tts = gTTS(text=text, lang=lang if lang in ("hi","ar","en") else "hi", slow=False)
+            safe_lang = lang if lang in ("hi", "ar", "en") else "hi"
+            tts = gTTS(text=text, lang=safe_lang, slow=False)
             tts.save(output_path)
             self.base.api_status["TTS"]["gTTS"] = "success"
             log_api("C4_tts.py", "gTTS", "success")
