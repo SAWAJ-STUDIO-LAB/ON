@@ -1,54 +1,40 @@
+
 # ╔══════════════════════════════════════════════════════════╗
 # ║  📄 FILE:      B5_badge.py                               ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                B_graphics/B5_badge.py                    ║
-# ║  🎯 PURPOSE:   Hadith Reference Badge overlay            ║
-# ║  📖 FOLDER:    B_graphics                                ║
+# ║  ✅ FIXED:     draw_badge(draw, text, y)                 ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🏷️ HADITH BADGE MODULE                                 ║
-║   ══════════════════════                                 ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      Top/Bottom golden rounded badge showing book name   ║
-║      and Hadith reference number.                        ║
-╚══════════════════════════════════════════════════════════╝
-"""
-
-from PIL import Image, ImageDraw, ImageFont
+from B_graphics.B1_fonts import FontManager
 
 
-def draw_hadith_badge(
-    image: Image.Image,
-    text: str,
-    font: ImageFont.FreeTypeFont,
-    position: tuple = (60, 60),
-    bg_color: tuple = (20, 30, 45, 210),
-    border_color: tuple = (212, 175, 55, 255),
-    text_color: tuple = (255, 248, 220, 255)
-) -> Image.Image:
-    """Draws a rounded corner box with Hadith reference text."""
+def draw_badge(draw, text, y=60):
+    """Draw gold hadith badge at top-left of frame."""
     if not text:
-        return image
+        return
 
-    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
+    fnt = FontManager.get_font(None, 32)
 
-    bbox = font.getbbox(text)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    bbox = draw.textbbox((0, 0), text, font=fnt)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    pad = 16
 
-    padding_x, padding_y = 20, 10
-    x, y = position
-    x1, y1 = x + tw + (padding_x * 2), y + th + (padding_y * 2)
+    x1, y1 = 80, y
+    x2, y2 = x1 + w + pad * 2, y1 + h + pad
 
-    # Draw rounded rectangle background
-    draw.rounded_rectangle([(x, y), (x1, y1)], radius=12, fill=bg_color, outline=border_color, width=2)
+    draw.rounded_rectangle(
+        [x1, y1, x2, y2],
+        radius=10,
+        fill=(20, 15, 8, 200),
+        outline=(212, 175, 55, 220),
+        width=2
+    )
 
-    # Draw text centered inside badge
-    tx = x + padding_x
-    ty = y + padding_y - bbox[1]
-    draw.text((tx, ty), text, font=font, fill=text_color)
-
-    return Image.alpha_composite(image.convert("RGBA"), overlay)
+    draw.text(
+        (x1 + pad, y1 + pad // 2),
+        text,
+        fill=(230, 200, 130, 255),
+        font=fnt
+    )
