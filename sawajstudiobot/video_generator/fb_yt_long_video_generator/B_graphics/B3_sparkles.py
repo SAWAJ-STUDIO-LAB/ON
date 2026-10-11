@@ -2,45 +2,27 @@
 # ║  📄 FILE:      B3_sparkles.py                            ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                B_graphics/B3_sparkles.py                 ║
-# ║  🎯 PURPOSE:   Gold & White Sparkle overlays             ║
-# ║  📖 FOLDER:    B_graphics                                ║
+# ║  ✅ FIXED:     draw_sparkles(draw, t, count) — matches   ║
+# ║                D_video API (16:9 landscape)              ║
 # ╚══════════════════════════════════════════════════════════╝
 
-"""
-╔══════════════════════════════════════════════════════════╗
-║   ✨ SPARKLES MODULE                                      ║
-║   ═══════════════════                                    ║
-║                                                          ║
-║   🎯 Purpose:                                            ║
-║      Golden/White sparkling star particle overlay        ║
-║      drawing on image frame.                             ║
-╚══════════════════════════════════════════════════════════╝
-"""
-
+import math
 import random
-from PIL import Image, ImageDraw
 
 
-def draw_sparkles(image: Image.Image, count: int = 20, seed: int = None) -> Image.Image:
-    """Draws glowing cross-shaped sparkles on top of canvas."""
-    if seed is not None:
-        random.seed(seed)
-
-    overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-    width, height = image.size
+def draw_sparkles(draw, t, count=20):
+    """Draw floating golden sparkles (1920x1080 landscape)."""
+    rng = random.Random(int(t * 10))
 
     for _ in range(count):
-        x = random.randint(50, width - 50)
-        y = random.randint(50, height - 50)
-        size = random.randint(3, 8)
-        alpha = random.randint(120, 240)
-        color = (255, 223, 128, alpha)  # Soft Gold
+        x = rng.randint(100, 1820)
+        y = rng.randint(100, 980)
+        size = rng.randint(3, 9)
 
-        # Draw cross star spark
-        draw.line([(x - size, y), (x + size, y)], fill=color, width=1)
-        draw.line([(x, y - size), (x, y + size)], fill=color, width=1)
-        draw.ellipse([(x - 1, y - 1), (x + 1, y + 1)], fill=(255, 255, 255, alpha))
+        alpha = int(120 + 100 * math.sin(t * 3 + x))
+        alpha = max(60, min(255, alpha))
 
-    return Image.alpha_composite(image.convert("RGBA"), overlay)
-  
+        draw.ellipse(
+            [x - size, y - size, x + size, y + size],
+            fill=(255, 240, 180, alpha)
+        )
