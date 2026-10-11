@@ -2,8 +2,7 @@
 # ║  📄 FILE:      C2_ai_provider.py                         ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                C_content/C2_ai_provider.py               ║
-# ║  🎯 PURPOSE:   Multi-Provider LLM AI engine fallback     ║
-# ║  ✅ FIXED:     base interface (story/short के जैसा)     ║
+# ║  ✅ FIXED:     __init__(self, base) + call() method      ║
 # ╚══════════════════════════════════════════════════════════╝
 
 import os
@@ -18,9 +17,12 @@ class AIProvider:
         self.base = base
         log_file_end("C2_ai_provider.py", "success")
 
-    def generate(self, prompt, system_prompt="", max_tokens=1500):
-        """Try providers in order until one works."""
-        log_step("C2_ai_provider.py", f"generate(prompt={len(prompt)} chars)", "ok")
+    # ─────────────────────────────────────────────────────
+    # PRIMARY — call() (used by C9_meaning, C10_bullets)
+    # ─────────────────────────────────────────────────────
+    def call(self, prompt, max_tokens=400, task="general"):
+        log_step("C2_ai_provider.py", f"call(task={task})", "ok",
+                 f"prompt {len(prompt)} chars")
 
         session = self.base.session
         providers = []
@@ -67,33 +69,32 @@ class AIProvider:
                     key = os.environ["GEMINI_API_KEY"]
                     r = session.post(
                         f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}",
-                        json={"contents": [{"parts": [{"text": f"{system_prompt}\n\n{prompt}"}]}]},
+                        json={"contents": [{"parts": [{"text": prompt}]}]},
                         timeout=60)
                     if r.status_code == 200:
                         text = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                        self.base.api_status["AI"][f"{name}"] = "success"
-                        log_api("C2_ai_provider.py", name, "success", f"{len(text)} chars")
+                        self.base.api_status["AI"][f"{name}({task})"] = "success"
+                        log_api("C2_ai_provider.py", f"{name}({task})", "success",
+                                f"{len(text)} chars")
                         return text
 
                 elif name == "Cohere":
                     r = session.post(url,
                         headers={**headers, "Content-Type": "application/json"},
-                        json={"model": model, "message": f"{system_prompt}\n\n{prompt}"},
+                        json={"model": model, "message": prompt},
                         timeout=60)
                     if r.status_code == 200:
                         text = r.json().get("text", "").strip()
                         if text:
-                            self.base.api_status["AI"][f"{name}"] = "success"
-                            log_api("C2_ai_provider.py", name, "success", f"{len(text)} chars")
+                            self.base.api_status["AI"][f"{name}({task})"] = "success"
+                            log_api("C2_ai_provider.py", f"{name}({task})", "success",
+                                    f"{len(text)} chars")
                             return text
 
                 else:
                     payload = {
                         "model": model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt or "You are a helpful assistant."},
-                            {"role": "user", "content": prompt},
-                        ],
+                        "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.6,
                         "max_tokens": max_tokens,
                     }
@@ -102,16 +103,26 @@ class AIProvider:
                         json=payload, timeout=60)
                     if r.status_code == 200:
                         text = r.json()["choices"][0]["message"]["content"].strip()
-                        self.base.api_status["AI"][f"{name}"] = "success"
-                        log_api("C2_ai_provider.py", name, "success", f"{len(text)} chars")
+                        self.base.api_status["AI"][f"{name}({task})"] = "success"
+                        log_api("C2_ai_provider.py", f"{name}({task})", "success",
+                                f"{len(text)} chars")
                         return text
 
-                self.base.api_status["AI"][f"{name}"] = "failed"
-                log_api("C2_ai_provider.py", name, "failed", f"HTTP {r.status_code}")
+                self.base.api_status["AI"][f"{name}({task})"] = "failed"
+                log_api("C2_ai_provider.py", f"{name}({task})", "failed",
+                        f"HTTP {r.status_code}")
 
             except Exception as e:
-                self.base.api_status["AI"][f"{name}"] = f"failed ({str(e)[:35]})"
-                log_api("C2_ai_provider.py", name, "failed", str(e)[:80])
+                self.base.api_status["AI"][f"{name}({task})"] = f"failed ({str(e)[:35]})"
+                log_api("C2_ai_provider.py", f"{name}({task})", "failed",
+                        str(e)[:80])
 
         log_step("C2_ai_provider.py", "All AI providers failed", "fail")
         return ""
+
+    # ─────────────────────────────────────────────────────
+    # BACK-COMPAT — generate(prompt, system_prompt, max_tokens)
+    # ─────────────────────────────────────────────────────
+    def generate(self, prompt, system_prompt="", max_tokens=1500):
+        combined = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        return self.call(combined, max_tokens=max_tokens, task="generate")
