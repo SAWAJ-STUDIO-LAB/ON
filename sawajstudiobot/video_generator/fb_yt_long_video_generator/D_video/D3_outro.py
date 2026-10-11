@@ -2,26 +2,8 @@
 # ║  📄 FILE:      D3_outro.py                               ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                D_video/D3_outro.py                       ║
-# ║  🎯 PURPOSE:   Outro frames (JazakAllah + CTA)           ║
-# ║  📖 FOLDER:    D_video                                   ║
+# ║  ✅ FIXED:     Latin script for all text                 ║
 # ╚══════════════════════════════════════════════════════════╝
-
-"""
-╔══════════════════════════════════════════════════════════╗
-║   🎬 OUTRO MODULE (LONG)                                 ║
-║   ═══════════════════════                                ║
-║                                                          ║
-║   ⏱️  Duration: 3 seconds                                 ║
-║                                                          ║
-║   🎨 Elements (16:9 landscape 1920x1080):                ║
-║      • "JazakAllah Khair" big gold                       ║
-║      • LIKE / SUBSCRIBE / SHARE buttons                  ║
-║      • "Follow @sawajstudio"                             ║
-║      • Logo center                                       ║
-║      • Sparkles                                          ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-"""
 
 import os
 from PIL import Image
@@ -41,20 +23,18 @@ def _draw_centered(draw, text, y, font, fill, W=1920, shadow=True):
 
 
 def draw_outro(img, draw, t, outro_dur, has_logo):
-    """Draw outro frame (16:9 landscape)."""
     alpha = min(1.0, t / 0.7)
     W, H = 1920, 1080
     C_GOLD = (230, 200, 130)
 
-    font_outro = FontManager.get_font(None, 96)
-    font_cta = FontManager.get_font(None, 44)
-    font_follow = FontManager.get_font(None, 56)
+    # ✅ FIXED: explicit latin script
+    font_outro = FontManager.get_font(None, 96, script="latin")
+    font_cta = FontManager.get_font(None, 44, script="latin")
+    font_follow = FontManager.get_font(None, 56, script="latin")
 
-    # ═══════════ JazakAllah big ═══════════
     _draw_centered(draw, "JazakAllah Khair", 300, font_outro,
                    (*C_GOLD, int(255 * alpha)), W)
 
-    # ═══════════ CTA buttons ═══════════
     if alpha > 0.4:
         cta_y = 520
         cta_items = [("LIKE", 500), ("SUBSCRIBE", 850), ("SHARE", 1250)]
@@ -63,12 +43,10 @@ def draw_outro(img, draw, t, outro_dur, has_logo):
                       fill=(255, 240, 200, int(255 * alpha)),
                       font=font_cta)
 
-    # ═══════════ Follow ═══════════
     if alpha > 0.6:
         _draw_centered(draw, "Follow @sawajstudio", 680, font_follow,
                        (220, 190, 130, int(255 * alpha)), W)
 
-    # ═══════════ Logo center ═══════════
     if has_logo:
         try:
             logo = Image.open("avatar.png").convert("RGBA")
@@ -78,5 +56,4 @@ def draw_outro(img, draw, t, outro_dur, has_logo):
         except Exception:
             pass
 
-    # ═══════════ Sparkles ═══════════
     draw_sparkles(draw, t)
