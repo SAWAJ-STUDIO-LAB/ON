@@ -2,7 +2,7 @@
 # ║  📄 FILE:      C3_translator.py                          ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                C_content/C3_translator.py                ║
-# ║  ✅ FIXED:     base, ai interface                        ║
+# ║  ✅ FIXED:     __init__(self, base, ai)                  ║
 # ╚══════════════════════════════════════════════════════════╝
 
 import os
@@ -50,12 +50,12 @@ class Translator:
             return hindi
 
         log_step("C3_translator.py", "DeepL failed → AI fallback", "warn")
-        result = self.ai.generate(
+        result = self.ai.call(
             f"Is English Hadith ka soft accurate COMPLETE Hindi tarjuma likho. "
             f"Sirf tarjuma. Koi extra baat mat likho. "
             f"Hadith ki har line ka tarjuma karo, kuch mat chhodo.\n\n{english}",
-            system_prompt="You are a professional Hindi translator for Islamic texts.",
-            max_tokens=1200)
+            max_tokens=1200,
+            task="hindi")
         if result:
             log_step("C3_translator.py", "AI translation done", "ok")
             return result
