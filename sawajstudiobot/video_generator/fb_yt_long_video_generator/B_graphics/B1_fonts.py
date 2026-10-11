@@ -2,7 +2,7 @@
 # ║  📄 FILE:      B1_fonts.py                               ║
 # ║  📁 PATH:      .../fb_yt_long_video_generator/           ║
 # ║                B_graphics/B1_fonts.py                    ║
-# ║  ✅ FIXED:     Robust font paths (system + ~/.fonts)     ║
+# ║  ✅ FIXED:     Added script parameter (arabic/hindi/latin)║
 # ╚══════════════════════════════════════════════════════════╝
 
 import os
@@ -11,40 +11,46 @@ from A_core.A2_logger import log_step
 
 
 class FontManager:
-    """Manages multi-lingual font selection for Long (16:9) videos."""
+    """Multi-lingual font loader for Long (16:9) videos with script support."""
 
-    SYSTEM_FONT_PATHS = [
-        # Devanagari (Hindi)
-        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
-        "~/.fonts/NotoSansDevanagari-Bold.ttf",
-        "~/.fonts/NotoSansDevanagari-Regular.ttf",
-        # Arabic (Urdu)
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
-        "~/.fonts/NotoNaskhArabic-Bold.ttf",
-        "~/.fonts/NotoNaskhArabic-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
-        # Latin
-        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        "~/.fonts/NotoSans-Bold.ttf",
-        "~/.fonts/NotoSans-Regular.ttf",
-        # DejaVu fallback
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
+    _FONTS = {
+        "arabic": [
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf",
+            "~/.fonts/NotoNaskhArabic-Bold.ttf",
+        ],
+        "devanagari": [
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+            "~/.fonts/NotoSansDevanagari-Bold.ttf",
+        ],
+        "latin": [
+            "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "~/.fonts/NotoSans-Bold.ttf",
+        ],
+    }
 
     _cache = {}
 
     @staticmethod
-    def get_font(font_path_or_name, size):
-        """Load specific font or fallback to system."""
-        cache_key = (font_path_or_name, size)
+    def get_font(font_path_or_name, size, script="latin"):
+        """
+        Load font for a specific script.
+
+        Args:
+            font_path_or_name: explicit .ttf path (optional)
+            size:              pixel size
+            script:            "arabic" | "devanagari" | "latin"
+        """
+        cache_key = (font_path_or_name, size, script)
         if cache_key in FontManager._cache:
             return FontManager._cache[cache_key]
 
-        # Try specific path first
+        # Try explicit path first
         if font_path_or_name:
             expanded = os.path.expanduser(font_path_or_name)
             if os.path.exists(expanded):
@@ -55,9 +61,10 @@ class FontManager:
                 except Exception:
                     pass
 
-        # Try system fallbacks
-        for sys_path in FontManager.SYSTEM_FONT_PATHS:
-            expanded = os.path.expanduser(sys_path)
+        # Try script-specific paths
+        paths = FontManager._FONTS.get(script, FontManager._FONTS["latin"])
+        for p in paths:
+            expanded = os.path.expanduser(p)
             if os.path.exists(expanded):
                 try:
                     f = ImageFont.truetype(expanded, size)
@@ -66,15 +73,24 @@ class FontManager:
                 except Exception:
                     continue
 
-        # Ultimate fallback
-        log_step("B1_fonts.py", f"Fallback default font @ size={size}", "warn")
+        # Fallback: any available font
+        for font_list in FontManager._FONTS.values():
+            for p in font_list:
+                expanded = os.path.expanduser(p)
+                if os.path.exists(expanded):
+                    try:
+                        f = ImageFont.truetype(expanded, size)
+                        FontManager._cache[cache_key] = f
+                        return f
+                    except Exception:
+                        continue
+
+        log_step("B1_fonts.py", f"Fallback default @ size={size} script={script}", "warn")
         return ImageFont.load_default()
 
     @staticmethod
     def load_bundle(base_path, sizes):
-        """Load dict of fonts."""
         fonts = {}
         for key, size in sizes.items():
-            path = os.path.join(base_path, f"{key}.ttf") if base_path else None
-            fonts[key] = FontManager.get_font(path, size)
+            fonts[key] = FontManager.get_font(None, size, script=key)
         return fonts
