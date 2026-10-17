@@ -1,0 +1,115 @@
+name: Transparent.Bot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Repository me file push karne ki permission deta hai
+
+jobs:
+  pro-editor-process:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install opencv-python-headless numpy requests
+
+      - name: Run Pro Editor & Replace Original Image
+        run: |
+          python -c "
+          import cv2
+          import numpy as np
+          import glob
+          import os
+          
+          files = glob.glob('*.png')
+          source_files = [f for f in files if f != 'sawaj_pro_transparent.png']
+          
+          if not source_files:
+              raise FileNotFoundError('No source PNG image found in repository!')
+              
+          original_filename = source_files[0]
+          print(f'Processing source image: {original_filename}')
+          
+          img = cv2.imread(original_filename)
+          hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+          
+          lower_green = np.array([35, 30, 30])
+          upper_green = np.array([85, 255, 255])
+          mask = cv2.inRange(hsv, lower_green, upper_green)
+          fg_mask = cv2.bitwise_not(mask)
+          
+          smooth_img = cv2.bilateralFilter(img, 9, 75, 75)
+          lab = cv2.cvtColor(smooth_img, cv2.COLOR_BGR2LAB)
+          l, a, b = cv2.split(lab)
+          clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+          cl = clahe.apply(l)
+          enhanced_lab = cv2.merge((cl, a, b))
+          enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+          
+          kernel = np.ones((2,2), np.uint8)
+          fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
+          fg_mask = cv2.GaussianBlur(fg_mask, (3,3), 0)
+          
+          b_ch, g_ch, r_ch = cv2.split(enhanced_img)
+          rgba = [b_ch, g_ch, r_ch, fg_mask]
+          pro_transparent = cv2.merge(rgba)
+          
+          output_filename = 'sawaj_pro_transparent.png'
+          cv2.imwrite(output_filename, pro_transparent)
+          
+          if os.path.exists(original_filename) and original_filename != output_filename:
+              os.remove(original_filename)
+              print(f'Deleted old original file: {original_filename}')
+              
+          os.rename(output_filename, original_filename)
+          print(f'Successfully replaced with transparent image named: {original_filename}')
+          "
+
+      - name: Send Pro Report and Transparent Logo to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "
+          import os
+          import glob
+          import requests
+          
+          token = os.environ.get('TELEGRAM_BOT_TOKEN')
+          chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+          
+          files = [f for f in glob.glob('*.png')]
+          target_file = files[0] if files else None
+          
+          if token and chat_id and target_file:
+              url = f'https://api.telegram.org/bot{token}/sendPhoto'
+              caption = f'🎨 *SAWAJ STUDIO PRO EDITOR BOT*\\n\\n✨ *Status:* Manual Run - Background Cleaned & Replaced!\\n📁 *File:* {target_file}'
+              
+              with open(target_file, 'rb') as photo:
+                  response = requests.post(
+                      url,
+                      data={'chat_id': chat_id, 'caption': caption, 'parse_mode': 'Markdown'},
+                      files={'photo': photo}
+                  )
+              print('Telegram response:', response.text)
+          else:
+              print('Telegram secrets not configured or file not found.')
+          "
+
+      - name: Commit and Push changes back to repository
+        run: |
+          git config --global user.name 'Transparent Bot'
+          git config --global user.email 'bot@users.noreply.github.com'
+          git add *.png
+          git commit -m "Auto: Manual run - replaced original image with transparent version" || echo "No changes to commit"
+          git push
