@@ -1,0 +1,1175 @@
+name: "G drive"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: morning-story
+  cancel-in-progress: false
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PYTHONUNBUFFERED: '1'
+  FFMPEG_LOGLEVEL: 'error'
+
+jobs:
+  story:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Python Packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/edge-tts
+          key: ${{ runner.os }}-pip-story-v56
+
+      - name: Cache Custom Fonts
+        id: cache-fonts
+        uses: actions/cache@v4
+        with:
+          path: ~/.fonts
+          key: ${{ runner.os }}-custom-fonts-v56
+
+      - name: Install System Packages
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -y -q ffmpeg fonts-noto fonts-noto-core fonts-noto-extra fonts-dejavu-core fontconfig
+
+      - name: Download Cinematic Fonts
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.fonts
+          fetch_font() {
+            local url="$1"; local out="$2"; local min="${3:-30000}"
+            wget -q --tries=3 --timeout=25 "$url" -O "$out" 2>/dev/null || true
+            local sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+            if [ "$sz" -lt "$min" ]; then
+              rm -f "$out"
+              echo "[FONT WARN] $(basename $out) — only ${sz}B (skipping)"
+            fi
+          }
+          if [ "${{ steps.cache-fonts.outputs.cache-hit }}" != "true" ]; then
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf" ~/.fonts/NotoSans-Regular.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Bold.ttf" ~/.fonts/NotoSans-Bold.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf" ~/.fonts/NotoSerif-Regular.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSerifDevanagari/NotoSerifDevanagari-Regular.ttf" ~/.fonts/NotoSerifDevanagari-Regular.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Regular.ttf" ~/.fonts/NotoNaskhArabic-Regular.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSerif/NotoSerif-Bold.ttf" ~/.fonts/NotoSerif-Bold.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSerifDevanagari/NotoSerifDevanagari-Bold.ttf" ~/.fonts/NotoSerifDevanagari-Bold.ttf
+            fetch_font "https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoNaskhArabic/NotoNaskhArabic-Bold.ttf" ~/.fonts/NotoNaskhArabic-Bold.ttf
+            fetch_font "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf" ~/.fonts/Amiri-Regular.ttf
+            fetch_font "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Bold.ttf" ~/.fonts/Amiri-Bold.ttf
+            fetch_font "https://github.com/google/fonts/raw/main/ofl/hind/Hind-SemiBold.ttf" ~/.fonts/Hind-SemiBold.ttf
+          fi
+          fc-cache -f -v >/dev/null 2>&1 || true
+
+      - name: Install Python Packages
+        run: |
+          set -euo pipefail
+          pip install requests edge-tts mutagen Pillow \
+            google-api-python-client google-auth google-auth-httplib2 google-auth-oauthlib pytz
+
+      - name: Write Story Pipeline Script
+        run: |
+          cat > story_pipeline.py << 'STORY_PY'
+          import os, re, time, random, subprocess, requests, sys, datetime, json, pytz, base64, shlex, glob, math
+          from urllib.parse import quote as url_quote
+          from mutagen.mp3 import MP3
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          IST = pytz.timezone("Asia/Kolkata")
+          NOW = datetime.datetime.now(IST)
+          DATE_STR = NOW.strftime("%d %B %Y")
+          TIME_STR = NOW.strftime("%H:%M IST")
+          RUN_TAG = NOW.strftime("%Y%m%d_%H%M%S")
+          DAY_NUM = NOW.timetuple().tm_yday
+          session = requests.Session()
+
+          TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+          TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+          GITHUB_SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY")
+          FFMPEG_LOGLEVEL = os.environ.get("FFMPEG_LOGLEVEL", "error")
+
+          REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN")
+          SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY")
+          TINYFISH_API_KEY = os.environ.get("TINYFISH_API_KEY")
+          TUNETANK_API_URL = os.environ.get("TUNETANK_API_URL")
+          VOICECAFE_API_URL = os.environ.get("VOICECAFE_API_URL")
+          WIKIMEDIA_API_URL = os.environ.get("WIKIMEDIA_API_URL")
+          NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY")
+          OPENROUTER_API_KEY_AI = os.environ.get("OPENROUTER_API_KEY_AI")
+          PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY")
+          PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
+          POLLINATIONS_API_URL = os.environ.get("POLLINATIONS_API_URL")
+          GDRIVE_STORY_VIDEO_FOLDER_ID = os.environ.get("GDRIVE_STORY_VIDEO_FOLDER_ID")
+          GEMINI_API_KEY_AI = os.environ.get("GEMINI_API_KEY_AI")
+          GOOGLE_DRIVE_CLIENT_ID = os.environ.get("GOOGLE_DRIVE_CLIENT_ID")
+          GOOGLE_DRIVE_CLIENT_SECRET = os.environ.get("GOOGLE_DRIVE_CLIENT_SECRET")
+          GOOGLE_DRIVE_REFRESH_TOKEN = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN")
+          GROQ_API_KEY_AI = os.environ.get("GROQ_API_KEY_AI")
+          HUGGINGFACE_API_KEY_AI = os.environ.get("HUGGINGFACE_API_KEY_AI")
+          JAMENDO_CLIENT_ID = os.environ.get("JAMENDO_CLIENT_ID")
+          LIBRETRANSLATE_URL = os.environ.get("LIBRETRANSLATE_URL")
+          MISTRAL_API_KEY_AI = os.environ.get("MISTRAL_API_KEY_AI")
+          MIXKIT_URL = os.environ.get("MIXKIT_URL")
+          ARCHIVE_API_URL = os.environ.get("ARCHIVE_API_URL")
+          CEREBRAS_API_KEY_AI = os.environ.get("CEREBRAS_API_KEY_AI")
+          COHERE_API_KEY_AI = os.environ.get("COHERE_API_KEY_AI")
+          DEEPL_API_KEY = os.environ.get("DEEPL_API_KEY")
+          DEEPLX_URL = os.environ.get("DEEPLX_URL")
+          ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
+          FREESOUND_API_KEY = os.environ.get("FREESOUND_API_KEY")
+          DRIVE_STORY_FOLDER_ID = os.environ.get("DRIVE_STORY_FOLDER_ID")
+          COVERR_API_KEY = os.environ.get("COVERR_API_KEY")
+          DEEPAI_API_KEY = os.environ.get("DEEPAI_API_KEY")
+          CLOUDFLARE_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
+          TAVILY_API_KEY_AI = os.environ.get("TAVILY_API_KEY_AI")
+          JINA_API_KEY = os.environ.get("JINA_API_KEY")
+          FREETOUSE_MUSIC_URL = os.environ.get("FREETOUSE_MUSIC_URL")
+          PRAYER_TIMES_API_URL = os.environ.get("PRAYER_TIMES_API_URL")
+          QURAN_API_URL = os.environ.get("QURAN_API_URL")
+          HADITH_API_URL = os.environ.get("HADITH_API_URL")
+          CLIPDROP_API_KEY = os.environ.get("CLIPDROP_API_KEY")
+
+          api_status = {}
+          HADITH_INFO = {}
+
+          C_ARABIC = "&H0000D7FF&"
+          C_HINDI = "&H00FFFFFF&"
+          C_ENGLISH = "&H00E5E4E2&"
+          C_GOLD = "&H0000D7FF&"
+
+          def send_tg(msg, preview=False):
+              print(msg)
+              if TG_TOKEN and TG_CHAT_ID:
+                  try:
+                      s = str(msg)
+                      for i in range(0, len(s), 4000):
+                          session.post(
+                              f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                              json={"chat_id": TG_CHAT_ID, "text": s[i:i+4000], "parse_mode": "HTML",
+                                    "disable_web_page_preview": not preview}, timeout=20)
+                  except Exception as e:
+                      print(f"[TG ERROR] {e}")
+
+          def run_cmd(cmd, check=True, timeout=900):
+              preview = cmd if len(cmd) < 300 else cmd[:280] + "..."
+              print(f"[CMD] {preview}")
+              try:
+                  r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+              except subprocess.TimeoutExpired:
+                  print(f"[CMD TIMEOUT] {timeout}s")
+                  if check: raise Exception("Command timed out")
+                  return None
+              if r.returncode != 0:
+                  err = (r.stderr or "")[:600]
+                  print(f"[CMD ERROR] {err}")
+                  if check: raise Exception(f"FFmpeg Error: {err[:200]}")
+              return r
+
+          def sanitize(t):
+              if not t: return ""
+              t = re.sub(r"[\u200b-\u200f\ufeff\u202a-\u202e]", "", str(t))
+              return t.replace('"', '').replace("'", "").replace(",", " ").replace("\n", " ").strip()
+
+          def sanitize_ass(t):
+              if not t: return ""
+              t = sanitize(t)
+              return t.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+
+          def get_dur(path):
+              if not os.path.exists(path): return 0.0
+              try: return MP3(path).info.length
+              except Exception: pass
+              try:
+                  r = subprocess.run(f'ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "{path}"',
+                                     shell=True, capture_output=True, text=True, timeout=30)
+                  v = r.stdout.strip()
+                  return float(v) if v else 0.0
+              except Exception: return 0.0
+
+          def http_get(url, timeout=25, **kw):
+              hdrs = {"User-Agent": "Mozilla/5.0"}
+              if "headers" in kw:
+                  hdrs.update(kw.pop("headers"))
+              for _ in range(2):
+                  try:
+                      r = session.get(url, timeout=timeout, headers=hdrs, **kw)
+                      if r.status_code == 200: return r
+                      if 400 <= r.status_code < 500: return None
+                  except Exception as e:
+                      print(f"[GET ERR {url[:60]}] {str(e)[:60]}")
+                  time.sleep(1)
+              return None
+
+          def http_post(url, timeout=30, **kw):
+              hdrs = {"User-Agent": "Mozilla/5.0"}
+              if "headers" in kw:
+                  hdrs.update(kw.pop("headers"))
+              try:
+                  r = session.post(url, timeout=timeout, headers=hdrs, **kw)
+                  return r if r.status_code == 200 else None
+              except Exception as e:
+                  print(f"[POST ERR {url[:60]}] {str(e)[:60]}")
+                  return None
+
+          def download(url, path, min_size=8000):
+              try:
+                  r = session.get(url, timeout=60, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+                  if r.status_code == 200:
+                      written = 0
+                      with open(path, "wb") as f:
+                          for chunk in r.iter_content(1024 * 1024):
+                              if chunk:
+                                  f.write(chunk); written += len(chunk)
+                      if written > min_size and os.path.getsize(path) > min_size:
+                          return True
+              except Exception as e:
+                  print(f"[DL ERR] {str(e)[:80]}")
+              return False
+
+          def verify_video(path, min_size=500_000):
+              if not os.path.exists(path): return False, "missing"
+              sz = os.path.getsize(path)
+              if sz < min_size: return False, f"small({sz}B)"
+              try:
+                  r = subprocess.run(f'ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "{path}"',
+                                     shell=True, capture_output=True, text=True, timeout=30)
+                  v = r.stdout.strip()
+                  dur = float(v) if v else 0.0
+                  if dur < 3: return False, f"short({dur}s)"
+                  return True, f"{sz/1e6:.1f}MB/{dur:.1f}s"
+              except Exception as e: return False, str(e)[:60]
+
+          def report_status():
+              lines = ["📊 <b>CINEMATIC ENGINE STATUS</b>\n"]
+              for sec, st in api_status.items():
+                  lines.append(f"<b>{sec}:</b>")
+                  for n, r in st.items():
+                      lines.append(f"  {r} {n}")
+              if len(lines) > 1: send_tg("\n".join(lines))
+              if GITHUB_SUMMARY:
+                  try:
+                      with open(GITHUB_SUMMARY, "a", encoding="utf-8") as f:
+                          f.write("## Pipeline Status\n\n")
+                          for sec, st in api_status.items():
+                              f.write(f"**{sec}**\n")
+                              for n, r in st.items():
+                                  f.write(f"- {n}: {r}\n")
+                          f.write("\n")
+                  except Exception: pass
+
+          def fetch_hadith():
+              books = [
+                  {"eng": "eng-bukhari", "ara": "ara-bukhari", "name": "Sahih al-Bukhari", "max": 7563},
+                  {"eng": "eng-muslim", "ara": "ara-muslim", "name": "Sahih Muslim", "max": 7500},
+                  {"eng": "eng-tirmidhi", "ara": "ara-tirmidhi", "name": "Jami at-Tirmidhi", "max": 3956},
+              ]
+              bases = [
+                  HADITH_API_URL if HADITH_API_URL else "https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1",
+                  "https://raw.githubusercontent.com/fawazahmed0/hadith-api/1",
+              ]
+              for _ in range(30):
+                  book = random.choice(books)
+                  num = random.randint(1, book["max"])
+                  for base in bases:
+                      try:
+                          url = f"{base}/editions/{book['eng']}/{num}.json"
+                          r = http_get(url, timeout=12)
+                          if not r: continue
+                          hs = r.json().get("hadiths", [])
+                          if not hs: continue
+                          eng = sanitize(hs[0].get("text", ""))
+                          if 45 <= len(eng) <= 480:
+                              ara = ""
+                              try:
+                                  ar_url = url.replace(book["eng"], book["ara"])
+                                  ar = http_get(ar_url, timeout=10)
+                                  if ar:
+                                      ad = ar.json().get("hadiths", [])
+                                      if ad: ara = sanitize(ad[0].get("text", ""))
+                              except Exception: pass
+                              api_status.setdefault("Data", {})["HADITH"] = "✅ Success"
+                              return {"collection": book["name"],
+                                      "number": str(hs[0].get("hadithnumber") or num),
+                                      "english": eng, "arabic": ara}
+                      except Exception: continue
+              api_status.setdefault("Data", {})["HADITH"] = "❌ Failed"
+              return None
+
+          def _llm_prompt(text):
+              return f"Translate this Hadith to natural Hindi (Devanagari). Output ONLY the Hindi translation, nothing else, no quotes:\n\n{text}"
+
+          def _call_gemini(prompt, timeout=25):
+              if not GEMINI_API_KEY_AI: return None
+              try:
+                  r = http_post(f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY_AI}",
+                      json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=timeout)
+                  if r:
+                      cand = r.json().get("candidates", [])
+                      if cand:
+                          parts = cand[0].get("content", {}).get("parts", [])
+                          if parts: return parts[0].get("text", "").strip()
+              except Exception: pass
+              return None
+
+          def _call_groq(prompt, temp=0.3, max_tokens=1000, timeout=25):
+              if not GROQ_API_KEY_AI: return None
+              try:
+                  r = http_post("https://api.groq.com/openai/v1/chat/completions",
+                      headers={"Authorization": f"Bearer {GROQ_API_KEY_AI}"},
+                      json={"model": "llama-3.3-70b-versatile",
+                            "messages": [{"role": "user", "content": prompt}],
+                            "temperature": temp, "max_tokens": max_tokens}, timeout=timeout)
+                  if r and r.json().get("choices"):
+                      return r.json()["choices"][0]["message"]["content"].strip()
+              except Exception: pass
+              return None
+
+          def translate_text(text):
+              if DEEPL_API_KEY:
+                  try:
+                      r = http_post("https://api-free.deepl.com/v2/translate",
+                          headers={"Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}"},
+                          data={"text": text, "source_lang": "EN", "target_lang": "HI"}, timeout=20)
+                      if r and r.json().get("translations"):
+                          api_status.setdefault("Translation", {})["DEEPL"] = "✅"
+                          return r.json()["translations"][0]["text"]
+                  except Exception: pass
+              if SARVAM_API_KEY:
+                  try:
+                      r = http_post("https://api.sarvam.ai/translate",
+                          headers={"api-subscription-key": SARVAM_API_KEY},
+                          json={"input": text, "source_language_code": "en-IN", "target_language_code": "hi-IN", "mode": "formal"}, timeout=20)
+                      if r and r.json().get("translated_text"):
+                          api_status.setdefault("Translation", {})["SARVAM"] = "✅"
+                          return r.json()["translated_text"]
+                  except Exception: pass
+              out = _call_gemini(_llm_prompt(text))
+              if out and len(out) > 10:
+                  api_status.setdefault("Translation", {})["GEMINI"] = "✅"; return out
+              out = _call_groq(_llm_prompt(text))
+              if out and len(out) > 10:
+                  api_status.setdefault("Translation", {})["GROQ"] = "✅"; return out
+              if OPENROUTER_API_KEY_AI:
+                  try:
+                      r = http_post("https://openrouter.ai/api/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {OPENROUTER_API_KEY_AI}"},
+                          json={"model": "meta-llama/llama-3.3-70b-instruct",
+                                "messages": [{"role": "user", "content": _llm_prompt(text)}],
+                                "temperature": 0.3, "max_tokens": 1000}, timeout=30)
+                      if r and r.json().get("choices"):
+                          out = r.json()["choices"][0]["message"]["content"].strip()
+                          api_status.setdefault("Translation", {})["OPENROUTER"] = "✅"; return out
+                  except Exception: pass
+              if MISTRAL_API_KEY_AI:
+                  try:
+                      r = http_post("https://api.mistral.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {MISTRAL_API_KEY_AI}"},
+                          json={"model": "mistral-small-latest",
+                                "messages": [{"role": "user", "content": _llm_prompt(text)}],
+                                "temperature": 0.3, "max_tokens": 1000}, timeout=30)
+                      if r and r.json().get("choices"):
+                          out = r.json()["choices"][0]["message"]["content"].strip()
+                          api_status.setdefault("Translation", {})["MISTRAL"] = "✅"; return out
+                  except Exception: pass
+              if CEREBRAS_API_KEY_AI:
+                  try:
+                      r = http_post("https://api.cerebras.ai/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {CEREBRAS_API_KEY_AI}"},
+                          json={"model": "llama3.3-70b",
+                                "messages": [{"role": "user", "content": _llm_prompt(text)}],
+                                "temperature": 0.3, "max_tokens": 1000}, timeout=30)
+                      if r and r.json().get("choices"):
+                          out = r.json()["choices"][0]["message"]["content"].strip()
+                          api_status.setdefault("Translation", {})["CEREBRAS"] = "✅"; return out
+                  except Exception: pass
+              if NVIDIA_API_KEY:
+                  try:
+                      r = http_post("https://integrate.api.nvidia.com/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
+                          json={"model": "meta/llama-3.3-70b-instruct",
+                                "messages": [{"role": "user", "content": _llm_prompt(text)}],
+                                "temperature": 0.3, "max_tokens": 1000}, timeout=30)
+                      if r and r.json().get("choices"):
+                          out = r.json()["choices"][0]["message"]["content"].strip()
+                          api_status.setdefault("Translation", {})["NVIDIA"] = "✅"; return out
+                  except Exception: pass
+              if HUGGINGFACE_API_KEY_AI:
+                  try:
+                      r = http_post("https://api-inference.huggingface.co/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {HUGGINGFACE_API_KEY_AI}"},
+                          json={"model": "meta-llama/Llama-3.2-3B-Instruct",
+                                "messages": [{"role": "user", "content": _llm_prompt(text)}],
+                                "temperature": 0.3, "max_tokens": 1000}, timeout=30)
+                      if r and r.json().get("choices"):
+                          out = r.json()["choices"][0]["message"]["content"].strip()
+                          api_status.setdefault("Translation", {})["HF"] = "✅"; return out
+                  except Exception: pass
+              if COHERE_API_KEY_AI:
+                  try:
+                      r = http_post("https://api.cohere.ai/compatibility/v1/chat/completions",
+                          headers={"Authorization": f"Bearer {COHERE_API_KEY_AI}"},
+                          json={"model": "command-r-plus-08-2024",
+                                "messages": [{"role": "user", "content": _llm_prompt(text)}],
+                                "temperature": 0.3, "max_tokens": 1000}, timeout=30)
+                      if r and r.json().get("choices"):
+                          out = r.json()["choices"][0]["message"]["content"].strip()
+                          api_status.setdefault("Translation", {})["COHERE"] = "✅"; return out
+                  except Exception: pass
+              try:
+                  lt = (LIBRETRANSLATE_URL or "https://translate.argosopentech.com").rstrip("/")
+                  r = http_post(f"{lt}/translate",
+                      json={"q": text, "source": "en", "target": "hi", "format": "text"}, timeout=25)
+                  if r and r.json().get("translatedText"):
+                      api_status.setdefault("Translation", {})["LIBRE"] = "✅"
+                      return r.json()["translatedText"]
+              except Exception: pass
+              try:
+                  r = http_get("https://api.mymemory.translated.net/get", params={"q": text[:500], "langpair": "en|hi"}, timeout=20)
+                  if r and r.json().get("responseData", {}).get("translatedText"):
+                      out = r.json()["responseData"]["translatedText"]
+                      if "MYMEMORY" not in out.upper():
+                          api_status.setdefault("Translation", {})["MYMEMORY"] = "✅"; return out
+              except Exception: pass
+              api_status.setdefault("Translation", {})["ORIGINAL"] = "⚠️"
+              return text
+
+          def _clean_hook(h):
+              h = re.sub(r'\*\*', '', h)
+              h = re.sub(r'^[\d\.\-\*\)\s#]+', '', h).strip().strip('"').strip("'")
+              return h
+
+          def generate_hook(english, hindi):
+              defaults = ["Ye hadith sunkar dekho", "Ek baat yaad rakho", "99% Muslim ye nahi jaante", "Ye sunkar aap ruk jaoge"]
+              prompt = (f"Generate 3 viral YouTube Shorts hooks for this hadith. "
+                        f"Each hook MUST be in Hindi Devanagari, max 6 words, creates curiosity. "
+                        f"NO numbering, NO quotes. Return ONLY 3 lines.\n\nHadith: {english[:500]}")
+              for name, fn in [
+                  ("GROQ", lambda: _call_groq(prompt, temp=0.85, max_tokens=150)),
+                  ("GEMINI", lambda: _call_gemini(prompt)),
+              ]:
+                  try:
+                      txt = fn()
+                      if not txt: continue
+                      hooks = [_clean_hook(h) for h in txt.split("\n") if h.strip()]
+                      hooks = [h for h in hooks if 4 <= len(h) <= 80]
+                      if hooks: return random.choice(hooks[:3])
+                  except Exception: pass
+              return random.choice(defaults)
+
+          def generate_takeaway(english):
+              prompt = (f"This hadith's lesson in 1 short Hindi sentence "
+                        f"(max 10 words, Devanagari, actionable, no quotes, no numbering):\n\nHadith: {english[:500]}")
+              out = _call_groq(prompt, temp=0.5, max_tokens=100, timeout=20)
+              if out:
+                  out = re.sub(r'^[\d\.\-\*\)\s]+', '', out).strip().strip('"').strip("'")
+                  if 5 <= len(out) <= 100: return out
+              return "Aaj se ye amal shuru karein"
+
+          def generate_next_topic(collection):
+              prompt = ("Generate 1 short Hindi topic name (Devanagari, max 4 words) for tomorrow's Islamic hadith video. "
+                        "Examples: 'Sabr ka fal', 'Gussa control'. Return only the topic, no quotes.")
+              out = _call_groq(prompt, temp=0.9, max_tokens=50, timeout=20)
+              if out:
+                  out = out.strip().strip('"').strip("'")
+                  if 3 <= len(out) <= 40: return out
+              return "Ek aur zaroori hadith"
+
+          def generate_metadata(english, collection):
+              default_title = f"Ye Hadith Aapki Zindagi Badal Degi | {collection}"
+              default_tags = "#hadith #islam #muslim #islamicvideo #shorts"
+              prompt = (f"Generate 1 viral YouTube Shorts title (max 10 words, Hindi) "
+                        f"and 5 viral hashtags for this Hadith. "
+                        f"Format: Title :: Tag1 Tag2 Tag3 Tag4 Tag5\n\nHadith: {english[:300]}")
+              out = _call_groq(prompt, temp=0.8, max_tokens=100, timeout=20)
+              if out and "::" in out:
+                  parts = out.split("::", 1)
+                  title = parts[0].strip() or default_title
+                  tags = parts[1].strip() or default_tags
+                  return title, tags
+              return default_title, default_tags
+
+          def _edge_tts(text, outfile, voice="hi-IN-MadhurNeural", rate="-10%", pitch="-2Hz"):
+              tmp = outfile + ".txt"
+              with open(tmp, "w", encoding="utf-8") as f: f.write(text)
+              run_cmd(f'edge-tts --file "{tmp}" --write-media "{outfile}" --voice {voice} --rate="{rate}" --pitch="{pitch}"')
+              if os.path.exists(tmp): os.remove(tmp)
+
+          def gen_tts(text, outfile, retries=2):
+              text = sanitize(text)
+              if not text: return False
+              if SARVAM_API_KEY:
+                  for a in range(retries):
+                      try:
+                          r = http_post("https://api.sarvam.ai/text-to-speech",
+                              headers={"api-subscription-key": SARVAM_API_KEY},
+                              json={"inputs": [text], "target_language_code": "hi-IN", "speaker": "meera",
+                                    "pace": 0.9, "enable_preprocessing": True}, timeout=30)
+                          if r and r.json().get("audios"):
+                              with open(outfile, "wb") as f: f.write(base64.b64decode(r.json()["audios"][0]))
+                              if os.path.getsize(outfile) > 4000: return True
+                      except Exception: pass
+              if ELEVENLABS_API_KEY:
+                  try:
+                      r = http_post("https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM",
+                          headers={"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"},
+                          json={"text": text, "model_id": "eleven_multilingual_v2",
+                                "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}, timeout=40)
+                      if r:
+                          with open(outfile, "wb") as f: f.write(r.content)
+                          if os.path.getsize(outfile) > 4000: return True
+                  except Exception: pass
+              voices = ["hi-IN-MadhurNeural", "hi-IN-SwaraNeural", "en-IN-PrabhatNeural", "en-IN-NeerjaNeural"]
+              for v in voices:
+                  for a in range(retries):
+                      try:
+                          _edge_tts(text, outfile, v)
+                          if os.path.exists(outfile) and os.path.getsize(outfile) > 4000: return True
+                      except Exception: pass
+              return False
+
+          MUSIC_MAX = 240
+
+          def _prep_music(src, dst):
+              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner "
+                      f"-i {src} -af \"volume=0.34,afade=t=in:st=0:d=3\" -t {MUSIC_MAX} "
+                      f"-c:a libmp3lame -b:a 192k {dst}")
+
+          def get_music():
+              if JAMENDO_CLIENT_ID:
+                  try:
+                      r = http_get(f"https://api.jamendo.com/v3.0/tracks/?client_id={JAMENDO_CLIENT_ID}&format=json&limit=3&tags=cinematic+emotional", timeout=20)
+                      if r:
+                          for t in r.json().get("results", []):
+                              if t.get("audio") and download(t["audio"], "music_raw.mp3", 10000):
+                                  _prep_music("music_raw.mp3", "music_soft.mp3"); return True
+                  except Exception: pass
+              if FREETOUSE_MUSIC_URL:
+                  try:
+                      if download(FREETOUSE_MUSIC_URL, "music_raw.mp3", 10000):
+                          _prep_music("music_raw.mp3", "music_soft.mp3"); return True
+                  except Exception: pass
+              try:
+                  r = http_get("https://archive.org/advancedsearch.php",
+                      params={"q": "collection:opensource_audio AND (cinematic OR ambient) AND mediatype:audio",
+                              "fl[]": "identifier", "rows": 5, "output": "json"}, timeout=20)
+                  if r:
+                      for doc in r.json().get("response", {}).get("docs", []):
+                          ident = doc.get("identifier")
+                          if not ident: continue
+                          md = http_get(f"https://archive.org/metadata/{ident}", timeout=15)
+                          if not md: continue
+                          for f in md.json().get("files", []):
+                              sz = f.get("size", "0")
+                              try: szv = int(sz)
+                              except: szv = 0
+                              if f.get("name", "").endswith(".mp3") and szv > 200_000:
+                                  url = f"https://archive.org/download/{ident}/{f['name']}"
+                                  if download(url, "music_raw.mp3", 100_000):
+                                      _prep_music("music_raw.mp3", "music_soft.mp3"); return True
+              except Exception: pass
+              if PIXABAY_API_KEY:
+                  try:
+                      r = http_get(f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q=cinematic&category=music&per_page=5", timeout=20)
+                      if r:
+                          for hit in r.json().get("hits", [])[:3]:
+                              au = hit.get("audio") or hit.get("previewURL")
+                              if au and download(au, "music_raw.mp3", 10000):
+                                  _prep_music("music_raw.mp3", "music_soft.mp3"); return True
+                  except Exception: pass
+              fallback_urls = [
+                  "https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3",
+                  "https://assets.mixkit.co/music/preview/mixkit-spirit-of-the-forest-126.mp3",
+                  "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Meditation%20Impromptu%2001.mp3",
+                  "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Peaceful%20Descent.mp3",
+              ]
+              for url in fallback_urls:
+                  if download(url, "music_raw.mp3", 100_000):
+                      _prep_music("music_raw.mp3", "music_soft.mp3"); return True
+              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -f lavfi "
+                      f"-i \"anullsrc=r=44100:cl=stereo\" -t {MUSIC_MAX} "
+                      f"-c:a libmp3lame -b:a 192k music_soft.mp3")
+              return True
+
+          def get_sfx_pack():
+              sfx = {}
+              if FREESOUND_API_KEY:
+                  queries = {"ambient": "cinematic ambient drone", "impact": "cinematic boom impact",
+                             "riser": "cinematic riser whoosh", "heartbeat": "heartbeat slow",
+                             "ticking": "clock ticking", "boom": "deep bass drop"}
+                  for name, q in queries.items():
+                      try:
+                          url = (f"https://freesound.org/apiv2/search/text/?query={url_quote(q)}"
+                                 f"&fields=id,previews&token={FREESOUND_API_KEY}&page_size=3&sort=rating_desc")
+                          r = http_get(url, timeout=20)
+                          if r:
+                              for res in r.json().get("results", []):
+                                  prev = (res.get("previews", {}).get("preview-hq-mp3")
+                                            or res.get("previews", {}).get("preview-lq-mp3"))
+                                  if prev and download(prev, f"sfx_{name}.mp3", 3000):
+                                      sfx[name] = f"sfx_{name}.mp3"; break
+                      except Exception: pass
+              fallback_sfx = {
+                  "ambient": "https://assets.mixkit.co/active_storage/sfx/2515/2515-preview.mp3",
+                  "impact": "https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3",
+                  "riser": "https://assets.mixkit.co/active_storage/sfx/2665/2665-preview.mp3",
+                  "heartbeat": "https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3",
+                  "ticking": "https://assets.mixkit.co/active_storage/sfx/2394/2394-preview.mp3",
+                  "boom": "https://assets.mixkit.co/active_storage/sfx/2647/2647-preview.mp3",
+              }
+              for name, url in fallback_sfx.items():
+                  if name not in sfx and download(url, f"sfx_{name}.mp3", 3000):
+                      sfx[name] = f"sfx_{name}.mp3"
+              return sfx
+
+          def _collect_urls():
+              urls = []
+              if PEXELS_API_KEY:
+                  for q in ["mosque architecture", "night sky stars", "desert sand dunes",
+                            "islamic geometric patterns", "rain on window"]:
+                      try:
+                          r = http_get(f"https://api.pexels.com/videos/search?query={url_quote(q)}&orientation=portrait&per_page=3",
+                                       headers={"Authorization": PEXELS_API_KEY}, timeout=20)
+                          if r:
+                              for v in r.json().get("videos", []):
+                                  vf = v.get("video_files") or []
+                                  if vf:
+                                      vf.sort(key=lambda x: abs((x.get("width") or 0) - 1080))
+                                      urls.append(vf[0]["link"])
+                      except Exception: pass
+              if PIXABAY_API_KEY and len(urls) < 6:
+                  try:
+                      r = http_get(f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q=mosque+sky+desert&per_page=5&video_type=film", timeout=20)
+                      if r:
+                          for h in r.json().get("hits", []):
+                              v = h.get("videos", {}).get("large") or h.get("videos", {}).get("medium")
+                              if v and v.get("url"): urls.append(v["url"])
+                  except Exception: pass
+              if COVERR_API_KEY and len(urls) < 6:
+                  try:
+                      r = http_get("https://api.coverr.co/videos",
+                                   params={"query": "nature", "page_size": 5},
+                                   headers={"Authorization": f"Bearer {COVERR_API_KEY}"}, timeout=20)
+                      if r:
+                          for v in r.json().get("hits", []):
+                              if v.get("urls", {}).get("mp4_download"):
+                                  urls.append(v["urls"]["mp4_download"])
+                  except Exception: pass
+              if len(urls) < 6:
+                  try:
+                      r = http_get("https://archive.org/advancedsearch.php",
+                          params={"q": "(mosque architecture OR desert landscape) AND mediatype:movies",
+                                  "fl[]": "identifier", "rows": 5, "output": "json"}, timeout=20)
+                      if r:
+                          for doc in r.json().get("response", {}).get("docs", []):
+                              ident = doc.get("identifier")
+                              md = http_get(f"https://archive.org/metadata/{ident}", timeout=15)
+                              if not md: continue
+                              for f in md.json().get("files", []):
+                                  sz = f.get("size", "0")
+                                  try: szv = int(sz)
+                                  except: szv = 0
+                                  if f.get("name", "").endswith(".mp4") and szv > 500_000:
+                                      urls.append(f"https://archive.org/download/{ident}/{f['name']}")
+                                      break
+                  except Exception: pass
+              mixkit_urls = [
+                  "https://assets.mixkit.co/videos/preview/mixkit-stars-in-space-1610-large.mp4",
+                  "https://assets.mixkit.co/videos/preview/mixkit-white-clouds-in-a-blue-sky-2408-large.mp4",
+                  "https://assets.mixkit.co/videos/preview/mixkit-tree-with-yellow-leaves-in-autumn-2416-large.mp4",
+                  "https://assets.mixkit.co/videos/preview/mixkit-forest-stream-in-the-sunlight-529-large.mp4",
+                  "https://assets.mixkit.co/videos/preview/mixkit-waves-in-the-water-1164-large.mp4",
+              ]
+              urls.extend(mixkit_urls)
+              return urls
+
+          def get_multi_bg(dur):
+              all_urls = _collect_urls()
+              vids = []
+              seg = dur / 2 + 1
+              for i, u in enumerate(all_urls):
+                  if len(vids) >= 3: break
+                  if not u: continue
+                  path = f"vid_{i}.mp4"
+                  if not download(u, path, 400_000): continue
+                  proc = f"proc_{i}.mp4"
+                  try:
+                      run_cmd(
+                          f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner "
+                          f"-stream_loop -1 -i {path} "
+                          f"-vf \"scale=1200:2140:force_original_aspect_ratio=increase,"
+                          f"crop=1080:1920,setpts=1.5*PTS,"
+                          f"zoompan=z='min(zoom+0.0001,1.05)':d=1:"
+                          f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
+                          f"setsar=1,colorbalance=rs=-0.1:gs=0.0:bs=0.1,"
+                          f"eq=contrast=1.35:brightness=-0.05:saturation=1.1,"
+                          f"vignette=PI/4,noise=alls=12:allf=t\" "
+                          f"-t {seg:.2f} -an -r 30 -c:v libx264 -preset veryfast -crf 18 {proc}",
+                          check=False, timeout=600)
+                      if verify_video(proc, 100_000)[0]: vids.append(proc)
+                  except Exception: pass
+              if not vids:
+                  if POLLINATIONS_API_URL:
+                      try:
+                          prompt = "Islamic architecture, mosque, cinematic lighting, 8k, highly detailed"
+                          img_url = f"{POLLINATIONS_API_URL.rstrip('/')}/prompt/{url_quote(prompt)}?width=1080&height=1920&nologo=true"
+                          if download(img_url, "ai_bg.jpg", 10000):
+                              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -loop 1 -i ai_bg.jpg -vf \"scale=1200:2140:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.00015,1.05)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920\" -t {dur+2} -r 30 -c:v libx264 -preset veryfast -crf 20 bg_final.mp4")
+                              return "bg_final.mp4"
+                      except Exception: pass
+                  run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -f lavfi -i \"color=c=0x101828:s=1080x1920:d={dur+2}\" -vf \"noise=alls=6:allf=t\" -c:v libx264 -preset veryfast -crf 20 -r 30 bg_final.mp4")
+                  return "bg_final.mp4"
+              if len(vids) == 1:
+                  run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -stream_loop -1 -i {vids[0]} -c:v libx264 -preset veryfast -crf 18 -t {dur:.2f} -r 30 bg_final.mp4")
+              elif len(vids) == 2:
+                  off = max(0.5, seg - 2.0)
+                  fc = f"[0:v][1:v]xfade=transition=fade:duration=2.0:offset={off:.2f}[outv]"
+                  run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -i {vids[0]} -i {vids[1]} -filter_complex \"{fc}\" -map \"[outv]\" -t {dur:.2f} -r 30 -c:v libx264 -preset veryfast -crf 18 bg_final.mp4")
+              else:
+                  off1 = max(0.5, seg - 2.0)
+                  off2 = max(off1 + 1.0, (seg * 2) - 4.0)
+                  fc = f"[0:v][1:v]xfade=transition=fade:duration=2.0:offset={off1:.2f}[x1];[x1][2:v]xfade=transition=fade:duration=2.0:offset={off2:.2f}[outv]"
+                  run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -i {vids[0]} -i {vids[1]} -i {vids[2]} -filter_complex \"{fc}\" -map \"[outv]\" -t {dur:.2f} -r 30 -c:v libx264 -preset veryfast -crf 18 bg_final.mp4")
+              return "bg_final.mp4"
+
+          def add_punchline_pause(audio_in, audio_out):
+              dur = get_dur(audio_in)
+              if dur <= 3:
+                  run_cmd(f'cp "{audio_in}" "{audio_out}"', check=False)
+                  return max(0.5, dur * 0.78)
+              split = round(dur * 0.78, 3)
+              filt = (f"[0:a]atrim=0:{split},asetpts=N/SR/TB[a1];"
+                      f"[0:a]atrim=start={split},asetpts=N/SR/TB[a2];"
+                      f"anullsrc=r=44100:cl=stereo,atrim=0:0.7[sil];"
+                      f"[a1][sil][a2]concat=n=3:v=0:a=1[out]")
+              run_cmd(f'ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner '
+                      f'-i "{audio_in}" -filter_complex "{filt}" -map "[out]" '
+                      f'-c:a libmp3lame -b:a 192k "{audio_out}"')
+              return split
+
+          def try_download_logo():
+              if os.path.exists("logo.png") and os.path.getsize("logo.png") > 1000: return "logo.png"
+              for url in ["https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Kaaba_Masjid_Haraam_Mecca.jpg/200px-Kaaba_Masjid_Haraam_Mecca.jpg",
+                          "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Kaaba%2C_Mecca.jpg/200px-Kaaba%2C_Mecca.jpg"]:
+                  try:
+                      r = session.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+                      if r.status_code == 200 and len(r.content) > 1000:
+                          with open("logo.png", "wb") as f: f.write(r.content)
+                          return "logo.png"
+                  except Exception: pass
+              return ""
+
+          # ============================================================
+          # GOOGLE DRIVE — ONLY STORY VIDEO (nothing else)
+          # ============================================================
+          def upload_drive(path):
+              folder = GDRIVE_STORY_VIDEO_FOLDER_ID or DRIVE_STORY_FOLDER_ID
+              rid = GOOGLE_DRIVE_REFRESH_TOKEN
+              cid = GOOGLE_DRIVE_CLIENT_ID
+              cs = GOOGLE_DRIVE_CLIENT_SECRET
+              if not (rid and cid and cs):
+                  api_status.setdefault("Upload", {})["GDRIVE"] = "⚠️ No creds"
+                  return False
+              for attempt in range(3):
+                  try:
+                      creds = Credentials(token=None, refresh_token=rid, client_id=cid,
+                                          client_secret=cs, token_uri="https://oauth2.googleapis.com/token")
+                      service = build("drive", "v3", credentials=creds, cache_discovery=False)
+                      safe = HADITH_INFO.get("collection", "Story").replace(" ", "_")
+                      hnum = HADITH_INFO.get("number", "0")
+                      fname = f"Day{DAY_NUM:03d}_{safe}_Hadith_{hnum}_{RUN_TAG}.mp4"
+                      meta = {"name": fname}
+                      if folder: meta["parents"] = [folder.strip()]
+                      up = service.files().create(
+                          body=meta,
+                          media_body=MediaFileUpload(path, mimetype="video/mp4", resumable=True),
+                          fields="id, webViewLink"
+                      ).execute()
+                      service.permissions().create(
+                          fileId=up["id"],
+                          body={"type": "anyone", "role": "reader"}
+                      ).execute()
+                      api_status.setdefault("Upload", {})["GDRIVE"] = "✅ Success"
+                      wv = up.get("webViewLink") or ""
+                      if wv:
+                          send_tg(f'🎬 <b>DONE!</b>\n👁️ <a href="{wv}">Download from Drive</a>', preview=True)
+                      return True
+                  except Exception:
+                      time.sleep(3 * (attempt + 1))
+              api_status.setdefault("Upload", {})["GDRIVE"] = "❌ Failed"
+              return False
+
+          def create_thumbnail(video_path, hook_text):
+              try:
+                  from PIL import Image, ImageDraw, ImageFont
+                  run_cmd(f"ffmpeg -y -loglevel error -ss 00:00:01 -i {video_path} -vframes 1 thumb_raw.jpg")
+                  if not os.path.exists("thumb_raw.jpg"): return False
+                  img = Image.open("thumb_raw.jpg").convert("RGBA")
+                  overlay = Image.new('RGBA', img.size, (0, 0, 0, 140))
+                  img = Image.alpha_composite(img, overlay)
+                  draw = ImageDraw.Draw(img)
+                  candidates = [
+                      os.path.expanduser("~/.fonts/NotoSans-Bold.ttf"),
+                      os.path.expanduser("~/.fonts/NotoSerif-Bold.ttf"),
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                  ]
+                  font = None
+                  for fp in candidates:
+                      if os.path.exists(fp):
+                          try:
+                              font = ImageFont.truetype(fp, 130); break
+                          except Exception: pass
+                  if font is None:
+                      try: font = ImageFont.load_default(size=100)
+                      except TypeError: font = ImageFont.load_default()
+                  text = (hook_text or "").upper()
+                  bbox = draw.textbbox((0, 0), text, font=font)
+                  text_w = bbox[2] - bbox[0]; text_h = bbox[3] - bbox[1]
+                  x = (1080 - text_w) / 2; y = (1920 - text_h) / 2
+                  for dx in [-4, 0, 4]:
+                      for dy in [-4, 0, 4]:
+                          draw.text((x+dx, y+dy), text, fill="black", font=font)
+                  draw.text((x, y), text, fill="yellow", font=font)
+                  img.convert("RGB").save("thumbnail.jpg", quality=95)
+                  return True
+              except Exception as e:
+                  print(f"[THUMB ERR] {e}")
+                  return False
+
+          try:
+              send_tg(f"🎬 <b>CINEMATIC STORY STARTED</b>\n📅 {DATE_STR} • {TIME_STR} • Day {DAY_NUM}")
+              for s in ["Data", "Hook", "Takeaway", "NextTopic", "Translation",
+                        "Voice", "Music", "SFX", "Video", "Pattern", "Upload", "Output"]:
+                  api_status.setdefault(s, {})
+
+              h = fetch_hadith()
+              if not h: raise Exception("Hadith fetch failed")
+              HADITH_INFO.update(h)
+
+              hindi = translate_text(h["english"])
+              hook_text = generate_hook(h["english"], hindi)
+              takeaway_text = generate_takeaway(h["english"])
+              next_topic = generate_next_topic(h["collection"])
+              yt_title, yt_tags = generate_metadata(h["english"], h["collection"])
+
+              intro_text = "Bismillah. Assalamu Alaikum."
+
+              if not gen_tts(hook_text, "hook_voice.mp3"): raise Exception("Hook TTS failed")
+              if not gen_tts(intro_text, "intro_voice.mp3"): raise Exception("Intro TTS failed")
+              if not gen_tts(f"हदीस शरीफ। {hindi}", "s_raw.mp3"): raise Exception("Main TTS failed")
+              if not gen_tts(takeaway_text, "takeaway_voice.mp3"): raise Exception("Takeaway TTS failed")
+
+              get_music()
+              sfx_pack = get_sfx_pack()
+
+              split_point = add_punchline_pause("s_raw.mp3", "s_raw_paused.mp3")
+
+              hook_dur = get_dur("hook_voice.mp3")
+              intro_dur = get_dur("intro_voice.mp3")
+              d1_raw = get_dur("s_raw_paused.mp3")
+              takeaway_dur = get_dur("takeaway_voice.mp3")
+              current_total = hook_dur + intro_dur + d1_raw + takeaway_dur + 2.0
+
+              def build_atempo(ratio):
+                  if abs(ratio - 1.0) < 0.001: return ""
+                  parts = []
+                  rem = ratio
+                  while rem > 2.0: parts.append("atempo=2.0"); rem /= 2.0
+                  while rem < 0.5: parts.append("atempo=0.5"); rem /= 0.5
+                  if abs(rem - 1.0) > 0.001: parts.append(f"atempo={rem:.4f}")
+                  return (",".join(parts) + ",") if parts else ""
+
+              # ✅ STRICT 60s: agar > 60s hai to speed up to 58s; agar < 55s hai to slow to 58s
+              atempo = ""
+              if current_total > 60.0:
+                  atempo = build_atempo(current_total / 58.0)
+              elif current_total < 55.0:
+                  atempo = build_atempo(max(0.75, current_total / 58.0))
+
+              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -i s_raw_paused.mp3 -af \"{atempo}loudnorm=I=-16:TP=-1.5:LRA=11,volume=1.40\" s_v.mp3")
+              d1 = get_dur("s_v.mp3")
+              total = hook_dur + intro_dur + d1 + takeaway_dur + 2.0
+              if total > 62: total = 60.0
+
+              bg_vid = get_multi_bg(total + 2.0)
+
+              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner -i hook_voice.mp3 -i intro_voice.mp3 -i s_v.mp3 -i takeaway_voice.mp3 -filter_complex \"[0:a][1:a][2:a][3:a]concat=n=4:v=0:a=1[mainvoice]\" -map \"[mainvoice]\" s_fullvoice.mp3")
+
+              fade_out_st = max(0, min(total - 8, total * 0.85))
+              mix_inputs = ["s_fullvoice.mp3", "music_soft.mp3"]
+              mix_filters = [
+                  f"[1:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.34,aloop=loop=-1:size=2e+09,afade=t=in:st=0:d=3,atrim=0:{total:.2f},afade=t=out:st={fade_out_st:.2f}:d=8[bg]",
+                  f"[0:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=1.35,aecho=0.8:0.88:60:0.4,alimiter=limit=0.95,asplit=2[voice1][voice2]",
+                  f"[bg][voice1]sidechaincompress=threshold=0.05:ratio=8:attack=20:release=350[ducked]",
+                  f"[voice2]apad=pad_dur=2.0[voice_pad]",
+              ]
+              sfx_streams = []
+              if "ambient" in sfx_pack:
+                  mix_inputs.append(sfx_pack["ambient"]); idx = len(mix_inputs) - 1
+                  mix_filters.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.14,aloop=loop=-1:size=2e+09,atrim=0:{total:.2f}[amb]")
+                  sfx_streams.append("[amb]")
+              if "impact" in sfx_pack:
+                  mix_inputs.append(sfx_pack["impact"]); idx = len(mix_inputs) - 1
+                  mix_filters.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.85,adelay=200:all=1,atrim=0:{total:.2f}[impact]")
+                  sfx_streams.append("[impact]")
+              if "boom" in sfx_pack:
+                  mix_inputs.append(sfx_pack["boom"]); idx = len(mix_inputs) - 1
+                  mix_filters.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.65,adelay=0:all=1,atrim=0:{total:.2f}[boom]")
+                  sfx_streams.append("[boom]")
+              if "riser" in sfx_pack:
+                  mix_inputs.append(sfx_pack["riser"]); idx = len(mix_inputs) - 1
+                  riser_ms = int(max(0, hook_dur + intro_dur + split_point - 2.5) * 1000)
+                  mix_filters.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.55,adelay={riser_ms}:all=1,atrim=0:{total:.2f}[riser]")
+                  sfx_streams.append("[riser]")
+              if "heartbeat" in sfx_pack:
+                  mix_inputs.append(sfx_pack["heartbeat"]); idx = len(mix_inputs) - 1
+                  hb_start = int((hook_dur + intro_dur + 2.0) * 1000)
+                  mix_filters.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.18,adelay={hb_start}:all=1,atrim=0:{total:.2f}[heartbeat]")
+                  sfx_streams.append("[heartbeat]")
+              if "ticking" in sfx_pack:
+                  mix_inputs.append(sfx_pack["ticking"]); idx = len(mix_inputs) - 1
+                  tick_start = int(max(0, total - 4.0) * 1000)
+                  mix_filters.append(f"[{idx}:a]aformat=sample_rates=44100:channel_layouts=stereo,volume=0.22,adelay={tick_start}:all=1,atrim=0:{total:.2f}[tick]")
+                  sfx_streams.append("[tick]")
+
+              n_in = 2 + len(sfx_streams)
+              all_src = "[voice_pad][ducked]" + "".join(sfx_streams)
+              mix_filters.append(f"{all_src}amix=inputs={n_in}:duration=first:normalize=0[premix]")
+              mix_filters.append("[premix]alimiter=limit=0.95[aout]")
+              mix_fc = ";".join(mix_filters)
+              in_args = " ".join(f'-i "{f}"' for f in mix_inputs)
+              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner {in_args} -filter_complex \"{mix_fc}\" -map \"[aout]\" -c:a libmp3lame -b:a 192k s_final_audio.mp3")
+
+              fonts_dir = os.path.abspath(os.path.expanduser("~/.fonts"))
+
+              ass = [
+                  "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1080", "PlayResY: 1920", "WrapStyle: 0", "ScaledBorderAndShadow: yes", "",
+                  "[V4+ Styles]", "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                  "Style: Hook,Noto Serif,115,&H0000D7FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.5,0,1,8,5,5,40,40,0,1",
+                  "Style: Badge,Hind,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.0,0,1,4,2,7,30,30,0,1",
+                  "Style: Intro,Noto Serif,80,&H00E5E4E2,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.5,0,1,7,4,5,40,40,0,1",
+                  "Style: Teaser,Hind,65,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.0,0,1,5,3,2,40,40,0,1",
+                  "Style: Arabic,Amiri,115,&H0000D7FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.0,0,1,7,4,2,4,120,0,1",
+                  "Style: Hindi,Hind,115,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.5,0,1,7,4,2,4,120,0,1",
+                  "Style: English,Noto Serif,85,&H00E5E4E2,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.0,0,1,6,3,2,4,120,0,1",
+                  "Style: Takeaway,Hind,105,&H0000FFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.5,0,1,8,5,5,40,40,0,1",
+                  "Style: CTA,Noto Serif,85,&H0000D7FF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.0,0,1,7,5,5,40,40,0,1",
+                  "Style: NextTopic,Hind,70,&H00E5E4E2,&H000000FF,&H00000000,&H80000000,-1,0,0,0,105,105,1.0,0,1,6,4,5,40,40,0,1", "",
+                  "[Events]", "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+              ]
+
+              def ts(t):
+                  t = max(0, float(t))
+                  hh = int(t // 3600); mm = int((t % 3600) // 60); ss = int(t % 60); cc = min(99, int((t % 1) * 100))
+                  return f"{hh}:{mm:02d}:{ss:02d}.{cc:02d}"
+
+              ass.append(f"Dialogue: 0,{ts(0)},{ts(total)},Badge,,0,0,0,,{{\\an7\\pos(40,40)\\1c&H00FFFFFF&\\bord4\\shad3}}Day {DAY_NUM} / 365")
+              ass.append(f"Dialogue: 0,{ts(0)},{ts(total)},Badge,,0,0,0,,{{\\an7\\pos(40,100)\\fs35\\c&H00D4AF37&\\bord4\\shad3}}Hadith #{h['number']}")
+              ass.append(f"Dialogue: 0,{ts(0.15)},{ts(max(hook_dur, 1.8))},Hook,,0,0,0,,{{\\fad(300,400)\\pos(540,340)\\1c{C_GOLD}\\bord8\\shad5\\fscx92\\fscy92\\t(0,300,\\fscx108\\fscy108\\t(300,500,\\fscx100\\fscy100))}}{sanitize_ass(hook_text)}")
+
+              intro_start = hook_dur; intro_end = hook_dur + intro_dur
+              ass.append(f"Dialogue: 0,{ts(intro_start)},{ts(intro_end)},Intro,,0,0,0,,{{\\fad(500,500)\\pos(540,850)\\c{C_ARABIC}}}{h['collection']}")
+              ass.append(f"Dialogue: 0,{ts(intro_start)},{ts(intro_end)},Intro,,0,0,0,,{{\\fad(500,500)\\pos(540,1000)\\fs70\\c{C_ENGLISH}}}Hadith #{h['number']} | {DATE_STR}")
+
+              teaser_s = hook_dur + intro_dur; teaser_e = teaser_s + 1.6
+              ass.append(f"Dialogue: 0,{ts(teaser_s)},{ts(teaser_e)},Teaser,,0,0,0,,{{\\fad(250,250)\\pos(540,1750)\\fs60\\1c&H0000FFFF&\\bord5\\shad4}}👀 Video end tak dekhein 👀")
+
+              def word_subs(words, style, y, rtl, start, end):
+                  words = [w for w in words if w.strip()]
+                  if not words or end <= start: return []
+                  step = (end - start) / len(words)
+                  out = []
+                  t = start
+                  pop = "\\fscx110\\fscy110\\t(0,150,\\fscx100\\fscy100)"
+                  glow = "\\blur4\\shad6\\bord6"
+                  PREMIUM_COLORS = ["&H0000D7FF&", "&H00FFFFFF&", "&H0050C878&", "&H00FFAA00&", "&H0000FFFF&"]
+                  for i, w in enumerate(words):
+                      ws = sanitize_ass(w)
+                      t_next = min(end, t + step)
+                      dyn = PREMIUM_COLORS[i % len(PREMIUM_COLORS)]
+                      if rtl:
+                          out.append(f"Dialogue: 0,{ts(t)},{ts(t_next)},{style},,0,0,0,,{{\\an6\\pos(1000,{y})}}{{\\1c{dyn}{glow}{pop}}}{ws}")
+                      else:
+                          out.append(f"Dialogue: 0,{ts(t)},{ts(t_next)},{style},,0,0,0,,{{\\an4\\pos(80,{y})}}{{\\1c{dyn}{glow}{pop}}}{ws}")
+                      t = t_next
+                  return out
+
+              subs_s = hook_dur + intro_dur; subs_e = max(subs_s + 0.5, hook_dur + intro_dur + d1 - 0.5)
+              ass.extend(word_subs(sanitize(h.get("arabic", "")).split(), "Arabic", 1350, True, subs_s, subs_e))
+              ass.extend(word_subs(sanitize(hindi).split(), "Hindi", 1520, False, subs_s, subs_e))
+              ass.extend(word_subs(sanitize(h["english"]).split(), "English", 1650, False, subs_s, subs_e))
+
+              takeaway_s = hook_dur + intro_dur + d1; takeaway_e = takeaway_s + takeaway_dur
+              ass.append(f"Dialogue: 0,{ts(takeaway_s)},{ts(takeaway_e)},Takeaway,,0,0,0,,{{\\fad(500,300)\\pos(540,780)\\1c&H0000FFFF&\\bord8\\shad5\\fscx94\\fscy94\\t(0,400,\\fscx108\\fscy108\\t(400,700,\\fscx100\\fscy100))}}{sanitize_ass(takeaway_text)}")
+
+              cta_s = total - 3.0; cta_e = total - 0.1
+              if cta_e > cta_s:
+                  ass.append(f"Dialogue: 0,{ts(cta_s)},{ts(cta_e)},CTA,,0,0,0,,{{\\fad(300,300)\\pos(540,700)\\1c{C_GOLD}\\bord6\\shad5}}👍 Save karo • 🔔 Follow karo")
+                  ass.append(f"Dialogue: 0,{ts(cta_s)},{ts(cta_e)},NextTopic,,0,0,0,,{{\\fad(300,300)\\pos(540,820)\\fs65\\1c&H00FFFF00&\\bord5\\shad4}}Kal: {sanitize_ass(next_topic)}")
+                  ass.append(f"Dialogue: 0,{ts(cta_s)},{ts(cta_e)},CTA,,0,0,0,,{{\\fad(300,300)\\pos(540,950)\\fs58\\1c&H00E5E4E2&\\bord4\\shad3}}@YourChannelHandle")
+
+              with open("s_subs.ass", "w", encoding="utf-8") as f: f.write("\n".join(ass))
+
+              final = "Final_Cinematic_Story.mp4"
+              logo_file = try_download_logo()
+
+              # ============================================================
+              # ✅ STABLE DISPLAY - NO SHAKE ANYWHERE
+              # ============================================================
+              filters = ("[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                         "setsar=1,colorbalance=rs=-0.1:gs=0.0:bs=0.1,"
+                         "eq=contrast=1.25:brightness=-0.05:saturation=1.1,vignette=PI/4,noise=alls=8:allf=t[bg]; ")
+
+              next_idx = 2; cur_bg = "bg"
+              if logo_file:
+                  # ✅ Static logo - bottom-right corner, no movement
+                  filters += (f"[{next_idx}:v]scale=250:-1,format=rgba,colorchannelmixer=aa=0.95[sl];"
+                              f"[{cur_bg}][sl]overlay=x='W-w-20':y='H-h-20'[bg_logo]; ")
+                  next_idx += 1; cur_bg = "bg_logo"
+
+              # ✅ NO SHAKE crop, NO brightness pulse — completely stable frame
+              filters += (
+                  f"[{cur_bg}]"
+                  f"drawbox=x=8:y=8:w=iw-16:h=ih-16:color=0xD4AF37@0.75:t=3,"
+                  f"drawbox=x=15:y=15:w=iw-30:h=ih-30:color=0xD4AF37@0.25:t=1,"
+                  f"drawbox=x=50:y=1400:w=980:h=300:color=black@0.4:t=fill[border]; "
+              )
+
+              progress = f"drawbox=x=0:y=ih-8:w='iw*t/{total:.2f}':h=8:color=0xFFD700@0.9:t=fill"
+              fade_vid_out = max(0, total - 1.5)
+              filters += (f"[border]subtitles=s_subs.ass:fontsdir={shlex.quote(fonts_dir)},{progress},"
+                          f"format=yuv420p,fade=t=in:st=0:d=0.5,fade=t=out:st={fade_vid_out:.2f}:d=1.5[outv]")
+
+              meta = (f'-metadata title="Day {DAY_NUM} - {h["collection"]} #{h["number"]}" '
+                      f'-metadata comment="Hadith {h["number"]}" -metadata artist="Cinematic Studio"')
+              input_args = f'-i {bg_vid} -i s_final_audio.mp3'
+              if logo_file: input_args += f' -i "{logo_file}"'
+
+              run_cmd(f"ffmpeg -y -loglevel {FFMPEG_LOGLEVEL} -nostdin -hide_banner {input_args} "
+                      f"-filter_complex \"{filters}\" -map \"[outv]\" -map 1:a "
+                      f"-c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p -r 30 "
+                      f"-c:a aac -b:a 192k -t {total:.2f} -shortest -movflags +faststart {meta} {final}")
+
+              ok, info = verify_video(final)
+              if not ok: raise Exception(f"Video verification failed: {info}")
+              api_status.setdefault("Output", {})["VIDEO"] = f"✅ {info}"
+
+              if create_thumbnail(final, hook_text):
+                  api_status.setdefault("Output", {})["THUMBNAIL"] = "✅ Generated (local only)"
+
+              # ✅ Google Drive — ONLY story video
+              upload_drive(final)
+
+              send_tg(f"📝 <b>YouTube/Insta Title:</b>\n{yt_title}\n\n🏷️ <b>Tags:</b>\n{yt_tags}")
+
+              try:
+                  run_cmd(f"ffmpeg -y -loglevel error -i {final} -t 10 -c copy preview.mp4")
+                  if os.path.exists("preview.mp4"):
+                      with open("preview.mp4", "rb") as v:
+                          session.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendVideo",
+                                       data={"chat_id": TG_CHAT_ID, "caption": "🎬 Here is the 10s Preview!"},
+                                       files={"video": v}, timeout=60)
+                      api_status.setdefault("Output", {})["TG_PREVIEW"] = "✅ Sent"
+              except Exception as e:
+                  print(f"[TG PREVIEW ERR] {e}")
+
+              report_status()
+
+              # ✅ Cleanup — sirf temp files. Output files (video, thumbnail, thumb_raw, s_subs.ass) SAFE hain
+              try:
+                  for pat in ["vid_*.mp4", "proc_*.mp4", "music_raw.mp3", "s_raw.mp3",
+                              "sfx_*.mp3", "s_v.mp3", "s_fullvoice.mp3", "bg_final.mp4",
+                              "s_final_audio.mp3", "intro_voice.mp3", "hook_voice.mp3",
+                              "takeaway_voice.mp3", "s_raw_paused.mp3", "islamic_pattern.png",
+                              "logo.png", "ai_bg.jpg", "preview.mp4"]:
+                      for f in glob.glob(pat):
+                          try: os.remove(f)
+                          except Exception: pass
+              except Exception: pass
+
+          except Exception as e:
+              send_tg(f"❌ <b>FAILED:</b> {str(e)[:400]}")
+              report_status()
+              sys.exit(1)
+          STORY_PY
+
+      - name: Run Story Pipeline
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
+          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TINYFISH_API_KEY: ${{ secrets.TINYFISH_API_KEY }}
+          TUNETANK_API_URL: ${{ secrets.TUNETANK_API_URL }}
+          VOICECAFE_API_URL: ${{ secrets.VOICECAFE_API_URL }}
+          WIKIMEDIA_API_URL: ${{ secrets.WIKIMEDIA_API_URL }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          OPENROUTER_API_KEY_AI: ${{ secrets.OPENROUTER_API_KEY_AI }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          POLLINATIONS_API_URL: ${{ secrets.POLLINATIONS_API_URL }}
+          GDRIVE_STORY_VIDEO_FOLDER_ID: ${{ secrets.GDRIVE_STORY_VIDEO_FOLDER_ID }}
+          GEMINI_API_KEY_AI: ${{ secrets.GEMINI_API_KEY_AI }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          GROQ_API_KEY_AI: ${{ secrets.GROQ_API_KEY_AI }}
+          HUGGINGFACE_API_KEY_AI: ${{ secrets.HUGGINGFACE_API_KEY_AI }}
+          JAMENDO_CLIENT_ID: ${{ secrets.JAMENDO_CLIENT_ID }}
+          LIBRETRANSLATE_URL: ${{ secrets.LIBRETRANSLATE_URL }}
+          MISTRAL_API_KEY_AI: ${{ secrets.MISTRAL_API_KEY_AI }}
+          MIXKIT_URL: ${{ secrets.MIXKIT_URL }}
+          ARCHIVE_API_URL: ${{ secrets.ARCHIVE_API_URL }}
+          CEREBRAS_API_KEY_AI: ${{ secrets.CEREBRAS_API_KEY_AI }}
+          COHERE_API_KEY_AI: ${{ secrets.COHERE_API_KEY_AI }}
+          DEEPL_API_KEY: ${{ secrets.DEEPL_API_KEY }}
+          DEEPLX_URL: ${{ secrets.DEEPLX_URL }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY }}
+          DRIVE_STORY_FOLDER_ID: ${{ secrets.DRIVE_STORY_FOLDER_ID }}
+          COVERR_API_KEY: ${{ secrets.COVERR_API_KEY }}
+          DEEPAI_API_KEY: ${{ secrets.DEEPAI_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TAVILY_API_KEY_AI: ${{ secrets.TAVILY_API_KEY_AI }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          FREETOUSE_MUSIC_URL: ${{ secrets.FREETOUSE_MUSIC_URL }}
+          PRAYER_TIMES_API_URL: ${{ secrets.PRAYER_TIMES_API_URL }}
+          QURAN_API_URL: ${{ secrets.QURAN_API_URL }}
+          HADITH_API_URL: ${{ secrets.HADITH_API_URL }}
+          CLIPDROP_API_KEY: ${{ secrets.CLIPDROP_API_KEY }}
+        run: python3 story_pipeline.py
+
+      - name: Upload Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinematic-story-${{ github.run_id }}
+          path: |
+            Final_Cinematic_Story.mp4
+            thumbnail.jpg
+            thumb_raw.jpg
+            s_subs.ass
+          retention-days: 7
+          if-no-files-found: ignore
